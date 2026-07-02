@@ -19,19 +19,6 @@ using namespace Rcpp;
 
 namespace {
 
-// log(1 + exp(x)) — numerically stable
-inline double lse_zinb(double x) {
-    if (x > 0.0) return x + std::log1p(std::exp(-x));
-    return std::log1p(std::exp(x));
-}
-
-// sigmoid(x)
-inline double sigmoid_zinb(double x) {
-    if (x >  35.0) return 1.0;
-    if (x < -35.0) return 0.0;
-    return 1.0 / (1.0 + std::exp(-x));
-}
-
 class ZeroInflatedNegBin {
     const Eigen::Ref<const Eigen::VectorXd> m_y;
     const Eigen::Ref<const Eigen::MatrixXd> m_Xc;
@@ -52,6 +39,10 @@ class ZeroInflatedNegBin {
     // operator() is non-const, so mutating members across calls is safe (matches ZeroAugmentedPoisson).
     Eigen::VectorXd m_eta_c, m_eta_z, m_w_c, m_w_z;
 
+    // TODO-67 prototype: batched transcendental precompute buffers (vectorized when the package
+    // is built with Eigen SIMD, i.e. without EIGEN_DONT_VECTORIZE; see Makevars).
+    Eigen::ArrayXd m_mu, m_logden, m_p, m_lse, m_phi, m_ld0;
+
 public:
     ZeroInflatedNegBin(const Eigen::Ref<const Eigen::VectorXd>& y,
                        const Eigen::Ref<const Eigen::MatrixXd>& Xc,
@@ -59,7 +50,8 @@ public:
         : m_y(y), m_Xc(Xc), m_Xz(Xz),
           m_n(y.size()), m_pc(Xc.cols()), m_pz(Xz.cols()),
           m_y_slot(y.size(), -1),
-          m_eta_c(m_n), m_eta_z(m_n), m_w_c(m_n), m_w_z(m_n)
+          m_eta_c(m_n), m_eta_z(m_n), m_w_c(m_n), m_w_z(m_n),
+          m_mu(m_n), m_logden(m_n), m_p(m_n), m_lse(m_n), m_phi(m_n), m_ld0(m_n)
     {
         std::unordered_map<int, int> seen;
         for (int i = 0; i < m_n; ++i) {
@@ -88,6 +80,17 @@ public:
         m_eta_c.noalias() = m_Xc * par.head(m_pc);
         m_eta_z.noalias() = m_Xz * par.segment(m_pc, m_pz);
 
+        // TODO-67: batch all per-observation transcendentals into vectorized Eigen array
+        // passes (SIMD packet exp/log when built with Eigen SIMD enabled). The branchy
+        // accumulation loop below then uses these precomputed values with no transcendental calls.
+        m_mu     = m_eta_c.array().exp();                          // mu = exp(eta_c)
+        m_logden = (theta + m_mu).log();                          // log(theta + mu)
+        m_p      = 1.0 / (1.0 + (-m_eta_z.array()).exp());        // sigmoid(eta_z)
+        m_lse    = m_eta_z.array().max(0.0)
+                 + (1.0 + (-(m_eta_z.array().abs())).exp()).log();// softplus(eta_z) = log(1+exp(eta_z))
+        m_phi    = (theta * (log_theta - m_logden)).exp();        // (theta/(theta+mu))^theta
+        m_ld0    = (m_p + (1.0 - m_p) * m_phi).log();             // log(p + (1-p)*phi), y==0 branch
+
         // Hoist theta-only special functions out of the observation loop.
         const double digamma_theta = fast_digamma(theta);
         const double lgamma_theta  = R::lgammafn(theta);
@@ -106,20 +109,18 @@ public:
         m_w_z.setZero();
 
         for (int i = 0; i < m_n; ++i) {
-            const double yi  = m_y[i];
-            const double ec  = m_eta_c[i];
-            const double ez  = m_eta_z[i];
-            const double p   = sigmoid_zinb(ez);
-            const double mu  = std::exp(ec);
+            const double yi        = m_y[i];
+            const double ec        = m_eta_c[i];
+            const double mu        = m_mu[i];
+            const double p         = m_p[i];
             const double denom     = theta + mu;
-            const double log_denom = std::log(denom);
+            const double log_denom = m_logden[i];
 
             if (yi <= 0.0) {
-                // phi = (theta/(theta+mu))^theta = exp(theta*(log_theta - log_denom))
-                const double phi = std::exp(theta * (log_theta - log_denom));
-                const double den = p + (1.0 - p) * phi;
-                nll -= std::log(den);
+                const double phi = m_phi[i];
+                nll -= m_ld0[i];                                 // log(p + (1-p)*phi)
 
+                const double den     = p + (1.0 - p) * phi;
                 const double inv_den = 1.0 / den;
                 m_w_z[i] = -(p * (1.0 - p) * (1.0 - phi)) * inv_den;
 
@@ -130,7 +131,7 @@ public:
                 d_log_theta -= (1.0 - p) * d_phi_d_theta * theta * inv_den;
             } else {
                 const int slot = m_y_slot[i];
-                nll -= -lse_zinb(ez)  // log(1-p)
+                nll -= -m_lse[i]  // log(1-p)
                      + m_lgamma_yptheta[slot] - lgamma_theta - m_lgamma_y1[slot]
                      + theta * (log_theta - log_denom) + yi * (ec - log_denom);
 
