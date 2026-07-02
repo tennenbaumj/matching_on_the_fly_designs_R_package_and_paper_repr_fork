@@ -374,12 +374,23 @@ List fast_adjacent_category_logit_with_var_cpp(SEXP X_sexp, SEXP y_sexp, int max
     MatrixXd info_free = subset_matrix(info, fixed_spec.free_idx, fixed_spec.free_idx);
     int free_j = -1;
     for (int jj = 0; jj < (int)fixed_spec.free_idx.size(); ++jj)
-        if (fixed_spec.free_idx[jj] == n_alpha) { free_j = jj + 1; break; }
-    double ssq_b_1 = (X.cols() >= 1 && free_j > 0) ? compute_diagonal_inverse_entry(info_free, free_j) : NA_REAL;
+        if (fixed_spec.free_idx[jj] == n_alpha) { free_j = jj; break; }
+
+    // Adjacent-category fits can have estimable treatment effects even when
+    // nuisance columns make the information matrix rank deficient.  LDLT may
+    // report success for such matrices while returning a finite but invalid
+    // (often negative) diagonal entry, so use the rank-aware inverse here.
+    MatrixXd cov_free = symmetric_pseudo_inverse(info_free);
+    double ssq_b_1 = NA_REAL;
+    if (X.cols() >= 1 && free_j >= 0 && cov_free.allFinite()) {
+        const double treatment_variance = cov_free(free_j, free_j);
+        if (R_finite(treatment_variance) && treatment_variance > 0.0) {
+            ssq_b_1 = treatment_variance;
+        }
+    }
 
     SEXP vcov_sexp = R_NilValue;
     if (fit.converged) {
-        MatrixXd cov_free = covariance_from_information(info_free);
         MatrixXd vcov = expand_free_covariance(n_par, fixed_spec, cov_free, true);
         vcov_sexp = Rcpp::wrap(vcov);
     }

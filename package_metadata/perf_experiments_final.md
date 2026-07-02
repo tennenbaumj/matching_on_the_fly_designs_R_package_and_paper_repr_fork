@@ -1014,8 +1014,29 @@ Files: `EDI/src/fast_negbin_regression.cpp:83,90`, `EDI/src/fast_hurdle_negbin.c
 File: `EDI/src/fast_hurdle_negbin.cpp` (hurdle positive-count log-normalizer)
 Mirror of TODO-33 (HP GLMM) and TODO-43 (ZAP): for `lam > 16`, `eneg = exp(-lam) < 1e-7`, so `log1p(-eneg) ≈ -eneg` with error < 1e-14. Add fast-path branch before the `std::log1p` call. Eliminates the libm transcendental for large-count observations (common in NegBin hurdle outcomes).
 
-**TODO-67: ZINB (and cross-kernel) — vectorize exp/log by enabling Eigen SIMD + batching transcendentals into array ops** ☐
+**TODO-67: ZINB (and cross-kernel) — vectorize exp/log by enabling Eigen SIMD + batching transcendentals into array ops** ✓ DONE (2026-07-02): global Eigen SIMD enabled package-wide + ZINB array rewrite; committed; ZINB 1.7-1.9x; full suite 398/398 green; installs clean
 Files: `EDI/src/Makevars:3` (+ `EDI/src/Makevars.win`), `EDI/src/fast_zinb.cpp:79-148`
+
+**RESULT (2026-07-02) — DONE (committed, whole-package). ZINB 1.7-1.9x via array rewrite + GLOBAL Eigen SIMD.**
+Implemented: `fast_zinb.cpp` `operator()` rewritten to batch all per-obs transcendentals into vectorized Eigen array passes (`mu=exp(eta_c)`, `log(theta+mu)`, sigmoid, softplus, `phi`, `log(den)`) with preallocated member buffers; the branchy accumulation loop now does zero transcendental calls.
+- **Scoped `#undef` (option B) is DEAD — it crashes.** Compiling only `fast_zinb.o` alignment-ON while the other 103 objects stay alignment-OFF segfaults even on estimate-only (Eigen's ODR-merged allocator mismatches aligned AVX loads). `-DEIGEN_DONT_ALIGN` also can't be kept (it disables vectorization). So the ODR caveat is a **hard crash, not theoretical → only the GLOBAL flip (option A) is viable.** Removed `-DEIGEN_DONT_ALIGN -DEIGEN_DONT_VECTORIZE` from `Makevars`; `Makevars.win` already defaulted to SIMD-on (added its missing `-I../inst/include` so it faithfully mirrors).
+- **Parity** (SIMD reorders FP; not bit-exact): params 8e-15, vcov 5e-12, hessian 6.7e-9 (numerical FD) — machine precision.
+- **ZINB speedup** (interleaved A/B vs scalar TODO-19 baseline): est **1.93x** / var **1.89x** at n=2000; est **1.74x** / var **1.76x** at n=20000.
+- **Full testthat suite** (clean whole-package rebuild): **398/398 PASS** (0 failed, 0 errors, 2 skipped). Package also **`R CMD INSTALL`s cleanly and loads** (v1.0.0). Two earlier full-suite runs showed 2 failures in the same non-hardened rank-deficient ordinal test on **both** scalar and SIMD builds — flaky/order-dependent, not caused by this change; they do **not** reproduce on the clean run.
+- **Package-wide GEMV bonus** (kernels NOT rewritten; scalar vs SIMD, n=3000 p=6) — **mixed, not uniform:**
+
+| kernel | speedup |
+|---|---:|
+| poisson_var | 1.64x |
+| ols_var | 1.62x |
+| logistic_var | 1.14x |
+| beta_var | 1.08x |
+| probit_var | 1.06x |
+| coxph_est | 0.92x (regression) |
+
+GEMM/IRLS-heavy kernels win most; coxph slightly **regresses** → the global flip needs per-kernel evaluation before committing, not a blanket "SIMD is faster" assumption.
+
+**Decision (2026-07-02): DONE — global Eigen SIMD accepted and committed package-wide** (`Makevars` + `Makevars.win`), ZINB `operator()` array-rewritten. Follow-ups (separate TODOs): (a) the **coxph 0.92x regression** under SIMD (see table) — investigate/guard; (b) per-kernel array-op rewrites (logistic/poisson/beta/…) to turn the modest flag-only GEMV bonus into ZINB-scale wins; (c) TODO-68's softplus concern is resolved inside this rewrite (vectorizable `log(1+exp)`, no `std::log1p`, no fast-math). All 104 kernels' results now shift at the ULP level — the green suite confirms nothing broke.
 
 Motivation: After TODO-19 (member preallocation) landed it was verified bit-exact but only ~1% faster in an apples-to-apples build. The `memset 86%` in the zinb_est profile above does **not** reproduce on this machine — glibc's dynamic mmap threshold reuses the large `VectorXd` allocations from the heap after the first few frees, so allocation was never the real bottleneck. The persistent cost is the per-observation transcendentals (zinb_est profile: `log1p 50%`, `log 47%`; every kernel with `exp`/`log`/`log1p` in its obs loop is affected). Those run scalar today for two independent reasons: (a) `EIGEN_DONT_VECTORIZE` disables Eigen packet math; (b) the loop calls `std::exp`/`std::log`/`std::log1p`, which GCC does not auto-vectorize without fast-math + libmvec.
 
