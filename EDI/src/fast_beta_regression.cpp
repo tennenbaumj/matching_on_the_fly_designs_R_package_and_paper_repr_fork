@@ -28,64 +28,81 @@ private:
 	const double m_weight_sum;
 	const Eigen::VectorXd m_log_y;
 	const Eigen::VectorXd m_log1_y;
+	Eigen::VectorXd m_eta;
+	Eigen::VectorXd m_mu;
+	Eigen::VectorXd m_w_grad;
 
 public:
 	BetaRegression(const Eigen::Ref<const Eigen::VectorXd>& y, const Eigen::Ref<const Eigen::MatrixXd>& X) :
 		m_y(y), m_X(X), m_weights(Eigen::VectorXd::Ones(X.rows())), m_n(X.rows()), m_p(X.cols()),
 		m_weight_sum(static_cast<double>(X.rows())),
 		m_log_y(y.array().log().matrix()),
-		m_log1_y((1.0 - y.array()).log().matrix()) {}
+		m_log1_y((1.0 - y.array()).log().matrix()),
+		m_eta(X.rows()),
+		m_mu(X.rows()),
+		m_w_grad(X.rows()) {}
 
 	BetaRegression(const Eigen::Ref<const Eigen::VectorXd>& y, const Eigen::Ref<const Eigen::MatrixXd>& X,
 	               const Eigen::Ref<const Eigen::VectorXd>& weights) :
 		m_y(y), m_X(X), m_weights(weights), m_n(X.rows()), m_p(X.cols()),
 		m_weight_sum(weights.sum()),
 		m_log_y(y.array().log().matrix()),
-		m_log1_y((1.0 - y.array()).log().matrix()) {}
+		m_log1_y((1.0 - y.array()).log().matrix()),
+		m_eta(X.rows()),
+		m_mu(X.rows()),
+		m_w_grad(X.rows()) {}
 
 	double operator()(const Eigen::VectorXd& params, Eigen::VectorXd& grad) {
-		Eigen::VectorXd beta = params.head(m_p);
-		double log_phi = params[m_p];
-		double phi = std::exp(log_phi);
+		const auto beta = params.head(m_p);
+		const double phi = std::exp(params[m_p]);
+		const double lgamma_phi = fast_lgamma(phi);
+		const double digamma_phi = fast_digamma(phi);
+		const double epsilon = 1e-8;
 
-		Eigen::VectorXd eta = m_X * beta;
-		Eigen::VectorXd mu = (1.0 / (1.0 + (-eta).array().exp())).matrix();
+		m_eta.noalias() = m_X * beta;
 
-		double epsilon = 1e-8;
-		for(int i=0; i<m_n; ++i) {
-			if (mu[i] < epsilon) mu[i] = epsilon;
-			if (mu[i] > 1.0 - epsilon) mu[i] = 1.0 - epsilon;
+		double neg_ll = 0.0;
+		double d_neg_ll_d_phi = -m_weight_sum * digamma_phi;
+		for (int i = 0; i < m_n; ++i) {
+			double mui = 1.0 / (1.0 + std::exp(-m_eta[i]));
+			if (mui < epsilon) {
+				mui = epsilon;
+			} else if (mui > 1.0 - epsilon) {
+				mui = 1.0 - epsilon;
+			}
+			m_mu[i] = mui;
+
+			const double one_minus_mu = 1.0 - mui;
+			const double a = mui * phi;
+			const double b = one_minus_mu * phi;
+			const double log_y = m_log_y[i];
+			const double log1_y = m_log1_y[i];
+			const double weight = m_weights[i];
+
+			neg_ll += weight * (
+				-lgamma_phi +
+				fast_lgamma(a) +
+				fast_lgamma(b) -
+				(a - 1.0) * log_y -
+				(b - 1.0) * log1_y
+			);
+
+			const double dig_a = fast_digamma(a);
+			const double dig_b = fast_digamma(b);
+			const double C = dig_a - dig_b - log_y + log1_y;
+			const double d_mu_d_eta = mui * one_minus_mu;
+			m_w_grad[i] = weight * phi * C * d_mu_d_eta;
+
+			d_neg_ll_d_phi += weight * (
+				mui * dig_a +
+				one_minus_mu * dig_b -
+				mui * log_y -
+				one_minus_mu * log1_y
+			);
 		}
 
-		double neg_ll = - (
-			(m_weight_sum * std::lgamma(phi)) -
-			(m_weights.array() * (mu.array() * phi).unaryExpr([](double x){ return std::lgamma(x); })).sum() -
-			(m_weights.array() * ((1.0 - mu.array()) * phi).unaryExpr([](double x){ return std::lgamma(x); })).sum() +
-			(m_weights.array() * (mu.array() * phi - 1.0) * m_log_y.array()).sum() +
-			(m_weights.array() * ((1.0 - mu.array()) * phi - 1.0) * m_log1_y.array()).sum()
-		);
-
 		grad.resize(m_p + 1);
-		Eigen::VectorXd mu_phi = mu.array() * phi;
-		Eigen::VectorXd one_minus_mu_phi = (1.0 - mu.array()) * phi;
-		Eigen::VectorXd d_mu_d_eta = mu.array() * (1.0 - mu.array());
-
-		Eigen::VectorXd d_neg_ll_d_mu = (
-			mu_phi.unaryExpr(DigammaFunctor()).array() -
-			one_minus_mu_phi.unaryExpr(DigammaFunctor()).array() -
-			m_log_y.array() + m_log1_y.array()
-		) * phi;
-
-		grad.head(m_p) = m_X.transpose() * (m_weights.array() * d_neg_ll_d_mu.array() * d_mu_d_eta.array()).matrix();
-
-		const double digamma_phi = fast_digamma(phi);
-		double d_neg_ll_d_phi = (
-			-m_weight_sum * digamma_phi +
-			(m_weights.array() * mu.array() * mu_phi.unaryExpr(DigammaFunctor()).array()).sum() +
-			(m_weights.array() * (1.0 - mu.array()) * one_minus_mu_phi.unaryExpr(DigammaFunctor()).array()).sum() -
-			(m_weights.array() * mu.array() * m_log_y.array()).sum() -
-			(m_weights.array() * (1.0 - mu.array()) * m_log1_y.array()).sum()
-		);
+		grad.head(m_p).noalias() = m_X.transpose() * m_w_grad;
 		grad[m_p] = d_neg_ll_d_phi * phi;
 
 		return neg_ll;

@@ -67,6 +67,52 @@ inline double soft_barrier_hp_hessian(double log_sigma, double center = 5.0, dou
 	return 2.0 * scale;
 }
 
+template<typename XDerived, typename WDerived, typename OutDerived>
+inline void crossprod_rhs_assign_hp(const Eigen::MatrixBase<XDerived>& X,
+                                    const Eigen::MatrixBase<WDerived>& w,
+                                    Eigen::MatrixBase<OutDerived>& out) {
+	const int n = X.rows();
+	const int p = X.cols();
+	out.derived().setZero();
+	for (int j = 0; j < p; ++j) {
+		double acc = 0.0;
+		for (int i = 0; i < n; ++i) acc += X(i, j) * w(i);
+		out(j) = acc;
+	}
+}
+
+template<typename XDerived, typename WDerived, typename OutDerived>
+inline void weighted_crossprod_assign_hp(const Eigen::MatrixBase<XDerived>& X,
+                                         const Eigen::MatrixBase<WDerived>& w,
+                                         Eigen::MatrixBase<OutDerived>& out) {
+	const int n = X.rows();
+	const int p = X.cols();
+	out.derived().setZero();
+	for (int j = 0; j < p; ++j) {
+		for (int k = j; k < p; ++k) {
+			double acc = 0.0;
+			for (int i = 0; i < n; ++i) acc += X(i, j) * w(i) * X(i, k);
+			out(j, k) = acc;
+			if (k != j) out(k, j) = acc;
+		}
+	}
+}
+
+template<typename XDerived, typename WDerived>
+inline void crossprod_rhs_to_col_hp(const Eigen::MatrixBase<XDerived>& X,
+                                    const Eigen::MatrixBase<WDerived>& w,
+                                    Eigen::MatrixXd& out,
+                                    int col,
+                                    double scale) {
+	const int n = X.rows();
+	const int p = X.cols();
+	for (int j = 0; j < p; ++j) {
+		double acc = 0.0;
+		for (int i = 0; i < n; ++i) acc += X(i, j) * w(i);
+		out(j, col) = acc * scale;
+	}
+}
+
 struct HurdlePoissonGLMMData {
 	Eigen::MatrixXd X_s;
 	Eigen::VectorXd y_s;
@@ -121,13 +167,36 @@ class HurdlePoissonGLMMObjective {
 	std::vector<double> m_lam;   // exp(eta0[i] + b_vals[k])
 	std::vector<double> m_eneg;  // exp(-lam[i,k]) — shared by ll and gradient
 	std::vector<double> m_w;     // per-obs gradient weight accumulator
+	std::vector<double> m_exp_bvals;
+	Eigen::VectorXd m_b_vals;
+	Eigen::VectorXd m_log_terms;
+	Eigen::VectorXd m_eta0;
+	Eigen::VectorXd m_res_k;
+	Eigen::VectorXd m_d2e_k;
+	Eigen::VectorXd m_G_ik;
+	Eigen::MatrixXd m_H_ik;
+	Eigen::MatrixXd m_E_Hik;
+	Eigen::MatrixXd m_E_GiGiT;
+	Eigen::VectorXd m_G_avg;
 
 public:
 	explicit HurdlePoissonGLMMObjective(const HurdlePoissonGLMMData& d) : dat(d) {
 		const int K = (int)d.gh.nodes.size();
+		const int total = d.p + 1;
 		m_lam.resize(d.max_grp_sz * K);
 		m_eneg.resize(d.max_grp_sz * K);
 		m_w.resize(d.max_grp_sz);
+		m_exp_bvals.resize(K);
+		m_b_vals.resize(K);
+		m_log_terms.resize(K);
+		m_eta0.resize(d.max_grp_sz);
+		m_res_k.resize(d.max_grp_sz);
+		m_d2e_k.resize(d.max_grp_sz);
+		m_G_ik.resize(total);
+		m_H_ik.resize(total, total);
+		m_E_Hik.resize(total, total);
+		m_E_GiGiT.resize(total, total);
+		m_G_avg.resize(total);
 	}
 
 	double operator()(const Eigen::Ref<const Eigen::VectorXd>& par, Eigen::Ref<Eigen::VectorXd> grad) {
@@ -135,23 +204,22 @@ public:
 		const double sigma     = std::exp(log_sigma);
 		const int p = dat.p;
 		const int K = (int)dat.gh.nodes.size();
-		const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * dat.gh.nodes;
+		m_b_vals.noalias() = (std::sqrt(2.0) * sigma) * dat.gh.nodes;
 
 		// Precompute exp(b_vals[k]) once per optimizer step (K exps amortized over G groups).
-		std::vector<double> exp_bvals(K);
-		for (int k = 0; k < K; ++k) exp_bvals[k] = std::exp(b_vals[k]);
+		for (int k = 0; k < K; ++k) m_exp_bvals[k] = std::exp(m_b_vals[k]);
 
 		double total_nll = soft_barrier_hp(log_sigma);
 		grad.setZero();
 		const double d = std::abs(log_sigma) - 5.0;
 		if (d > 0.0) grad[p] += 20.0 * d * (log_sigma > 0 ? 1.0 : -1.0);
 
-		Eigen::VectorXd log_terms(K);
-
 		for (int gi = 0; gi < dat.G; ++gi) {
 			const int gs = dat.grp_start[gi];
 			const int sz = dat.grp_size[gi];
-			const Eigen::VectorXd eta0 = dat.X_s.middleRows(gs, sz) * par.head(p);
+			const auto Xg = dat.X_s.middleRows(gs, sz);
+			m_eta0.head(sz).noalias() = Xg * par.head(p);
+			const auto eta0 = m_eta0.head(sz);
 			const double* y_g = dat.y_s.data() + gs;
 			const double* lfg = dat.log_fact_y.data() + gs;
 
@@ -159,7 +227,7 @@ public:
 			// lam[i,k] = exp(eta0[i]) * exp_bvals[k]  (no exp call per pair).
 			// eneg[i,k] = exp(-lam[i,k])  — computed once, reused in ll and gradient.
 			for (int k = 0; k < K; ++k) {
-				const double eb    = exp_bvals[k];
+				const double eb    = m_exp_bvals[k];
 				double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;
 				double* eneg_k = m_eneg.data() + k * dat.max_grp_sz;
 				for (int i = 0; i < sz; ++i) {
@@ -171,7 +239,7 @@ public:
 
 			// Log-likelihood contribution per node using shared lam/eneg.
 			for (int k = 0; k < K; ++k) {
-				const double bk     = b_vals[k];
+				const double bk     = m_b_vals[k];
 				const double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;
 				const double* eneg_k = m_eneg.data() + k * dat.max_grp_sz;
 				double ll_k = dat.gh.log_norm_weights[k];
@@ -183,10 +251,10 @@ public:
 					const double lne = (lam < 1e-10) ? eta_ki : std::log1p(-eneg);
 					ll_k += y_g[i] * eta_ki - lam - lfg[i] - lne;
 				}
-				log_terms[k] = ll_k;
+				m_log_terms[k] = ll_k;
 			}
 
-			const double ll_g = log_sum_exp_hp(log_terms);
+			const double ll_g = log_sum_exp_hp(m_log_terms);
 			if (!std::isfinite(ll_g)) { grad.setZero(); return 1e100; }
 			total_nll -= ll_g;
 
@@ -197,11 +265,11 @@ public:
 			double w_sigma = 0.0;
 
 			for (int k = 0; k < K; ++k) {
-				const double post_k = std::exp(log_terms[k] - ll_g);
+				const double post_k = std::exp(m_log_terms[k] - ll_g);
 				if (post_k < 1e-15) continue;
 				const double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;
 				const double* eneg_k = m_eneg.data() + k * dat.max_grp_sz;
-				const double pbk = post_k * b_vals[k];
+				const double pbk = post_k * m_b_vals[k];
 				double score_sum = 0.0;
 				for (int i = 0; i < sz; ++i) {
 					const double lam  = lam_k[i];
@@ -228,26 +296,24 @@ public:
 		const double sigma = std::exp(log_sigma);
 		const int p = dat.p;
 		const int K = (int)dat.gh.nodes.size();
-		const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * dat.gh.nodes;
+		m_b_vals.noalias() = (std::sqrt(2.0) * sigma) * dat.gh.nodes;
 
-		std::vector<double> exp_bvals(K);
-		for (int k = 0; k < K; ++k) exp_bvals[k] = std::exp(b_vals[k]);
+		for (int k = 0; k < K; ++k) m_exp_bvals[k] = std::exp(m_b_vals[k]);
 
 		Eigen::MatrixXd H = Eigen::MatrixXd::Zero(total, total);
 		H(dat.p, dat.p) = soft_barrier_hp_hessian(log_sigma);
 
-		Eigen::VectorXd log_terms(K);
-
 		for (int gi = 0; gi < dat.G; gi++) {
 			const int gs = dat.grp_start[gi];
 			const int sz = dat.grp_size[gi];
-			const Eigen::MatrixXd Xg = dat.X_s.middleRows(gs, sz);
-			const Eigen::VectorXd eta0 = Xg * par.head(p);
+			const auto Xg = dat.X_s.middleRows(gs, sz);
+			m_eta0.head(sz).noalias() = Xg * par.head(p);
+			const auto eta0 = m_eta0.head(sz);
 			const double* y_g = dat.y_s.data() + gs;
 			const double* lfg = dat.log_fact_y.data() + gs;
 
 			for (int k = 0; k < K; ++k) {
-				const double eb = exp_bvals[k];
+				const double eb = m_exp_bvals[k];
 				double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;
 				double* eneg_k = m_eneg.data() + k * dat.max_grp_sz;
 				for (int i = 0; i < sz; ++i) {
@@ -257,7 +323,7 @@ public:
 				}
 			}
 			for (int k = 0; k < K; ++k) {
-				const double bk     = b_vals[k];
+				const double bk     = m_b_vals[k];
 				const double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;
 				const double* eneg_k = m_eneg.data() + k * dat.max_grp_sz;
 				double ll_k = dat.gh.log_norm_weights[k];
@@ -268,22 +334,23 @@ public:
 					const double lne    = (lam < 1e-10) ? eta_ki : std::log1p(-eneg);
 					ll_k += y_g[i] * eta_ki - lam - lfg[i] - lne;
 				}
-				log_terms[k] = ll_k;
+				m_log_terms[k] = ll_k;
 			}
-			const double ll_g = log_sum_exp_hp(log_terms);
+			const double ll_g = log_sum_exp_hp(m_log_terms);
 
-			Eigen::MatrixXd E_Hik = Eigen::MatrixXd::Zero(total, total);
-			Eigen::MatrixXd E_GiGiT = Eigen::MatrixXd::Zero(total, total);
-			Eigen::VectorXd G_avg = Eigen::VectorXd::Zero(total);
+			m_E_Hik.setZero();
+			m_E_GiGiT.setZero();
+			m_G_avg.setZero();
 
 			for (int k = 0; k < K; k++) {
-				const double pk = std::exp(log_terms[k] - ll_g);
+				const double pk = std::exp(m_log_terms[k] - ll_g);
 				if (pk < 1e-15) continue;
 
 				const double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;
 				const double* eneg_k = m_eneg.data() + k * dat.max_grp_sz;
 
-				Eigen::VectorXd res_k(sz), d2e_k(sz);
+				auto res_k = m_res_k.head(sz);
+				auto d2e_k = m_d2e_k.head(sz);
 				for (int i = 0; i < sz; ++i) {
 					const double lam  = lam_k[i];
 					const double eneg = eneg_k[i];
@@ -300,28 +367,32 @@ public:
 					}
 				}
 
-				Eigen::VectorXd G_ik = Eigen::VectorXd::Zero(total);
-				Eigen::MatrixXd H_ik = Eigen::MatrixXd::Zero(total, total);
+				m_G_ik.setZero();
+				m_H_ik.setZero();
 				const double sum_res = res_k.sum();
 				const double sum_d2e = d2e_k.sum();
 
-				G_ik.head(p).noalias() = Xg.transpose() * res_k;
-				H_ik.topLeftCorner(p, p).noalias() = weighted_crossprod(Xg, d2e_k);
+				auto G_beta = m_G_ik.head(p);
+				crossprod_rhs_assign_hp(Xg, res_k, G_beta);
+				auto H_beta = m_H_ik.topLeftCorner(p, p);
+				weighted_crossprod_assign_hp(Xg, d2e_k, H_beta);
 
 				const double node_factor = std::sqrt(2.0) * dat.gh.nodes[k];
-				G_ik[dat.p] = sum_res * node_factor * sigma;
+				m_G_ik[dat.p] = sum_res * node_factor * sigma;
 
-				H_ik(dat.p, dat.p) = (sum_d2e * node_factor * node_factor * sigma + sum_res * node_factor) * sigma;
+				m_H_ik(dat.p, dat.p) = (sum_d2e * node_factor * node_factor * sigma + sum_res * node_factor) * sigma;
 
-				H_ik.block(0, dat.p, p, 1).noalias() = (Xg.transpose() * d2e_k) * (node_factor * sigma);
+				crossprod_rhs_to_col_hp(Xg, d2e_k, m_H_ik, dat.p, node_factor * sigma);
 
-				for (int r1 = 0; r1 < total; r1++) for (int c1 = 0; r1 > c1; c1++) H_ik(r1, c1) = H_ik(c1, r1);
+				for (int r1 = 0; r1 < total; r1++) for (int c1 = 0; r1 > c1; c1++) m_H_ik(r1, c1) = m_H_ik(c1, r1);
 
-				E_Hik += pk * H_ik;
-				G_avg += pk * G_ik;
-				E_GiGiT += pk * (G_ik * G_ik.transpose());
+				m_E_Hik.noalias() += pk * m_H_ik;
+				m_G_avg.noalias() += pk * m_G_ik;
+				m_E_GiGiT.noalias() += pk * (m_G_ik * m_G_ik.transpose());
 			}
-			H -= (E_Hik + E_GiGiT - G_avg * G_avg.transpose());
+			H.noalias() -= m_E_Hik;
+			H.noalias() -= m_E_GiGiT;
+			H.noalias() += m_G_avg * m_G_avg.transpose();
 		}
 		return H;
 	}

@@ -4,6 +4,7 @@
 #endif
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <map>
 
@@ -14,6 +15,8 @@ using namespace Rcpp;
 using namespace Eigen;
 
 namespace {
+
+constexpr size_t kExactMedianMaterializeLimit = 4096;
 
 double median_in_place(std::vector<double>& values) {
     const size_t n = values.size();
@@ -54,40 +57,173 @@ inline double inv_logit_cpp(double x, double clamp) {
     return p;
 }
 
-double hl_from_groups(const std::vector<double>& y_t, const std::vector<double>& y_c) {
+size_t count_pairwise_diffs_leq(const std::vector<double>& y_t,
+                                const std::vector<double>& y_c,
+                                double x) {
+    size_t count = 0;
+    size_t idx_t = 0;
+    const size_t n_t = y_t.size();
+    for (double yc : y_c) {
+        const double limit = x + yc;
+        while (idx_t < n_t && y_t[idx_t] <= limit) ++idx_t;
+        count += idx_t;
+    }
+    return count;
+}
+
+double max_pairwise_diff_leq(const std::vector<double>& y_t,
+                             const std::vector<double>& y_c,
+                             double x) {
+    double best = -std::numeric_limits<double>::infinity();
+    bool found = false;
+    size_t idx_t = 0;
+    const size_t n_t = y_t.size();
+    for (double yc : y_c) {
+        const double limit = x + yc;
+        while (idx_t < n_t && y_t[idx_t] <= limit) ++idx_t;
+        if (idx_t > 0) {
+            const double candidate = y_t[idx_t - 1] - yc;
+            if (!found || candidate > best) best = candidate;
+            found = true;
+        }
+    }
+    return found ? best : NA_REAL;
+}
+
+double select_pairwise_diff_sorted(const std::vector<double>& y_t,
+                                   const std::vector<double>& y_c,
+                                   size_t rank) {
+    const size_t total = y_t.size() * y_c.size();
+    if (total == 0 || rank >= total) return NA_REAL;
+
+    double lo = y_t.front() - y_c.back();
+    double hi = y_t.back() - y_c.front();
+    if (rank == 0) return lo;
+    if (rank + 1 == total) return hi;
+
+    const size_t target_count = rank + 1;
+    for (int iter = 0; iter < 96; ++iter) {
+        const double mid = lo + 0.5 * (hi - lo);
+        if (mid == lo || mid == hi) break;
+        if (count_pairwise_diffs_leq(y_t, y_c, mid) >= target_count) {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+
+    const double snapped = max_pairwise_diff_leq(y_t, y_c, hi);
+    return std::isfinite(snapped) ? snapped : hi;
+}
+
+size_t count_walsh_avgs_leq(const std::vector<double>& d, double x) {
+    const int m = static_cast<int>(d.size());
+    int j = m - 1;
+    size_t count = 0;
+    const double limit = 2.0 * x;
+    for (int i = 0; i < m; ++i) {
+        while (j >= i && d[i] + d[j] > limit) --j;
+        if (j < i) break;
+        count += static_cast<size_t>(j - i + 1);
+    }
+    return count;
+}
+
+double max_walsh_avg_leq(const std::vector<double>& d, double x) {
+    const int m = static_cast<int>(d.size());
+    int j = m - 1;
+    double best = -std::numeric_limits<double>::infinity();
+    bool found = false;
+    const double limit = 2.0 * x;
+    for (int i = 0; i < m; ++i) {
+        while (j >= i && d[i] + d[j] > limit) --j;
+        if (j < i) break;
+        const double candidate = 0.5 * (d[i] + d[j]);
+        if (!found || candidate > best) best = candidate;
+        found = true;
+    }
+    return found ? best : NA_REAL;
+}
+
+double select_walsh_avg_sorted(const std::vector<double>& d, size_t rank) {
+    const size_t m = d.size();
+    const size_t total = m * (m + 1) / 2;
+    if (total == 0 || rank >= total) return NA_REAL;
+
+    double lo = d.front();
+    double hi = d.back();
+    if (rank == 0) return lo;
+    if (rank + 1 == total) return hi;
+
+    const size_t target_count = rank + 1;
+    for (int iter = 0; iter < 96; ++iter) {
+        const double mid = lo + 0.5 * (hi - lo);
+        if (mid == lo || mid == hi) break;
+        if (count_walsh_avgs_leq(d, mid) >= target_count) {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+
+    const double snapped = max_walsh_avg_leq(d, hi);
+    return std::isfinite(snapped) ? snapped : hi;
+}
+
+double hl_from_groups(std::vector<double> y_t, std::vector<double> y_c) {
     if (y_t.empty() || y_c.empty()) {
         return NA_REAL;
     }
 
     const size_t n_t = y_t.size();
     const size_t n_c = y_c.size();
-    std::vector<double> diffs(n_t * n_c);
-    for (size_t i = 0; i < n_t; ++i) {
-        double* p = diffs.data() + i * n_c;
-        const double yt = y_t[i];
-        for (size_t j = 0; j < n_c; ++j) p[j] = yt - y_c[j];
+    const size_t total = n_t * n_c;
+    if (total <= kExactMedianMaterializeLimit) {
+        std::vector<double> diffs(total);
+        for (size_t i = 0; i < n_t; ++i) {
+            double* p = diffs.data() + i * n_c;
+            const double yt = y_t[i];
+            for (size_t j = 0; j < n_c; ++j) p[j] = yt - y_c[j];
+        }
+        return median_in_place(diffs);
     }
 
-    return median_in_place(diffs);
+    std::sort(y_t.begin(), y_t.end());
+    std::sort(y_c.begin(), y_c.end());
+    const size_t mid = total / 2;
+    const double upper = select_pairwise_diff_sorted(y_t, y_c, mid);
+    if (total % 2 == 1) return upper;
+    const double lower = select_pairwise_diff_sorted(y_t, y_c, mid - 1);
+    return 0.5 * (lower + upper);
 }
 
-double hl_signed_rank(const std::vector<double>& pair_diffs) {
+double hl_signed_rank(std::vector<double> pair_diffs) {
     if (pair_diffs.empty()) {
         return NA_REAL;
     }
 
     const size_t m = pair_diffs.size();
-    std::vector<double> walsh_avgs(m * (m + 1) / 2);
-    size_t k = 0;
-    for (size_t i = 0; i < m; ++i) {
-        const double half_di = 0.5 * pair_diffs[i];
-        double* p = walsh_avgs.data() + k;
-        const size_t len = m - i;
-        for (size_t j = 0; j < len; ++j) p[j] = half_di + 0.5 * pair_diffs[i + j];
-        k += len;
+    const size_t total = m * (m + 1) / 2;
+    if (total <= kExactMedianMaterializeLimit) {
+        std::vector<double> walsh_avgs(total);
+        size_t k = 0;
+        for (size_t i = 0; i < m; ++i) {
+            const double half_di = 0.5 * pair_diffs[i];
+            double* p = walsh_avgs.data() + k;
+            const size_t len = m - i;
+            for (size_t j = 0; j < len; ++j) p[j] = half_di + 0.5 * pair_diffs[i + j];
+            k += len;
+        }
+
+        return median_in_place(walsh_avgs);
     }
 
-    return median_in_place(walsh_avgs);
+    std::sort(pair_diffs.begin(), pair_diffs.end());
+    const size_t mid = total / 2;
+    const double upper = select_walsh_avg_sorted(pair_diffs, mid);
+    if (total % 2 == 1) return upper;
+    const double lower = select_walsh_avg_sorted(pair_diffs, mid - 1);
+    return 0.5 * (lower + upper);
 }
 
 double estimate_hl_ssq_rank_sum(const std::vector<double>& y_t, const std::vector<double>& y_c) {
@@ -152,7 +288,7 @@ double wilcox_hl_signed_rank_point_estimate_cpp(SEXP dy_sexp) {
     for (int i = 0; i < dy.size(); ++i) {
         if (std::isfinite(dy_ptr[i])) pair_diffs.push_back(dy_ptr[i]);
     }
-    return hl_signed_rank(pair_diffs);
+    return hl_signed_rank(std::move(pair_diffs));
 }
 
 // [[Rcpp::export]]
@@ -176,7 +312,7 @@ double wilcox_hl_point_estimate_cpp(SEXP w_sexp, SEXP y_sexp) {
         else if (w_ptr[i] == 0) y_c.push_back(y_ptr[i]);
     }
 
-    return hl_from_groups(y_t, y_c);
+    return hl_from_groups(std::move(y_t), std::move(y_c));
 }
 
 // [[Rcpp::export]]
@@ -230,7 +366,7 @@ NumericVector compute_wilcox_hl_bootstrap_parallel_cpp(
             else if (w_ptr[idx] == 0) y_c.push_back(y_val);
         }
 
-        res_ptr[b] = hl_from_groups(y_t, y_c);
+        res_ptr[b] = hl_from_groups(std::move(y_t), std::move(y_c));
     }
 
     return wrap(results_vec);
@@ -297,7 +433,7 @@ NumericVector compute_wilcox_hl_distr_parallel_cpp(
             }
         }
 
-        res_ptr[b] = hl_from_groups(y_t, y_c);
+        res_ptr[b] = hl_from_groups(std::move(y_t), std::move(y_c));
     }
 
     return wrap(results_vec);

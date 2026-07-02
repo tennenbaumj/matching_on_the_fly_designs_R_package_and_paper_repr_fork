@@ -1,16 +1,62 @@
 // [[Rcpp::depends(RcppEigen)]]
 #include <RcppEigen.h>
 #include <algorithm>
-#include <map>
+#include <cmath>
 #include <vector>
 
 using namespace Rcpp;
 
 namespace {
 
-double log_choose_int(int n, int k) {
+struct LogChooseTable {
+  std::vector<int> offsets;
+  std::vector<double> values;
+};
+
+std::vector<double> build_log_factorials(int n) {
+  std::vector<double> log_factorial(static_cast<std::size_t>(n + 1), 0.0);
+  for (int i = 2; i <= n; ++i) {
+    log_factorial[static_cast<std::size_t>(i)] =
+      log_factorial[static_cast<std::size_t>(i - 1)] + std::log(static_cast<double>(i));
+  }
+  return log_factorial;
+}
+
+inline double log_choose_from_factorials(const std::vector<double>& log_factorial,
+                                         int n,
+                                         int k) {
   if (k < 0 || k > n) return R_NegInf;
-  return R::lchoose(static_cast<double>(n), static_cast<double>(k));
+  return log_factorial[static_cast<std::size_t>(n)] -
+    log_factorial[static_cast<std::size_t>(k)] -
+    log_factorial[static_cast<std::size_t>(n - k)];
+}
+
+LogChooseTable build_log_choose_table(const std::vector<int>& total_counts,
+                                      const std::vector<double>& log_factorial) {
+  const int K = static_cast<int>(total_counts.size());
+  LogChooseTable table;
+  table.offsets.resize(static_cast<std::size_t>(K + 1), 0);
+  int total_size = 0;
+  for (int k = 0; k < K; ++k) {
+    table.offsets[static_cast<std::size_t>(k)] = total_size;
+    total_size += total_counts[static_cast<std::size_t>(k)] + 1;
+  }
+  table.offsets[static_cast<std::size_t>(K)] = total_size;
+  table.values.resize(static_cast<std::size_t>(total_size));
+
+  for (int k = 0; k < K; ++k) {
+    const int nk = total_counts[static_cast<std::size_t>(k)];
+    const int offset = table.offsets[static_cast<std::size_t>(k)];
+    for (int tk = 0; tk <= nk; ++tk) {
+      table.values[static_cast<std::size_t>(offset + tk)] =
+        log_choose_from_factorials(log_factorial, nk, tk);
+    }
+  }
+  return table;
+}
+
+inline double log_choose_from_table(const LogChooseTable& table, int k, int t) {
+  return table.values[static_cast<std::size_t>(table.offsets[static_cast<std::size_t>(k)] + t)];
 }
 
 int compute_jt_statistic2_from_counts(const std::vector<int>& treat_counts,
@@ -34,32 +80,49 @@ int compute_jt_statistic2_from_counts(const std::vector<int>& treat_counts,
 void recurse_jt_distribution(int idx,
                              int remaining_treated,
                              const std::vector<int>& total_counts,
-                             std::vector<int>& treat_counts,
+                             const LogChooseTable& log_choose_table,
+                             int treated_seen,
+                             int total_seen,
+                             int stat2_so_far,
                              double log_weight,
-                             std::map<int, double>& stat_prob,
+                             std::vector<double>& stat_prob,
+                             std::vector<unsigned char>& stat_active,
+                             std::vector<int>& active_stats,
                              double log_norm) {
   const int K = static_cast<int>(total_counts.size());
+  const int nk = total_counts[static_cast<std::size_t>(idx)];
+  const int lower_controls = total_seen - treated_seen;
+
   if (idx == K - 1) {
-    const int nk = total_counts[static_cast<std::size_t>(idx)];
     if (remaining_treated < 0 || remaining_treated > nk) return;
-    treat_counts[static_cast<std::size_t>(idx)] = remaining_treated;
-    const double lw = log_weight + log_choose_int(nk, remaining_treated) - log_norm;
-    const int stat2 = compute_jt_statistic2_from_counts(treat_counts, total_counts);
-    stat_prob[stat2] += std::exp(lw);
+    const int stat2 = stat2_so_far +
+      remaining_treated * (2 * lower_controls + (nk - remaining_treated));
+    const double lw = log_weight + log_choose_from_table(log_choose_table, idx, remaining_treated) - log_norm;
+    double& prob = stat_prob[static_cast<std::size_t>(stat2)];
+    if (!stat_active[static_cast<std::size_t>(stat2)]) {
+      stat_active[static_cast<std::size_t>(stat2)] = 1U;
+      active_stats.push_back(stat2);
+    }
+    prob += std::exp(lw);
     return;
   }
 
-  const int nk = total_counts[static_cast<std::size_t>(idx)];
   const int max_take = std::min(nk, remaining_treated);
   for (int tk = 0; tk <= max_take; ++tk) {
-    treat_counts[static_cast<std::size_t>(idx)] = tk;
+    const int stat2_next = stat2_so_far +
+      tk * (2 * lower_controls + (nk - tk));
     recurse_jt_distribution(
       idx + 1,
       remaining_treated - tk,
       total_counts,
-      treat_counts,
-      log_weight + log_choose_int(nk, tk),
+      log_choose_table,
+      treated_seen + tk,
+      total_seen + nk,
+      stat2_next,
+      log_weight + log_choose_from_table(log_choose_table, idx, tk),
       stat_prob,
+      stat_active,
+      active_stats,
       log_norm
     );
   }
@@ -116,14 +179,31 @@ List exact_jonckheere_terpstra_pval_cpp(SEXP y_sexp,
   }
 
   const int stat2_obs = compute_jt_statistic2_from_counts(treat_counts_obs, total_counts);
-  const double log_norm = log_choose_int(n, n_treat);
-  std::vector<int> treat_counts(static_cast<std::size_t>(K), 0);
-  std::map<int, double> stat_prob;
-  recurse_jt_distribution(0, n_treat, total_counts, treat_counts, 0.0, stat_prob, log_norm);
+  const std::vector<double> log_factorial = build_log_factorials(n);
+  const double log_norm = log_choose_from_factorials(log_factorial, n, n_treat);
+  const LogChooseTable log_choose_table = build_log_choose_table(total_counts, log_factorial);
+  const int max_stat2 = 2 * n_treat * n_control;
+  thread_local std::vector<double> stat_prob;
+  thread_local std::vector<unsigned char> stat_active;
+  thread_local std::vector<int> active_stats;
+  for (int stat2 : active_stats) {
+    stat_prob[static_cast<std::size_t>(stat2)] = 0.0;
+    stat_active[static_cast<std::size_t>(stat2)] = 0U;
+  }
+  active_stats.clear();
+  if (stat_prob.size() < static_cast<std::size_t>(max_stat2 + 1)) {
+    stat_prob.resize(static_cast<std::size_t>(max_stat2 + 1), 0.0);
+  }
+  if (stat_active.size() < static_cast<std::size_t>(max_stat2 + 1)) {
+    stat_active.resize(static_cast<std::size_t>(max_stat2 + 1), 0U);
+  }
+  active_stats.reserve(static_cast<std::size_t>(std::min(max_stat2 + 1, 1024)));
+  recurse_jt_distribution(0, n_treat, total_counts, log_choose_table, 0, 0, 0, 0.0, stat_prob, stat_active, active_stats, log_norm);
 
   double p_lower = 0.0;
   double p_upper = 0.0;
-  for (auto const& [stat2, prob] : stat_prob) {
+  for (int stat2 : active_stats) {
+    const double prob = stat_prob[static_cast<std::size_t>(stat2)];
     if (stat2 <= stat2_obs) p_lower += prob;
     if (stat2 >= stat2_obs) p_upper += prob;
   }

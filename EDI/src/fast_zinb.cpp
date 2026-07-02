@@ -48,13 +48,18 @@ class ZeroInflatedNegBin {
     std::vector<double> m_lgamma_yptheta;   // preallocated; filled per operator() call
     std::vector<double> m_digamma_yptheta;  // preallocated; filled per operator() call
 
+    // Preallocated scratch vectors — avoid heap allocation on every operator() call.
+    // operator() is non-const, so mutating members across calls is safe (matches ZeroAugmentedPoisson).
+    Eigen::VectorXd m_eta_c, m_eta_z, m_w_c, m_w_z;
+
 public:
     ZeroInflatedNegBin(const Eigen::Ref<const Eigen::VectorXd>& y,
                        const Eigen::Ref<const Eigen::MatrixXd>& Xc,
                        const Eigen::Ref<const Eigen::MatrixXd>& Xz)
         : m_y(y), m_Xc(Xc), m_Xz(Xz),
           m_n(y.size()), m_pc(Xc.cols()), m_pz(Xz.cols()),
-          m_y_slot(y.size(), -1)
+          m_y_slot(y.size(), -1),
+          m_eta_c(m_n), m_eta_z(m_n), m_w_c(m_n), m_w_z(m_n)
     {
         std::unordered_map<int, int> seen;
         for (int i = 0; i < m_n; ++i) {
@@ -80,8 +85,8 @@ public:
         const double log_theta = par[m_pc + m_pz];
         const double theta     = std::exp(std::min(log_theta, 700.0));
 
-        const Eigen::VectorXd eta_c = m_Xc * par.head(m_pc);
-        const Eigen::VectorXd eta_z = m_Xz * par.segment(m_pc, m_pz);
+        m_eta_c.noalias() = m_Xc * par.head(m_pc);
+        m_eta_z.noalias() = m_Xz * par.segment(m_pc, m_pz);
 
         // Hoist theta-only special functions out of the observation loop.
         const double digamma_theta = fast_digamma(theta);
@@ -97,13 +102,13 @@ public:
 
         double nll = 0.0;
         double d_log_theta = 0.0;
-        Eigen::VectorXd w_c = Eigen::VectorXd::Zero(m_n);
-        Eigen::VectorXd w_z = Eigen::VectorXd::Zero(m_n);
+        m_w_c.setZero();
+        m_w_z.setZero();
 
         for (int i = 0; i < m_n; ++i) {
             const double yi  = m_y[i];
-            const double ec  = eta_c[i];
-            const double ez  = eta_z[i];
+            const double ec  = m_eta_c[i];
+            const double ez  = m_eta_z[i];
             const double p   = sigmoid_zinb(ez);
             const double mu  = std::exp(ec);
             const double denom     = theta + mu;
@@ -116,10 +121,10 @@ public:
                 nll -= std::log(den);
 
                 const double inv_den = 1.0 / den;
-                w_z[i] = -(p * (1.0 - p) * (1.0 - phi)) * inv_den;
+                m_w_z[i] = -(p * (1.0 - p) * (1.0 - phi)) * inv_den;
 
                 const double d_phi_d_ec = -mu * theta * phi / denom;
-                w_c[i] = -((1.0 - p) * d_phi_d_ec) * inv_den;
+                m_w_c[i] = -((1.0 - p) * d_phi_d_ec) * inv_den;
 
                 const double d_phi_d_theta = phi * (log_theta - log_denom + 1.0 - theta / denom);
                 d_log_theta -= (1.0 - p) * d_phi_d_theta * theta * inv_den;
@@ -129,16 +134,16 @@ public:
                      + m_lgamma_yptheta[slot] - lgamma_theta - m_lgamma_y1[slot]
                      + theta * (log_theta - log_denom) + yi * (ec - log_denom);
 
-                w_z[i] = p;
-                w_c[i] = -(yi - mu * (yi + theta) / denom);
+                m_w_z[i] = p;
+                m_w_c[i] = -(yi - mu * (yi + theta) / denom);
 
                 d_log_theta -= (m_digamma_yptheta[slot] - digamma_theta + log_theta - log_denom + 1.0 - (yi + theta) / denom) * theta;
             }
         }
 
         grad.resize(m_pc + m_pz + 1);
-        grad.head(m_pc).noalias()          = m_Xc.transpose() * w_c;
-        grad.segment(m_pc, m_pz).noalias() = m_Xz.transpose() * w_z;
+        grad.head(m_pc).noalias()          = m_Xc.transpose() * m_w_c;
+        grad.segment(m_pc, m_pz).noalias() = m_Xz.transpose() * m_w_z;
         grad[m_pc + m_pz]                  = d_log_theta;
         return nll;
     }

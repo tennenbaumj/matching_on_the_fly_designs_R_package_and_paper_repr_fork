@@ -42,6 +42,37 @@ inline double probit_gen_residual_optimized(double y, double phi, double Phi, do
     }
 }
 
+template<typename RDerived, typename WDerived>
+inline void score_weighted_crossprod_colwise_assign(const Eigen::MatrixXd& X,
+                                                    const Eigen::MatrixBase<RDerived>& residual,
+                                                    const Eigen::MatrixBase<WDerived>& w,
+                                                    Eigen::VectorXd& score,
+                                                    Eigen::MatrixXd& out) {
+    const int n = X.rows();
+    const int p = X.cols();
+    score.setZero();
+    out.setZero();
+    for (int j = 0; j < p; ++j) {
+        const double* xj = X.col(j).data();
+        for (int k = j; k < p; ++k) {
+            const double* xk = X.col(k).data();
+            double acc = 0.0;
+            if (k == j) {
+                double score_acc = 0.0;
+                for (int i = 0; i < n; ++i) {
+                    acc += xj[i] * w[i] * xj[i];
+                    score_acc += xj[i] * residual[i];
+                }
+                score[j] = score_acc;
+            } else {
+                for (int i = 0; i < n; ++i) acc += xj[i] * w[i] * xk[i];
+            }
+            out(j, k) = acc;
+            if (k != j) out(k, j) = acc;
+        }
+    }
+}
+
 class ProbitLbfgsObjective : public Numer::MFuncGrad {
 private:
     const Eigen::Ref<const RowMajorMatrixXd> m_X;
@@ -167,26 +198,10 @@ ModelResult fast_probit_regression_internal(
             }
 
             const bool use_warm_xtwx = (iter == 0) && warm_start_fisher_info.isNotNull();
-            score_free.setZero();
             if (!use_warm_xtwx) {
-                XtWX.setZero();
-                for (int i = 0; i < n; ++i) {
-                    const double ri = gen_res[i];
-                    const double wi = w[i];
-                    for (int j = 0; j < p_free; ++j) {
-                        const double xij   = X_free(i, j);
-                        score_free[j]     += xij * ri;
-                        const double xij_w = xij * wi;
-                        for (int k = j; k < p_free; ++k) XtWX(j, k) += xij_w * X_free(i, k);
-                    }
-                }
-                for (int j = 1; j < p_free; ++j)
-                    for (int k = 0; k < j; ++k) XtWX(j, k) = XtWX(k, j);
+                score_weighted_crossprod_colwise_assign(X_free, gen_res, w, score_free, XtWX);
             } else {
-                for (int i = 0; i < n; ++i) {
-                    const double ri = gen_res[i];
-                    for (int j = 0; j < p_free; ++j) score_free[j] += X_free(i, j) * ri;
-                }
+                score_free.noalias() = X_free.transpose() * gen_res;
                 Eigen::MatrixXd info_full = as<Eigen::MatrixXd>(Rcpp::NumericMatrix(warm_start_fisher_info));
                 XtWX = subset_matrix(info_full, fixed_spec.free_idx, fixed_spec.free_idx);
             }
