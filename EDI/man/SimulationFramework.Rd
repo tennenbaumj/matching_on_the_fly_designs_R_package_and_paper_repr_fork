@@ -119,7 +119,7 @@ Create a new \code{SimulationFramework}.
   prob_censoring = 0.25,
   custom_replication_data_generator = NULL,
   custom_apply_treatment_and_noise = NULL,
-  custom_true_estimand = NULL,
+  make_estimand_fn = NULL,
   dgp_params = list(),
   custom_dgp = NULL,
   verbose = TRUE,
@@ -329,8 +329,8 @@ replication data. When supplied, it is called as
 \code{fn(state, rep)} and must return a list containing at least
 \code{X} and \code{y_linear_model}. Any additional fields in the
 returned list (e.g. latent frailty draws) are passed forward as
-\code{rep_data} to \code{custom_apply_treatment_and_noise} and
-\code{custom_true_estimand}.}
+\code{rep_data} to \code{custom_apply_treatment_and_noise} and the
+function built by \code{make_estimand_fn}.}
 
 \item{\code{custom_apply_treatment_and_noise}}{Optional function for custom
 response generation. Signature: \code{fn(y_linear_model, w, rep_data, state)}.
@@ -341,15 +341,20 @@ path). Must return a list with components \code{y} and \code{dead}.
 Three-argument functions \code{fn(y_linear_model, w, state)} are still
 accepted for backwards compatibility.}
 
-\item{\code{custom_true_estimand}}{Optional function for a custom true estimand.
-Signature: \code{fn(y_linear_model, X, w, rep_data, state)}.
-Called once per design class per replication \emph{after} the design
+\item{\code{make_estimand_fn}}{Optional factory function for a custom true
+estimand. Signature: \code{fn(beta_T)}, returning a function with
+signature \code{fn(y_linear_model, X, w, rep_data, state)}. Called once
+per grid cell with that cell's \code{beta_T} so the returned estimand
+function is always tied to the right effect size (important when
+\code{betaT} is a vector of multiple values). The returned function is
+invoked once per design class per replication \emph{after} the design
 completes, so \code{w} (in \{-1, +1\} format) and \code{X} reflect the
 realized assignment. Must return a numeric scalar. When supplied, its
 return value is used as the ground truth for \emph{all} inference classes
 (overriding the \code{is_mean_diff} gate). Three-argument functions
 \code{fn(y_linear_model, state)} are still accepted for backwards
-compatibility (they will not receive \code{X} or \code{w}).}
+compatibility (they will not receive \code{X} or \code{w}). Default
+\code{NULL} uses \code{beta_T} directly as the ground truth.}
 
 \item{\code{dgp_params}}{Optional named list of DGP configuration values (e.g.
 \code{list(frailty_dist = "gamma", censoring_rate = 0.8)}). Injected into

@@ -405,8 +405,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     #'   \code{fn(state, rep)} and must return a list containing at least
     #'   \code{X} and \code{y_linear_model}. Any additional fields in the
     #'   returned list (e.g. latent frailty draws) are passed forward as
-    #'   \code{rep_data} to \code{custom_apply_treatment_and_noise} and
-    #'   \code{custom_true_estimand}.
+    #'   \code{rep_data} to \code{custom_apply_treatment_and_noise} and the
+    #'   function built by \code{make_estimand_fn}.
     #'
     #' @param custom_apply_treatment_and_noise Optional function for custom
     #'   response generation. Signature: \code{fn(y_linear_model, w, rep_data, state)}.
@@ -417,15 +417,20 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     #'   Three-argument functions \code{fn(y_linear_model, w, state)} are still
     #'   accepted for backwards compatibility.
     #'
-    #' @param custom_true_estimand Optional function for a custom true estimand.
-    #'   Signature: \code{fn(y_linear_model, X, w, rep_data, state)}.
-    #'   Called once per design class per replication \emph{after} the design
+    #' @param make_estimand_fn Optional factory function for a custom true
+    #'   estimand. Signature: \code{fn(beta_T)}, returning a function with
+    #'   signature \code{fn(y_linear_model, X, w, rep_data, state)}. Called once
+    #'   per grid cell with that cell's \code{beta_T} so the returned estimand
+    #'   function is always tied to the right effect size (important when
+    #'   \code{betaT} is a vector of multiple values). The returned function is
+    #'   invoked once per design class per replication \emph{after} the design
     #'   completes, so \code{w} (in \{-1, +1\} format) and \code{X} reflect the
     #'   realized assignment. Must return a numeric scalar. When supplied, its
     #'   return value is used as the ground truth for \emph{all} inference classes
     #'   (overriding the \code{is_mean_diff} gate). Three-argument functions
     #'   \code{fn(y_linear_model, state)} are still accepted for backwards
-    #'   compatibility (they will not receive \code{X} or \code{w}).
+    #'   compatibility (they will not receive \code{X} or \code{w}). Default
+    #'   \code{NULL} uses \code{beta_T} directly as the ground truth.
     #'
     #' @param dgp_params Optional named list of DGP configuration values (e.g.
     #'   \code{list(frailty_dist = "gamma", censoring_rate = 0.8)}). Injected into
@@ -576,7 +581,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       prob_censoring        = 0.25,
       custom_replication_data_generator = NULL,
       custom_apply_treatment_and_noise = NULL,
-      custom_true_estimand = NULL,
+      make_estimand_fn = NULL,
       dgp_params = list(),
       custom_dgp = NULL,
       verbose                    = TRUE,
@@ -670,7 +675,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       private$prob_censoring       = prob_censoring
       private$custom_replication_data_generator = custom_replication_data_generator
       private$custom_apply_treatment_and_noise = custom_apply_treatment_and_noise
-      private$custom_true_estimand = custom_true_estimand
+      private$make_estimand_fn = make_estimand_fn
       if (!is.null(custom_dgp)) {
         if (!is.null(custom_replication_data_generator) || !is.null(custom_apply_treatment_and_noise))
           stop("custom_dgp cannot be combined with custom_replication_data_generator or custom_apply_treatment_and_noise")
@@ -827,7 +832,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         if (file.exists(elapsed_f)) unlink(elapsed_f)
         private$prior_elapsed_secs = 0
       } else {
-        prior = tryCatch(readRDS(elapsed_f), error = function(e) 0)
+        prior = suppressWarnings(tryCatch(readRDS(elapsed_f), error = function(e) 0))
         private$prior_elapsed_secs = if (is.numeric(prior) && length(prior) >= 1L && is.finite(prior[[1L]])) prior[[1L]] else 0
       }
       
@@ -1113,7 +1118,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
           X_mat = private$X_mat, cov_draw_method = private$cov_draw_method, cov_draw_method_args = private$cov_draw_method_args,
           custom_replication_data_generator = private$custom_replication_data_generator,
           custom_apply_treatment_and_noise = private$custom_apply_treatment_and_noise,
-          custom_true_estimand = private$custom_true_estimand,
+          make_estimand_fn = private$make_estimand_fn,
           dgp_params = private$dgp_params,
           custom_dgp = private$custom_dgp,
           design_classes = private$design_classes, design_labels = private$design_labels, design_params = private$design_params,
@@ -1816,7 +1821,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     prob_censoring       = NULL,
     custom_replication_data_generator = NULL,
     custom_apply_treatment_and_noise = NULL,
-    custom_true_estimand = NULL,
+    make_estimand_fn = NULL,
     dgp_params = NULL,
     custom_dgp = NULL,
     verbose          = NULL,
@@ -2198,7 +2203,10 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       )
     },
     .results_output_path = function() {
-      if (grepl("^/", private$results_filename)) {
+      # Absolute path forms: Unix ('/...'), Windows drive letter ('C:/...',
+      # 'C:\...'), or Windows UNC ('\\server\share\...').
+      is_absolute = grepl("^(/|[A-Za-z]:[/\\\\]|\\\\\\\\)", private$results_filename)
+      if (is_absolute) {
         private$results_filename
       } else {
         file.path(getwd(), private$results_filename)
@@ -2538,7 +2546,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     .abort_from_error_record = function(err) {
       msg = private$.format_error_record(err)
       tryCatch(
-        writeLines(c(as.character(Sys.time()), msg, ""), "/tmp/edi_sim_crash.log"),
+        writeLines(c(as.character(Sys.time()), msg, ""), file.path(tempdir(), "edi_sim_crash.log")),
         error = function(e) invisible(NULL)
       )
       stop(msg, call. = FALSE)
@@ -2584,6 +2592,10 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     .build_valid_combos_for_current_cell = function(rep_data) {
       X = rep_data$X
       y_linear_model = rep_data$y_linear_model
+      sim_mode = compute_simulation_mode(
+        private$custom_dgp, private$custom_replication_data_generator,
+        private$custom_apply_treatment_and_noise, private$make_estimand_fn
+      )
       combos = list()
       for (di in seq_along(private$design_classes)) {
         design_gen   = private$design_classes[[di]]
@@ -2619,7 +2631,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
               betaT = private$current_betaT,
               design = design_name,
               inference = inf_name,
-              inference_type = it
+              inference_type = it,
+              simulation_mode = sim_mode
             )
           }
         }
@@ -2762,7 +2775,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       clamp = function(x, lo, hi) {
         pmin(hi, pmax(lo, x))
       }
-      # Default per-rep estimand (custom_true_estimand override applied per-design inside the loop)
+      # Default per-rep estimand (make_estimand_fn override applied per-design inside the loop)
       true_mean_diff_ate = switch(state$response_type,
         continuous = state$betaT,
         incidence = {
@@ -2894,10 +2907,10 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         if (is.list(des_obj) && !is.null(des_obj$fatal_error)) return(des_obj)
 
         if (is.null(des_obj)) next
-        # Per-design true estimand: custom_true_estimand (Mode 2) or custom_dgp$true_estimand (Mode 3)
+        # Per-design true estimand: make_estimand_fn (Mode 2) or custom_dgp$true_estimand (Mode 3)
         # These override the pre-rep default and apply to ALL inference class types.
-        if (!is.null(state$custom_true_estimand)) {
-          fn_cte = state$custom_true_estimand
+        if (!is.null(state$make_estimand_fn)) {
+          fn_cte = state$make_estimand_fn(state$betaT)
           fn_cte_args = names(formals(fn_cte))
           true_mean_diff_ate = as.numeric(
             if ("X" %in% fn_cte_args || "w" %in% fn_cte_args || "rep_data" %in% fn_cte_args || "..." %in% fn_cte_args) {
@@ -2953,7 +2966,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
                          is(inf_obj, "InferenceIncidKKNewcombeRiskDiff") ||
                          is(inf_obj, "InferenceIncidKKGCompRiskDiff") ||
                          is(inf_obj, "InferencePropGCompMeanDiff")
-          te = if (!is.null(state$custom_true_estimand) || !is.null(state$custom_dgp)) {
+          te = if (!is.null(state$make_estimand_fn) || !is.null(state$custom_dgp)) {
             true_mean_diff_ate  # custom estimand always wins regardless of inference class type
           } else if (is_mean_diff) {
             true_mean_diff_ate
@@ -3026,16 +3039,10 @@ SimulationFramework = R6::R6Class("SimulationFramework",
           local_record = function(type, ci, pval) {
             ci2 = if (length(ci) >= 2L) as.numeric(ci[1:2]) else c(NA_real_, NA_real_)
             if (all(is.finite(ci2)) && ci2[1L] > ci2[2L]) ci2 = rev(ci2)
-            sim_mode = if (!is.null(state$custom_dgp)) {
-              "observational"
-            } else {
-              parts = c(
-                if (!is.null(state$custom_replication_data_generator)) "crdg",
-                if (!is.null(state$custom_apply_treatment_and_noise))  "catn",
-                if (!is.null(state$custom_true_estimand))              "cte"
-              )
-              if (length(parts) == 0L) "standard" else paste(parts, collapse = "+")
-            }
+            sim_mode = compute_simulation_mode(
+              state$custom_dgp, state$custom_replication_data_generator,
+              state$custom_apply_treatment_and_noise, state$make_estimand_fn
+            )
             results[[length(results) + 1L]] <<- list(
               response_type = state$response_type,
               rep           = rep_i,
@@ -3703,8 +3710,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       data
     },
     compute_true_mean_diff_ate = function(y_linear_model, X = NULL, w = NULL, rep_data = NULL) {
-      if (!is.null(private$custom_true_estimand)) {
-        fn  = private$custom_true_estimand
+      if (!is.null(private$make_estimand_fn)) {
+        fn  = private$make_estimand_fn(private$current_betaT)
         fna = names(formals(fn))
         return(as.numeric(
           if ("X" %in% fna || "w" %in% fna || "rep_data" %in% fna || "..." %in% fna) {

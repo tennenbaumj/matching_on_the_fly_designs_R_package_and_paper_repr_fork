@@ -70,6 +70,7 @@ Collate:
     'design_fixed_greedy.R'
     'design_fixed_ibcrd.R'
     'design_fixed_matching_greedy_pair_switching.R'
+    'design_fixed_naive_match.R'
     'design_fixed_optimal_blocks.R'
     'design_fixed_rerandomization.R'
     'design_matching_abstract.R'

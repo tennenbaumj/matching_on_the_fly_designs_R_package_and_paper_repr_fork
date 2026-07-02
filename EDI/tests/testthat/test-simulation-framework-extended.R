@@ -174,8 +174,10 @@ test_that("SimulationFramework supports custom replication and response hooks", 
 		)
 	}
 
-	custom_te <- function(y_linear_model, state) {
-		999
+	make_te <- function(beta_T) {
+		function(y_linear_model, state) {
+			999
+		}
 	}
 
 	sim <- SimulationFramework$new(
@@ -189,7 +191,7 @@ test_that("SimulationFramework supports custom replication and response hooks", 
 		betaT = 2,
 		custom_replication_data_generator = custom_data,
 		custom_apply_treatment_and_noise = custom_apply,
-		custom_true_estimand = custom_te,
+		make_estimand_fn = make_te,
 		results_filename = tempfile(fileext = ".csv"),
 		continue_from_last_result_row = FALSE,
 		verbose = FALSE
