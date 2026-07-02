@@ -78,7 +78,7 @@ compute_binary_match_structure = function(X, mahal_match = FALSE) {
 # report's reference-combo grid (must agree on the same value to join on it).
 compute_simulation_mode = function(custom_dgp, custom_replication_data_generator, custom_apply_treatment_and_noise, make_estimand_fn) {
 	if (!is.null(custom_dgp)) {
-		return("observational")
+		return("custom_dgp")
 	}
 	parts = c(
 		if (!is.null(custom_replication_data_generator)) "crdg",
