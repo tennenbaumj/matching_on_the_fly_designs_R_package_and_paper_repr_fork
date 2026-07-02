@@ -39,6 +39,8 @@ endif
 EDI_DEBUG_SYMBOLS ?= 0
 ifeq ($(EDI_DEBUG_SYMBOLS),1)
 override CXXFLAGS += -g1 -fno-omit-frame-pointer
+else
+override CXXFLAGS += -g0
 endif
 
 EDI_NATIVE_LTO ?= 0

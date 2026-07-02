@@ -406,3 +406,4 @@ warm_starts_*.csv
 warm_starts*.log
 scratch/*
 simulations/*response_values/*
+sgconfig.yml
