@@ -73,6 +73,21 @@ compute_binary_match_structure = function(X, mahal_match = FALSE) {
 	list(indicies_pairs = indicies_pairs, indices_pairs = indicies_pairs, n = n, p = p)
 }
 
+# Classifies which custom-DGP hooks (if any) are active for a run/cell.
+# Shared by the SimulationFramework worker (tags each result row) and the
+# report's reference-combo grid (must agree on the same value to join on it).
+compute_simulation_mode = function(custom_dgp, custom_replication_data_generator, custom_apply_treatment_and_noise, make_estimand_fn) {
+	if (!is.null(custom_dgp)) {
+		return("custom_dgp")
+	}
+	parts = c(
+		if (!is.null(custom_replication_data_generator)) "crdg",
+		if (!is.null(custom_apply_treatment_and_noise))  "catn",
+		if (!is.null(make_estimand_fn))                  "cte"
+	)
+	if (length(parts) == 0L) "standard" else paste(parts, collapse = "+")
+}
+
 assert_optimal_blocks_libraries_installed = function(caller) {
 	required_pkgs = c("ompr", "ompr.roi", "ROI.plugin.glpk", "randomizr")
 	missing_pkgs = required_pkgs[!vapply(required_pkgs, check_package_installed, logical(1))]
