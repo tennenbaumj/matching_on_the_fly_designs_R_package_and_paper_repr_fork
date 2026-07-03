@@ -112,6 +112,29 @@ inline double loglik_from_eta(const Eigen::VectorXd& eta,
   return ll;
 }
 
+// Weighted version of loglik_from_eta for bootstrap/IPW paths.
+inline double weighted_loglik_from_eta(const Eigen::VectorXd& eta,
+                                       const Eigen::Ref<const Eigen::VectorXd>& y,
+                                       const Eigen::Ref<const Eigen::VectorXd>& obs_weights,
+                                       BinomialConstrainedLink link_type) {
+  const int n = (int)eta.size();
+  double ll = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double wi = obs_weights[i];
+    if (!R_finite(wi) || wi < 0.0) return R_NegInf;
+
+    const double ei = eta[i];
+    if (link_type == BinomialConstrainedLink::kLog) {
+      if (ei >= kMaxEtaLog) return R_NegInf;
+      ll += wi * (y[i] * ei + (1.0 - y[i]) * std::log1p(-std::exp(ei)));
+    } else {
+      if (ei <= kMinMu || ei >= kMaxMu) return R_NegInf;
+      ll += wi * (y[i] * std::log(ei) + (1.0 - y[i]) * std::log1p(-ei));
+    }
+  }
+  return ll;
+}
+
 List fit_constrained_binomial_cpp_impl(const Eigen::Ref<const Eigen::MatrixXd>& X,
                                        const Eigen::Ref<const Eigen::VectorXd>& y,
                                        BinomialConstrainedLink link_type,
@@ -328,38 +351,41 @@ List fit_constrained_binomial_weighted_cpp_impl(const Eigen::Ref<const Eigen::Ma
   bool converged = false;
   Eigen::VectorXd mu = Eigen::VectorXd::Constant(n, y.mean());
   Eigen::VectorXd w = Eigen::VectorXd::Constant(n, 1.0);
+  Eigen::VectorXd z_adj(n);
+  Eigen::VectorXd w_eff(n);
+  Eigen::VectorXd eta_try(n);
+  Eigen::VectorXd warm_weights_vec;
+  const bool has_warm_start_weights = warm_start_weights.isNotNull();
+  if (has_warm_start_weights) {
+    warm_weights_vec = as<Eigen::VectorXd>(warm_start_weights);
+    if (warm_weights_vec.size() != n) stop("warm_start_weights must have length equal to nrow(X)");
+  }
+
+  double ll_curr = weighted_loglik_constrained_binomial(X, y, obs_weights, beta, link_type);
 
   int iterations = 0;
   for (int iter = 0; iter < maxit; ++iter) {
     iterations = iter + 1;
-    Eigen::VectorXd eta = eta_fixed + X_free * beta_free;
-    if (link_type == BinomialConstrainedLink::kLog) {
-      eta = eta.array().min(kMaxEtaLog).matrix();
-      mu = eta.array().exp().matrix();
-      if (iter == 0 && warm_start_weights.isNotNull()) {
-        Eigen::VectorXd ww = as<Eigen::VectorXd>(warm_start_weights);
-        if (ww.size() != n) stop("warm_start_weights must have length equal to nrow(X)");
-        w = ww;
+    const Eigen::VectorXd eta = eta_fixed + X_free * beta_free;
+    const bool use_warm_weights = (iter == 0 && has_warm_start_weights);
+    for (int i = 0; i < n; ++i) {
+      double ei = eta[i];
+      if (link_type == BinomialConstrainedLink::kLog) {
+        if (ei > kMaxEtaLog) ei = kMaxEtaLog;
+        double mui = std::exp(ei);
+        if (mui < kEps) mui = kEps;
+        mu[i] = mui;
+        w[i] = use_warm_weights ? warm_weights_vec[i] : std::max(mui / std::max(1.0 - mui, kEps), kEps);
+        z_adj[i] = ei + (y[i] - mui) / mui - eta_fixed[i];
       } else {
-        w = (mu.array() / (1.0 - mu.array()).max(kEps)).max(kEps).matrix();
+        if (ei < kMinMu) ei = kMinMu;
+        if (ei > kMaxMu) ei = kMaxMu;
+        mu[i] = ei;
+        w[i] = use_warm_weights ? warm_weights_vec[i] : 1.0 / std::max(ei * (1.0 - ei), kEps);
+        z_adj[i] = y[i] - eta_fixed[i];
       }
-    } else {
-      eta = eta.array().max(kMinMu).min(kMaxMu).matrix();
-      mu = eta;
-      if (iter == 0 && warm_start_weights.isNotNull()) {
-        Eigen::VectorXd ww = as<Eigen::VectorXd>(warm_start_weights);
-        if (ww.size() != n) stop("warm_start_weights must have length equal to nrow(X)");
-        w = ww;
-      } else {
-        w = (1.0 / (mu.array() * (1.0 - mu.array())).max(kEps)).max(kEps).matrix();
-      }
+      w_eff[i] = obs_weights[i] * w[i];
     }
-
-    Eigen::VectorXd z = (link_type == BinomialConstrainedLink::kLog) ?
-      (eta + (y - mu).cwiseQuotient(mu.array().max(kEps).matrix())).eval() :
-      y.eval();
-    Eigen::VectorXd z_adj = z - eta_fixed;
-    Eigen::VectorXd w_eff = obs_weights.cwiseProduct(w);
 
     Eigen::MatrixXd XtWX;
     bool used_warm_fisher_w = false;
@@ -394,16 +420,19 @@ List fit_constrained_binomial_weighted_cpp_impl(const Eigen::Ref<const Eigen::Ma
       return List::create(_["b"] = beta, _["mu_hat"] = mu, _["working_weights"] = w, _["converged"] = false);
     }
 
-    const double ll_curr = weighted_loglik_constrained_binomial(X, y, obs_weights, beta, link_type);
+    const Eigen::VectorXd delta_beta = beta_free_target - beta_free;
+    const Eigen::VectorXd delta_eta = X_free * delta_beta;
     double step = 1.0;
     Eigen::VectorXd beta_new = beta;
     Eigen::VectorXd beta_free_new = beta_free;
     bool accepted = false;
     while (step >= 1e-8) {
-      beta_free_new = beta_free + step * (beta_free_target - beta_free);
-      beta_new = expand_free_params(beta_free_new, beta, fixed_spec);
-      const double ll_new = weighted_loglik_constrained_binomial(X, y, obs_weights, beta_new, link_type);
+      eta_try.noalias() = eta + step * delta_eta;
+      const double ll_new = weighted_loglik_from_eta(eta_try, y, obs_weights, link_type);
       if (R_finite(ll_new) && ll_new >= ll_curr - 1e-10) {
+        beta_free_new = beta_free + step * delta_beta;
+        beta_new = expand_free_params(beta_free_new, beta, fixed_spec);
+        ll_curr = ll_new;
         accepted = true;
         break;
       }
@@ -438,7 +467,7 @@ List fit_constrained_binomial_weighted_cpp_impl(const Eigen::Ref<const Eigen::Ma
     mu = eta;
     w = (1.0 / (mu.array() * (1.0 - mu.array())).max(kEps)).max(kEps).matrix();
   }
-  Eigen::VectorXd w_eff = obs_weights.cwiseProduct(w);
+  w_eff = obs_weights.cwiseProduct(w);
 
   return List::create(
     _["b"] = beta,

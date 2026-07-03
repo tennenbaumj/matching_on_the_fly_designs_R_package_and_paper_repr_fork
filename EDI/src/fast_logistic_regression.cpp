@@ -20,6 +20,37 @@ inline double log1pexp_stable(double x) {
     return (x > 0.0) ? x + std::log1p(std::exp(-x)) : std::log1p(std::exp(x));
 }
 
+template<typename RDerived, typename WDerived>
+inline void score_weighted_crossprod_colwise_assign(const Eigen::MatrixXd& X,
+                                                    const Eigen::MatrixBase<RDerived>& residual,
+                                                    const Eigen::MatrixBase<WDerived>& w,
+                                                    Eigen::VectorXd& score,
+                                                    Eigen::MatrixXd& out) {
+    const int n = X.rows();
+    const int p = X.cols();
+    score.setZero();
+    out.setZero();
+    for (int j = 0; j < p; ++j) {
+        const double* xj = X.col(j).data();
+        for (int k = j; k < p; ++k) {
+            const double* xk = X.col(k).data();
+            double acc = 0.0;
+            if (k == j) {
+                double score_acc = 0.0;
+                for (int i = 0; i < n; ++i) {
+                    acc += xj[i] * w[i] * xj[i];
+                    score_acc += xj[i] * residual[i];
+                }
+                score[j] = score_acc;
+            } else {
+                for (int i = 0; i < n; ++i) acc += xj[i] * w[i] * xk[i];
+            }
+            out(j, k) = acc;
+            if (k != j) out(k, j) = acc;
+        }
+    }
+}
+
 class LogisticLbfgsObjective : public Numer::MFuncGrad {
 private:
     const Eigen::Ref<const Eigen::MatrixXd> m_X;
@@ -126,6 +157,7 @@ ModelResult fast_logistic_regression_internal(const Eigen::Ref<const Eigen::Matr
     Eigen::VectorXd eta(n);
     Eigen::MatrixXd XtWX(p_free, p_free);
     Eigen::VectorXd score_free(p_free);
+    Eigen::VectorXd diff(n);
     bool converged = false;
     int iterations = 0;
 
@@ -146,49 +178,15 @@ ModelResult fast_logistic_regression_internal(const Eigen::Ref<const Eigen::Matr
         }
         if (use_weights) w.array() *= weights.array();
         w.array() = w.array().max(1e-10);
+        diff.array() = y.array() - mu.array();
+        if (use_weights) diff.array() *= weights.array();
 
         const bool use_warm_xtwx = (iter == 0) &&
             (warm_start_fisher_info.isNotNull() || (smart_cold_start && warm_start_beta.isNull()));
-        score_free.setZero();
         if (!use_warm_xtwx) {
-            XtWX.setZero();
-            if (use_weights) {
-                for (int i = 0; i < n; ++i) {
-                    const double ri_w = weights[i] * (y[i] - mu[i]);
-                    const double wi   = w[i];
-                    for (int j = 0; j < p_free; ++j) {
-                        const double xij   = X_free(i, j);
-                        score_free[j]     += xij * ri_w;
-                        const double xij_w = xij * wi;
-                        for (int k = j; k < p_free; ++k) XtWX(j, k) += xij_w * X_free(i, k);
-                    }
-                }
-            } else {
-                for (int i = 0; i < n; ++i) {
-                    const double ri = y[i] - mu[i];
-                    const double wi = w[i];
-                    for (int j = 0; j < p_free; ++j) {
-                        const double xij   = X_free(i, j);
-                        score_free[j]     += xij * ri;
-                        const double xij_w = xij * wi;
-                        for (int k = j; k < p_free; ++k) XtWX(j, k) += xij_w * X_free(i, k);
-                    }
-                }
-            }
-            for (int j = 1; j < p_free; ++j)
-                for (int k = 0; k < j; ++k) XtWX(j, k) = XtWX(k, j);
+            score_weighted_crossprod_colwise_assign(X_free, diff, w, score_free, XtWX);
         } else {
-            if (use_weights) {
-                for (int i = 0; i < n; ++i) {
-                    const double ri_w = weights[i] * (y[i] - mu[i]);
-                    for (int j = 0; j < p_free; ++j) score_free[j] += X_free(i, j) * ri_w;
-                }
-            } else {
-                for (int i = 0; i < n; ++i) {
-                    const double ri = y[i] - mu[i];
-                    for (int j = 0; j < p_free; ++j) score_free[j] += X_free(i, j) * ri;
-                }
-            }
+            score_free.noalias() = X_free.transpose() * diff;
             if (warm_start_fisher_info.isNotNull()) {
                 XtWX = subset_matrix(as<Eigen::MatrixXd>(warm_start_fisher_info), fixed_spec.free_idx, fixed_spec.free_idx);
             } else {

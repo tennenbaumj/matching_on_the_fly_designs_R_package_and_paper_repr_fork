@@ -407,3 +407,5 @@ warm_starts*.log
 scratch/*
 simulations/*response_values/*
 sgconfig.yml
+grammars/*
+rules/*

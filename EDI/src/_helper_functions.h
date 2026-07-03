@@ -1164,4 +1164,43 @@ inline double fast_digamma(double x) {
     return r;
 }
 
+inline double fast_lgamma_stirling(double x) {
+    const double inv = 1.0 / x;
+    const double inv2 = inv * inv;
+    const double series = inv * (
+        1.0 / 12.0 + inv2 * (
+        -1.0 / 360.0 + inv2 * (
+         1.0 / 1260.0 + inv2 * (
+        -1.0 / 1680.0 + inv2 * (
+         1.0 / 1188.0 + inv2 * (
+        -691.0 / 360360.0 + inv2 * (1.0 / 156.0)))))));
+
+    return (x - 0.5) * std::log(x) - x
+        + 0.91893853320467274178032973640562 + series;
+}
+
+inline double fast_lgamma_lanczos(double x) {
+    const double z = x - 1.0;
+    double a = 0.99999999999980993;
+    a += 676.5203681218851 / (z + 1.0);
+    a += -1259.1392167224028 / (z + 2.0);
+    a += 771.32342877765313 / (z + 3.0);
+    a += -176.61502916214059 / (z + 4.0);
+    a += 12.507343278686905 / (z + 5.0);
+    a += -0.13857109526572012 / (z + 6.0);
+    a += 9.9843695780195716e-6 / (z + 7.0);
+    a += 1.5056327351493116e-7 / (z + 8.0);
+    const double t = z + 7.5;
+    return 0.91893853320467274178032973640562 + (z + 0.5) * std::log(t) - t + std::log(a);
+}
+
+// Fast log-gamma for positive arguments. Uses a Lanczos rational approximation
+// for moderate x and Stirling for large x; falls back for nonpositive/nonfinite.
+inline double fast_lgamma(double x) {
+    if (x <= 0.0 || !std::isfinite(x)) return std::lgamma(x);
+    if (x < 0.5) return fast_lgamma_lanczos(x + 1.0) - std::log(x);
+    if (x < 8.0) return fast_lgamma_lanczos(x);
+    return fast_lgamma_stirling(x);
+}
+
 #endif

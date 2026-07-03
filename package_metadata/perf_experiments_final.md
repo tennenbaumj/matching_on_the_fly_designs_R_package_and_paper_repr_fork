@@ -771,43 +771,51 @@ Derived from parallel perf-annotate + perf-stat analysis of all 57 annotated ker
 
 ### CRITICAL priority
 
-**TODO-19: ZINB — preallocate `m_eta_c`, `m_eta_z`, `m_w_c`, `m_w_z` as class members**
+**TODO-19: ZINB — preallocate `m_eta_c`, `m_eta_z`, `m_w_c`, `m_w_z` as class members** ✓ DONE
 File: `EDI/src/fast_zinb.cpp:35–148`
 `ZeroAugmentedPoisson` received this fix (TODO-15); `ZeroInflatedNegBin` was missed. `operator()` allocates 4 n-element `VectorXd` per optimizer call (2 GEMVs capturing into `const VectorXd` + 2 `::Zero(m_n)` weight vectors). Profile: `rep stosb` memset = 85.88% of `zinb_est` samples; PLT `operator new` stub = 53.17% local. Fix: add `m_eta_c(y.size()), m_eta_z(y.size()), m_w_c(y.size()), m_w_z(y.size())` as class members initialized in constructor; use `.noalias() =` for GEMVs and `.setZero()` for weight init inside `operator()`. Safe: `operator()` is non-`const`, no LICM/alias risk. Expected: 3–5× speedup on `zinb_est`.
 
-**TODO-20: HurdlePoisson GLMM hessian — preallocate G×K working buffers + fix Xg matrix copy**
+**TODO-20: HurdlePoisson GLMM hessian — preallocate G×K working buffers + fix Xg matrix copy** ✓ DONE
 File: `EDI/src/fast_hurdle_poisson_glmm.cpp:141,154,234,244,275–304`
 `hurdle_p_var` takes 4× longer than `hurdle_p_est` (66.6s vs 16.3s) — hessian dominates ~75% of var-path time. Root cause: per-call heap allocs of `E_Hik`, `E_GiGiT` (MatrixXd(total,total)), `G_avg` (VectorXd(total)), plus G×K allocs of `res_k`, `d2e_k`, `G_ik`, `H_ik`. For G=200, K=7: ~6,200 allocs per hessian call = 21% of wall time in `malloc`/`cfree`/`calloc`. Add preallocated member fields to `HurdlePoissonGLMMObjective`: `m_exp_bvals(K)`, `m_eta0(max_grp_sz)`, `m_res_k(max_grp_sz)`, `m_d2e_k(max_grp_sz)`, `m_G_ik(total)`, `m_H_ik(total,total)`, `m_E_Hik(total,total)`, `m_E_GiGiT(total,total)`, `m_G_avg(total)`. In `hessian()` use `.setZero()` per-group. Also fix: `const Eigen::MatrixXd Xg = dat.X_s.middleRows(gs, sz)` (line 244) copies the submatrix G times per call — change to `const auto Xg = dat.X_s.middleRows(gs, sz)` (zero-copy expression view). Apply same fix in `operator()` line 154 for `eta0`. Also move `std::vector<double> exp_bvals(K)` (lines 141, 234) to `m_exp_bvals` member.
+Implemented with preallocated `m_b_vals`, `m_log_terms`, `m_eta0`, per-node Hessian buffers, per-group expectation buffers, and in-place small-p crossproduct helpers to avoid hidden `weighted_crossprod()` / `Xg.transpose() * d2e_k` temporaries. Correctness: `test-glmm-cpp-equivalence.R` passed (11/11). Targeted full-inference GLMM benchmark using the `benchmark_model_fits.R` adaptive timing setup with the profiler's `fast_hurdle_poisson_glmm_cpp(..., estimate_only=FALSE)` expression: 1.936842ms → 1.905263ms median (N_WALD=200; modest 1.6% improvement at this scale).
 
 ### HIGH priority
 
-**TODO-21: Logistic + Probit IRLS — replace manual XtWX triple-loop with GEMV + weighted_crossprod**
+**TODO-21: Logistic + Probit IRLS — replace manual XtWX triple-loop with cache-friendly score + weighted crossproduct** ✓ DONE
 Files: `EDI/src/fast_logistic_regression.cpp:154–177`, `EDI/src/fast_probit_regression.cpp:170–184`
 The manual `for(i) for(j) for(k)` XtWX accumulation uses stride-n column reads (column-major X, j-loop steps across rows) which prevents vectorization and accounts for ~81% of `logistic_est` and ~70% of `probit_est` EDI.so samples. Replace with: (1) build weighted residual `diff[i] = w[i]*(y[i]-mu[i])`, (2) `score_free.noalias() = X_free.transpose() * diff` (GEMV, already AVX2), (3) `XtWX = weighted_crossprod(X_free, w)` (BLAS DGEMM path). Apply to both `use_weights` and non-`use_weights` branches.
+Implemented a fused column-contiguous score + weighted-crossproduct helper in both logistic and probit IRLS. The direct generic `weighted_crossprod(X_free, w)` version benchmarked slower at the benchmark-model-fits scale, so the final implementation preserves one fused score/Fisher pass while avoiding row-wise stride-n access. Correctness: `test-logistic-cleanup.R`, `test-fast_glm_outputs.R`, `test-warm-start-weights.R`, `test-incidence-probit.R`, and `test-rcpp-fitting-equivalence.R` passed. Targeted estimate-only benchmark (N_GLM=1000, same adaptive timing setup as `benchmark_model_fits.R`): logistic_est 0.165482ms → 0.162029ms (−2.1%); probit_est 0.591988ms → 0.597938ms (+1.0%, effectively flat/slightly slower at p=6).
 
-**TODO-22: Add `fast_lgamma` to `_helper_functions.h`**
+**TODO-22: Add `fast_lgamma` to `_helper_functions.h`** ✓ DONE
 File: `EDI/src/_helper_functions.h`
 After TODO-14 replaced `R::digamma` with `fast_digamma` in BetaRegression, `__lgamma_r_finite` now dominates `beta_var` (~40–50% of samples) and is major in `beta_est`. Pattern mirrors `fast_digamma`: Stirling asymptotic expansion `lgamma(x) ≈ (x-0.5)*log(x) - x + 0.5*log(2π) + 1/(12x) - 1/(360x³) + ...` for x ≥ 8; recurrence `lgamma(x) = lgamma(x+1) - log(x)` to shift up; rational polynomial for moderate x. Error ≤ 1e-10 relative; fallback to `std::lgamma` for x ≤ 0. Replace all `std::lgamma(x)` in `BetaRegression::operator()` (lines 62–65). Shared by BetaRegression, ZOIB, and any future kernel.
+Implemented `fast_lgamma` using a Lanczos rational approximation for moderate positive inputs and a Stirling expansion for x ≥ 8; nonpositive/nonfinite inputs fall back to `std::lgamma`. Replaced the three `std::lgamma` calls in `BetaRegression::operator()`. Correctness: beta-related coverage in `test-fast_glm_outputs.R`, `test-argument-permutations.R`, `test-rcpp-fitting-equivalence.R`, and `test-rcpp-fitting-real-data.R` passed after a clean rebuild. Targeted adaptive benchmarks: `beta_est` 1.486301ms → 1.191781ms (−19.8%); `beta_var` 0.405680ms → 0.346220ms (−14.7%).
 
-**TODO-23: BetaRegression — fuse 4 array passes into single scalar loop**
+**TODO-23: BetaRegression — fuse 4 array passes into single scalar loop** ✓ DONE
 File: `EDI/src/fast_beta_regression.cpp:60–88`
 Current: 4 separate `unaryExpr` passes over n elements (2 lgamma + 2 digamma), materializing 4 intermediate `VectorXd` temporaries with heap allocation. Replace with a single scalar obs loop accumulating `neg_ll` and `w_grad[i]` simultaneously using `fast_lgamma` + `fast_digamma`. Add preallocated `m_w_grad(n)` member field (sized in constructor, reused across calls). Also preallocate `m_mu(n)`, `m_eta(n)` — `operator()` is non-`const`, no LICM risk. Expected: 2–3× on `beta_est` combined with TODO-22.
+Implemented with preallocated `m_eta`, `m_mu`, and `m_w_grad` members and a single scalar observation loop that accumulates negative log-likelihood, beta-gradient weights, and the log-precision derivative while reusing `fast_lgamma` and `fast_digamma`. Correctness: beta-related coverage in `test-fast_glm_outputs.R`, `test-argument-permutations.R`, `test-rcpp-fitting-equivalence.R`, and `test-rcpp-fitting-real-data.R` passed after rebuild. Targeted adaptive benchmarks using the `benchmark_model_fits.R` timing setup and the fresh pre-change TODO-22 baseline: `beta_est` 1.294521ms → 1.100000ms (−15.0%); `beta_var` 0.356529ms → 0.344978ms (−3.2%).
 
-**TODO-24: LogBinomial — apply TODO-17 backtracking fix to weighted IRLS variant**
+**TODO-24: LogBinomial — apply TODO-17 backtracking fix to weighted IRLS variant** ✓ DONE
 File: `EDI/src/fast_log_binomial_regression.cpp:285–421`
 `fit_constrained_binomial_weighted_cpp_impl` was skipped when TODO-17 optimized the unweighted variant (4.4× speedup). The weighted path has identical structure: `ll_curr` recomputed inside the loop (line 397), each backtracking probe calls `weighted_loglik_constrained_binomial` with a full GEMV, and `eta_try` is not preallocated. Add: (1) `weighted_loglik_from_eta(eta, y, obs_weights, link_type)` helper (O(n) scalar loop, no GEMV); (2) initialize `ll_curr` before the IRLS loop; (3) precompute `delta_eta = X_free * direction` once per iteration; (4) preallocate `eta_try(n)` outside the while-loop; (5) carry forward `ll_curr = ll_new`. Expected: ~4× on weighted logbin/identbin paths.
+Implemented `weighted_loglik_from_eta`, cached and carried forward `ll_curr`, precomputed `delta_beta` / `delta_eta` once per weighted IRLS iteration, reused preallocated `z_adj`, `w_eff`, and `eta_try`, and moved weighted working-vector setup into one scalar loop. Correctness: `test-bayesian-bootstrap.R` passed under `pkgload::load_all()` (58/58); `test-warm-start-weights.R`, `test-rcpp-fitting-equivalence.R`, and `test-fast_glm_outputs.R` passed after rebuild. Targeted adaptive benchmarks using the `benchmark_model_fits.R` timing setup: `logbin_weighted_est` 8.648148ms → 6.306452ms (−27.1%); `identbin_weighted_est` 2.417808ms → 1.769565ms (−26.8%).
 
-**TODO-25: Wilcox HL — O(n²) → O(n log²n) sort + binary-search estimator**
+**TODO-25: Wilcox HL — O(n²) → O(n log²n) sort + binary-search estimator** ✓ DONE
 File: `EDI/src/fast_wilcox_hl.cpp`
 `hl_from_groups` materializes all `n_t × n_c` pairwise differences into a `std::vector<double>` then calls `nth_element` — O(n²) space and time. `hl_signed_rank` materializes `m*(m+1)/2` Walsh averages. Profile: 81% of `wilcox_est` samples in `median_in_place`; 16.3% branch-miss rate from `nth_element` introselect on an O(n²) array. Replace with: sort `y_t` and `y_c` (O(n log n)); binary-search for the median-rank threshold. Count of pairs `y_t[i] - y_c[j] ≤ θ` is O(n log n) via `upper_bound` on sorted `y_t` for each `y_c[j]`. Similarly for Walsh average median. Eliminates the O(n²) allocation. Expected: ~13–14s wall time reduction on `wilcox_est`.
+Implemented sorted implicit selection for rank-sum pairwise differences and signed-rank Walsh averages. Small inputs still use the old materialized exact path; larger inputs sort once, binary-search the median rank using O(n) two-pointer counts, then snap to the largest implicit value below the selected threshold. Correctness: direct reference checks against R materialization passed for rank-sum and signed-rank cases, including duplicate-heavy and benchmark-sized inputs; `test-design-inference.R` and `test-bayesian-bootstrap.R` passed under `pkgload::load_all()`; `test-wilcox-regr-bootstrap-fast-path.R` had only its two pre-existing skips. Targeted adaptive benchmarks using the `benchmark_model_fits.R` timing setup: `wilcox_est` 0.545093ms → 0.126162ms (−76.9%); `wilcox_var`-sized N=200 path 0.073454ms → 0.039420ms (−46.3%).
 
-**TODO-26: JT exact — precomputed lchoose table + flat `std::vector` for stat_prob**
+**TODO-26: JT exact — precomputed lchoose table + flat `std::vector` for stat_prob** ✓ DONE
 File: `EDI/src/fast_jonckheere_terpstra.cpp`
 Two issues: (1) `log_choose_int` calls `R::lchoose` on every recursive call — `Rf_chebyshev_eval` (10.8%) + `Rf_lgammacor` (5.6%) + `Rf_lbeta` (4%) + `Rf_lchoose` (3.8%) = 24% of samples from redundant evaluations on repeated `(nk, tk)` pairs. Fix: before recursion, precompute `lc[k][t] = lchoose(n_k, t)` for `t=0..n_k` as a flat array (O(n) total), pass as `const double*` into recursion, eliminating all `R::lchoose` calls inside `recurse_jt_distribution`. (2) `stat_prob` is `std::map<int,double>` — red-black tree with `malloc` per insert (9% of samples in tree+alloc). The JT statistic `stat2` ranges in `[0, 2*n_treat*n_control]` — known before recursion. Replace with `std::vector<double>(max_stat2+1, 0.0)` indexed directly.
+Implemented with a flat log-choose table backed by cumulative log-factorials, a flat `std::vector<double>` distribution indexed by `stat2`, active-stat tracking to avoid a dense final scan, thread-local distribution buffer reuse to clear only active slots between calls, and incremental recursion that carries the JT statistic forward instead of rebuilding treatment-count statistics at each leaf. Correctness: direct exact enumeration reference checks passed for tied ordinal samples; `test-asymp-inference-paths.R` and `test-design-inference.R` passed after rebuild. Targeted adaptive benchmark using the `benchmark_model_fits.R` / `edi_kernel_profiler.R` `jt_var` expression at N=200: 0.024382ms → 0.007039ms median (−71.1%).
 
-**TODO-27: Ridit — `std::map` → `std::unordered_map` + eliminate `wrap(ref_idx)` SEXP round-trip**
+**TODO-27: Ridit — `std::map` → `std::unordered_map` + eliminate `wrap(ref_idx)` SEXP round-trip** ✓ DONE
 File: `EDI/src/fast_ridit_analysis.cpp`
 (1) Lines 19, 38: `std::map<int,int>` and `std::map<int,double>` are O(log K) per access. Replace with `std::unordered_map`. (2) Line 95: `fast_ridit_scores_cpp(y_sexp, wrap(ref_idx))` converts `std::vector<int>` → SEXP → re-reads it inside the function. `Rf_allocVector3` is 6.6% of samples from this unnecessary round-trip. Refactor `fast_ridit_scores_cpp` to accept `const std::vector<int>&` via a static helper, or inline the logic. (3) Line 122: `std::pow(s - mean_ridit_t, 2)` → `(s-mean)*(s-mean)`. Expected: ~3–4s wall time reduction on `ridit_var`.
+Implemented with flat sorted level/count/ridit vectors rather than hash tables after a literal `std::unordered_map` rewrite benchmarked slightly slower on the N=200, K=3 ordinal workload. The final implementation removes all `std::map` use, eliminates the internal `wrap(ref_idx)` SEXP round-trip by using a zero-based C++ helper, avoids an internal `List` construction in `fast_ridit_analysis_cpp`, removes temporary treatment/control score vectors, and replaces `std::pow(diff, 2)` with `diff * diff`. Correctness: direct R reference checks passed for score assignment and analysis outputs, including categories absent from the reference group; `test-bayesian-bootstrap.R` passed under `pkgload::load_all()` (58/58). Targeted adaptive benchmark using the `benchmark_model_fits.R` / `edi_kernel_profiler.R` `ridit_var` expression at N=200: 0.008617ms → 0.006072ms median (−29.5%).
 
 **TODO-28: `weighted_crossprod` col-major — 2×GEMM → DSYR rank-1 accumulation**
 File: `EDI/src/_helper_functions.h`
@@ -1006,6 +1014,94 @@ Files: `EDI/src/fast_negbin_regression.cpp:83,90`, `EDI/src/fast_hurdle_negbin.c
 File: `EDI/src/fast_hurdle_negbin.cpp` (hurdle positive-count log-normalizer)
 Mirror of TODO-33 (HP GLMM) and TODO-43 (ZAP): for `lam > 16`, `eneg = exp(-lam) < 1e-7`, so `log1p(-eneg) ≈ -eneg` with error < 1e-14. Add fast-path branch before the `std::log1p` call. Eliminates the libm transcendental for large-count observations (common in NegBin hurdle outcomes).
 
+**TODO-67: ZINB (and cross-kernel) — vectorize exp/log by enabling Eigen SIMD + batching transcendentals into array ops** ✓ DONE (2026-07-02): global Eigen SIMD enabled package-wide + ZINB array rewrite; committed; ZINB 1.7-1.9x; full suite 398/398 green; installs clean
+Files: `EDI/src/Makevars:3` (+ `EDI/src/Makevars.win`), `EDI/src/fast_zinb.cpp:79-148`
+
+**RESULT (2026-07-02) — DONE (committed, whole-package). ZINB 1.7-1.9x via array rewrite + GLOBAL Eigen SIMD.**
+Implemented: `fast_zinb.cpp` `operator()` rewritten to batch all per-obs transcendentals into vectorized Eigen array passes (`mu=exp(eta_c)`, `log(theta+mu)`, sigmoid, softplus, `phi`, `log(den)`) with preallocated member buffers; the branchy accumulation loop now does zero transcendental calls.
+- **Scoped `#undef` (option B) is DEAD — it crashes.** Compiling only `fast_zinb.o` alignment-ON while the other 103 objects stay alignment-OFF segfaults even on estimate-only (Eigen's ODR-merged allocator mismatches aligned AVX loads). `-DEIGEN_DONT_ALIGN` also can't be kept (it disables vectorization). So the ODR caveat is a **hard crash, not theoretical → only the GLOBAL flip (option A) is viable.** Removed `-DEIGEN_DONT_ALIGN -DEIGEN_DONT_VECTORIZE` from `Makevars`; `Makevars.win` already defaulted to SIMD-on (added its missing `-I../inst/include` so it faithfully mirrors).
+- **Parity** (SIMD reorders FP; not bit-exact): params 8e-15, vcov 5e-12, hessian 6.7e-9 (numerical FD) — machine precision.
+- **ZINB speedup** (interleaved A/B vs scalar TODO-19 baseline): est **1.93x** / var **1.89x** at n=2000; est **1.74x** / var **1.76x** at n=20000.
+- **Full testthat suite** (clean whole-package rebuild): **398/398 PASS** (0 failed, 0 errors, 2 skipped). Package also **`R CMD INSTALL`s cleanly and loads** (v1.0.0). Two earlier full-suite runs showed 2 failures in the same non-hardened rank-deficient ordinal test on **both** scalar and SIMD builds — flaky/order-dependent, not caused by this change; they do **not** reproduce on the clean run.
+- **Package-wide GEMV bonus** (kernels NOT rewritten; scalar vs SIMD, n=3000 p=6) — **mixed, not uniform:**
+
+| kernel | speedup |
+|---|---:|
+| poisson_var | 1.64x |
+| ols_var | 1.62x |
+| logistic_var | 1.14x |
+| beta_var | 1.08x |
+| probit_var | 1.06x |
+| coxph_est | 0.92x (regression) |
+
+GEMM/IRLS-heavy kernels win most; coxph slightly **regresses** → the global flip needs per-kernel evaluation before committing, not a blanket "SIMD is faster" assumption.
+
+**Decision (2026-07-02): DONE — global Eigen SIMD accepted and committed package-wide** (`Makevars` + `Makevars.win`), ZINB `operator()` array-rewritten. Follow-ups (separate TODOs): (a) the **coxph 0.92x regression** under SIMD (see table) — investigate/guard; (b) per-kernel array-op rewrites (logistic/poisson/beta/…) to turn the modest flag-only GEMV bonus into ZINB-scale wins; (c) TODO-68's softplus concern is resolved inside this rewrite (vectorizable `log(1+exp)`, no `std::log1p`, no fast-math). All 104 kernels' results now shift at the ULP level — the green suite confirms nothing broke.
+
+Motivation: After TODO-19 (member preallocation) landed it was verified bit-exact but only ~1% faster in an apples-to-apples build. The `memset 86%` in the zinb_est profile above does **not** reproduce on this machine — glibc's dynamic mmap threshold reuses the large `VectorXd` allocations from the heap after the first few frees, so allocation was never the real bottleneck. The persistent cost is the per-observation transcendentals (zinb_est profile: `log1p 50%`, `log 47%`; every kernel with `exp`/`log`/`log1p` in its obs loop is affected). Those run scalar today for two independent reasons: (a) `EIGEN_DONT_VECTORIZE` disables Eigen packet math; (b) the loop calls `std::exp`/`std::log`/`std::log1p`, which GCC does not auto-vectorize without fast-math + libmvec.
+
+This is two coupled changes; **(2) is a no-op without (1)** (Eigen `.array().exp()/.log()` stay scalar until the flags are removed).
+
+Measured (double, n=20000, ns/elem, this machine):
+
+| op | current (`DONT_ALIGN`+`DONT_VECTORIZE`) | Eigen SIMD (both flags off) | `-ffast-math`+libmvec |
+|---|---:|---:|---:|
+| exp | 5.0 | **1.9 (2.6x)** | 2.9 |
+| log | 4.8 | **2.9 (1.6x)** | 3.3 |
+| log1p | 11.7 | 11.7 (no gain) | 2.5-5.7 (2.6-4.7x) |
+
+Verified facts:
+- Both `-DEIGEN_DONT_ALIGN` and `-DEIGEN_DONT_VECTORIZE` are committed on `Makevars:3` and **each independently** forces scalar transcendentals; forcing `EIGEN_UNALIGNED_VECTORIZE=1` does not override. To vectorize, **both** must be removed (for the affected TU).
+- Dropping both is **crash-safe**: audit of `EDI/src` found no `Map<...,Aligned>`, no fixed-size vectorizable Eigen types (`Vector4d`...), no `EIGEN_MAKE_ALIGNED_OPERATOR_NEW`. A deliberately misaligned default `Eigen::Map` runs vectorized (1.98 ns) without segfault — default Maps emit unaligned packet loads.
+- Eigen does **not** vectorize `log1p`/`log1pexp` even with SIMD on (stays ~11.7 ns); it needs libmvec (`-ffast-math`) or a hand-written SIMD softplus. In ZINB this is only the `y>0` softplus branch (secondary in zero-inflated data).
+- MKL batch `vdExp`/`vdLn` was already tried (TODO-18) and lost to scalar at n=1000 due to extra O(n) memory passes; Eigen fused array ops avoid that.
+
+(1) Enable Eigen SIMD — two delivery options:
+- **A. Global** (remove both flags from `Makevars`/`Makevars.win`): all 104 kernels' GEMV/GEMM/array ops vectorize (likely a bonus win), but FP reduction order changes package-wide -> must re-run the full 62-file / ~9.9k-LOC testthat suite and re-baseline the exact-digit fingerprints in this doc; may nudge some L-BFGS convergence paths. No crashes.
+- **B. Scoped** (`#undef EIGEN_DONT_ALIGN` / `#undef EIGEN_DONT_VECTORIZE` at the top of `fast_zinb.cpp`, before includes): verified to re-enable vectorization (2.08 ns) even with the disabling `-D` flags present. Contains blast radius to ZINB, but carries a formal ODR caveat (header-only Eigen inline/templates compiled with differing `MAX_ALIGN_BYTES` across TUs) — low risk here since ZINB's Eigen types are local (crosses the TU boundary only via SEXP).
+
+(2) Rewrite `ZeroInflatedNegBin::operator()` to batch transcendentals into vectorized array precompute passes, keeping the branchy accumulation scalar. Every per-obs transcendental has a vectorizable input:
+- `m_mu = m_eta_c.array().exp()` (exp)
+- `m_p  = plogis_array_safe(m_eta_z)` (exp; helper exists in `_helper_functions.h:376`)
+- `m_logden = (theta + m_mu).log()` (log)
+- `phi = (theta*(log_theta - m_logden)).exp()` for `y==0` (exp)
+- `lse = log1pexp_array_safe(m_eta_z)` for `y>0` (stays scalar — Eigen log1p)
+Reuse/extend the TODO-19 member buffers (add `m_mu`, `m_logden`); precompute writes into members, so no new per-call allocation. ~40-60 lines in one function.
+
+Sequencing: (1) -> baseline suite/fingerprints -> (2) -> parity vs R canonical + a scalar-loop reference (NOT bit-exact vs current, since (1) reorders FP) -> interleaved A/B benchmark at n in {2000, 20000}.
+
+Projected payoff: the dominant per-obs transcendentals (2 exp + 1 log per obs) vectorize; `log1pexp` left scalar. Amdahl on `operator()` => ~1.3-1.6x on zinb_est/zinb_var (to confirm). Option A additionally speeds every other kernel's GEMV.
+
+Open decisions: (a) global (A) vs scoped (B) for the flag change; (b) acceptable to re-baseline exact-digit fingerprints in this doc; (c) add libmvec/custom SIMD for `log1pexp` now or defer. Recommend prototyping via B first (contained), then graduating to A as a separately-validated change if the cross-kernel GEMV win is wanted.
+
+**TODO-68: `-ffast-math` on top of TODO-67 — NOT RECOMMENDED; scalar `fast_log1pexp` alternative also FALSIFIED** ✗ DROPPED
+Files: (would-be) `EDI/src/Makevars` / per-object flags, `EDI/src/_helper_functions.h`, `EDI/src/fast_zinb.cpp`
+
+**RESULT (2026-07-02) — DROPPED.** Both `-ffast-math` (analysis below, still valid) and the recommended `fast_log1pexp` alternative were implemented and measured; **neither is worth doing.** A scalar `fast_log1pexp` (Kahan `log1p` via `std::log`) validated to **3.9e-16** rel err (edge cases bit-identical to `std::log1p`) gave **no speedup**: on the valid softplus domain `std::log1p` is ~11.2 ns — comparable to `std::log` (~8.8) and `fast_log1p` (~9.4) — not the slow op the profile implied. The earlier "log1p 50% / 14.9 ns" figure was inflated by feeding `log1p` invalid `< -1` inputs (glibc NaN/errno path) plus Eigen-array wrapper overhead; on valid inputs it is not a bottleneck. `std::exp` (~5 ns) dominates softplus and the helper does not touch it; measured full softplus **fast=12.5 ns vs std=11.2 ns (0.89x — a slight regression)**. Crucially the `-ffast-math` "4.9x log1p" is a **vectorization** (libmvec) effect that a scalar helper cannot reproduce — the only real softplus win is SIMD, i.e. **TODO-67 route 1** (an Eigen-array softplus with vectorizable `log1p` arithmetic, once Eigen SIMD is enabled). No source changes were kept.
+
+Question: does adding `-ffast-math` on top of TODO-67 (Eigen SIMD + array-op batching) buy anything? **Conclusion: no meaningful net upside; disproportionate correctness blast radius. Get the one real win (log1p/softplus) via a targeted polynomial helper instead — the codebase's established pattern (TODO-2 `fast_digamma`, TODO-22 `fast_lgamma`, TODO-40 `fast_erfc`).**
+
+Incremental speed over Eigen SIMD (routes 1+2), measured n=20000 ns/elem:
+
+| op | Eigen SIMD (1+2) | + `-ffast-math` | incremental |
+|---|---:|---:|---|
+| exp (Eigen array) | 1.92 | 2.03 | none (marginally worse) |
+| log (Eigen array) | 2.93 | 3.00 | none |
+| log1p (Eigen array) | 11.7 | 2.39 | **4.9x — the only gain** |
+
+So on top of 1+2, `-ffast-math` only helps `log1p` (Eigen already beats libmvec on exp/log). And that gain is **inseparable from `-ffinite-math-only`** — safe subsets do not autovectorize: `-fno-math-errno` -> scalar log1p 16.3; `+ -funsafe-math-optimizations` -> 13.8; only full `-ffast-math` -> 5.8. GCC emits libmvec vector calls only under finite-math assumptions.
+
+Proven hazards (measured on this machine):
+- **Guard elision**: an inlinable `if(!std::isfinite(inv)) return fallback` returns the fallback under a plain build but returns `Inf` (guard removed) under both `-ffast-math` and isolated `-ffinite-math-only`. The ZINB call path has ~15 such guards inlined into `fast_zinb.o` via `_helper_functions.h` — `covariance_from_information` (`!information.allFinite()`), `symmetric_pseudo_inverse` (`!Msym.allFinite()`), `safe_ols_solve`/`try_safe_ols_solve` (`!X.allFinite()`, `!beta_out.allFinite()`), `vector_is_usable_start`, and `quiet_NaN()` sentinels. Eliding them turns controlled NaN/pseudo-inverse fallbacks (singular Fisher info, divergent fits) into silent garbage variance/CIs. Elision is optimizer-visibility-dependent -> a latent, non-deterministic regression.
+- **Process-global FTZ/DAZ**: `-ffast-math` links `crtfastmath.o` (confirmed on the link line via `-###`), whose `.init_array` ctor runs at `dyn.load` and flips flush-to-zero for the **entire R session** (every package + BLAS/LAPACK). A `1e-318` denormal: plain -> preserved; `-ffast-math` compile+link -> `0`; `-ffast-math` **compile-only + plain link -> preserved**. Mitigation: keep `-ffast-math` off the link line (R's SHLIB link is separate from `PKG_CXXFLAGS`; use a target-specific compile var, never `PKG_LIBS`).
+- **Reassociation** (`-fassociative-math`) changes reductions beyond ULP and makes output compiler/version-dependent, compounding route (1)'s reproducibility cost.
+
+Scoping analysis: compile-only per-TU removes the FTZ hazard (verified) but NOT guard elision (a compile semantic applied to the inlined helpers in that TU), and carries the same ODR caveat as TODO-67 option B.
+
+~~Recommended alternative: `fast_log1pexp` polynomial helper in `_helper_functions.h`~~ — **FALSIFIED (see RESULT above):** a scalar/Kahan `fast_log1pexp` does not autovectorize on its own and is not faster than `std::log1p` on valid inputs; the softplus speedup exists only as SIMD array ops under TODO-67 route 1.
+
+Decision: **DROPPED.** Do not add `-ffast-math` (hazards above), and do not add a scalar `fast_log1pexp` (no gain / slight regression, measured). Defer any softplus speedup to TODO-67 route 1 as an Eigen-array softplus (packet `exp` + vectorizable `log1p` arithmetic) once Eigen SIMD is enabled.
+
 ---
 
 ## Bottom Line
@@ -1083,7 +1179,7 @@ Expected: eliminates 86% of zinb_est wall time — likely 10-50× speedup on the
 
 ---
 
-**TODO-20: HurdlePoisson GLMM hessian — preallocate G×K working buffers** ☐
+**TODO-20: HurdlePoisson GLMM hessian — preallocate G×K working buffers** ✓ DONE
 File: `EDI/src/fast_hurdle_poisson_glmm.cpp:234,275-304`
 
 Root cause: `hessian()` allocates per-group working matrices inside the G-group loop: `E_Hik(total,total)`, `E_GiGiT(total,total)`, `G_avg(total)`, and per quadrature-node inner structures (`res_k(sz)`, `d2e_k(sz)`, `G_ik(total)`, `H_ik(total,total)`). For G=200 groups, K=7 nodes: ~6,200 heap allocations per hessian call. Additionally, `const Eigen::MatrixXd Xg = dat.X_s.middleRows(gs, sz)` at line 244 copies the submatrix G times.
@@ -1103,7 +1199,7 @@ Eigen::VectorXd m_G_avg;          // total
 ```
 Use `.setZero()` at the start of each group iteration instead of constructing new matrices. Same fix for `operator()` line 141: `std::vector<double> exp_bvals(K)` → `m_exp_bvals`.
 
-Expected: eliminates ~75% of hurdle_p_var time; also fixes operator() line 141 allocation used in est path.
+Implemented with preallocated buffers plus in-place crossproduct helpers to avoid hidden Eigen temporaries. Correctness: `test-glmm-cpp-equivalence.R` passed (11/11). Targeted full-inference GLMM benchmark using the `benchmark_model_fits.R` adaptive timing setup with the profiler's GLMM expression: 1.936842ms → 1.905263ms median (N_WALD=200; 1.6% improvement at this scale).
 
 ---
 

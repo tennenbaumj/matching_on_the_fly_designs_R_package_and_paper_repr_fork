@@ -1,7 +1,7 @@
 rm(list = ls())
 pacman::p_load(data.table, R.utils, ggplot2, scales, gridExtra, xtable)
 
-Nrep = 10003
+Nrep = 10002
 raw_results_dt = fread(sprintf("cmh_exact_sims_plus_greedy_results_high_signal_Nrep_%d.csv.bz2", Nrep))
 raw_results_dt[, reject := pval < 0.05]
 raw_results_dt[, covers := ci_lo <= true_estimand & true_estimand <= ci_hi]
@@ -422,7 +422,7 @@ print(
 
 # CMH power vs B for OptimalBlocks at n=64, coloured by p
 opt_cmh_n64 = raw_results_dt[
-  grepl("OptimalBlocks", design) &
+  (grepl("OptimalBlocks", design) | grepl("BCRD", design)) &
   inference == "InferenceIncidCMH" &
   inference_type == "asymp_pval" &
   betaT != 0 &
@@ -432,7 +432,8 @@ opt_cmh_n64 = raw_results_dt[
   .(power = mean(pval < 0.05), N = .N),
   by = .(p, design)
 ]
-opt_cmh_n64[, B := as.integer(sub(".*\\bB=(\\d+).*", "\\1", design))]
+opt_cmh_n64[design == "DesignFixediBCRD", B := 1]
+opt_cmh_n64[design != "DesignFixediBCRD", B := as.integer(sub(".*\\bB=(\\d+).*", "\\1", design))]
 opt_cmh_n64[, p_label := factor(paste0("p = ", p), levels = paste0("p = ", c(1, 5, 10)))]
 opt_cmh_n64[, pow_lo := power - z * sqrt(power * (1 - power) / N)]
 opt_cmh_n64[, pow_hi := power + z * sqrt(power * (1 - power) / N)]
