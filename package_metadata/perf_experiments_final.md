@@ -817,11 +817,12 @@ File: `EDI/src/fast_ridit_analysis.cpp`
 (1) Lines 19, 38: `std::map<int,int>` and `std::map<int,double>` are O(log K) per access. Replace with `std::unordered_map`. (2) Line 95: `fast_ridit_scores_cpp(y_sexp, wrap(ref_idx))` converts `std::vector<int>` → SEXP → re-reads it inside the function. `Rf_allocVector3` is 6.6% of samples from this unnecessary round-trip. Refactor `fast_ridit_scores_cpp` to accept `const std::vector<int>&` via a static helper, or inline the logic. (3) Line 122: `std::pow(s - mean_ridit_t, 2)` → `(s-mean)*(s-mean)`. Expected: ~3–4s wall time reduction on `ridit_var`.
 Implemented with flat sorted level/count/ridit vectors rather than hash tables after a literal `std::unordered_map` rewrite benchmarked slightly slower on the N=200, K=3 ordinal workload. The final implementation removes all `std::map` use, eliminates the internal `wrap(ref_idx)` SEXP round-trip by using a zero-based C++ helper, avoids an internal `List` construction in `fast_ridit_analysis_cpp`, removes temporary treatment/control score vectors, and replaces `std::pow(diff, 2)` with `diff * diff`. Correctness: direct R reference checks passed for score assignment and analysis outputs, including categories absent from the reference group; `test-bayesian-bootstrap.R` passed under `pkgload::load_all()` (58/58). Targeted adaptive benchmark using the `benchmark_model_fits.R` / `edi_kernel_profiler.R` `ridit_var` expression at N=200: 0.008617ms → 0.006072ms median (−29.5%).
 
-**TODO-28: `weighted_crossprod` col-major — 2×GEMM → DSYR rank-1 accumulation**
+**TODO-28: `weighted_crossprod` col-major — 2×GEMM → DSYR rank-1 accumulation** ✗ DROPPED
 File: `EDI/src/_helper_functions.h`
 The col-major branch of `weighted_crossprod` evaluates `X.T * w.asDiagonal() * X` as two GEMMs: first `X.T * diag(w)` produces a p×n intermediate matrix (heap allocation + n*p multiplications), then multiplies by X (second GEMM p×n × n×p → p×p). Replace with `selfadjointView<Upper>().rankUpdate()` (BLAS DSYR): n symmetric rank-1 updates each O(p²/2), no p×n intermediate. For n=1000, p=5: current ~50k FMAs + p×n allocation vs ~12.5k FMAs + 0 allocation. Accounts for 45% of `robust_est` (called per IRLS iteration) and all weighted OLS paths. **Caveat:** For very small p (p=3–5), Eigen may already beat BLAS for DSYR — benchmark immediately; revert if slower.
+Result: benchmarked and reverted. On the `benchmark_model_fits.R` / `edi_kernel_profiler.R` `robust_est` expression (N=1000, p=6 effective design), the current two-GEMM Eigen expression was fastest: baseline 0.202600ms median. Three no-intermediate variants were correct but slower: Eigen per-row `selfadjointView<Upper>().rankUpdate()` 0.595092ms (+194%), cache-friendly manual upper-triangle row loop 0.238415ms (+17.7%), and `sqrt(w)` row scaling plus symmetric rank-k update 0.319871ms (+57.9%). Correctness checks passed for all variants (`weighted_crossprod` parity vs `crossprod(X, X*w)`, robust regression equivalence, real-data, and warm-start weight tests), but no source change was kept because the shared helper would regress the profiled benchmark path.
 
-**TODO-29: `fast_ols.cpp` XtX → `selfadjointView.rankUpdate` (DSYRK)**
+**TODO-29: `fast_ols.cpp` XtX → `selfadjointView.rankUpdate` (DSYRK)** ✗ DROPPED
 File: `EDI/src/fast_ols.cpp:32,108`
 `XtX_free.noalias() = X.transpose() * X` uses a full GEMM (77.5% of `ols_est` samples in `lhs_process_one_packet`). Replace with:
 ```cpp
@@ -830,10 +831,12 @@ XtX_free.selfadjointView<Eigen::Upper>().rankUpdate(X.transpose());
 XtX_free.triangularView<Eigen::Lower>() = XtX_free.transpose();
 ```
 Uses DSYRK (half the FLOPs). Expected: 30–50% speedup on `ols_est`. Same caveat as TODO-28: benchmark for small p.
+Result: benchmarked and reverted. On the `benchmark_model_fits.R` / `edi_kernel_profiler.R` OLS expressions, the current Eigen full crossproduct was fastest: `ols_est` baseline 0.016611ms median and `ols_var` baseline 0.010391ms median. The literal `selfadjointView<Upper>().rankUpdate(X.transpose())` implementation with lower-triangle mirroring was slower (`ols_est` 0.017327ms, +4.3%; `ols_var` 0.010797ms, +3.9%). An upper-only storage variant using `Eigen::LDLT<MatrixXd, Upper>` to avoid the mirror copy was also slower (`ols_est` 0.017212ms, +3.6%; `ols_var` 0.010997ms, +5.8%). Correctness: `test-rcpp-fitting-equivalence.R` and `test-rcpp-fitting-real-data.R` passed after restoring the original implementation. No source change was kept because p=6 is too small for this DSYRK rewrite to beat Eigen's existing crossproduct path.
 
-**TODO-30: CoxPH `compute_robust_vcov` — eliminate 150 heap allocs per call**
+**TODO-30: CoxPH `compute_robust_vcov` — eliminate 150 heap allocs per call** ✓ DONE
 File: `EDI/src/fast_coxph_regression.cpp:498–530`
 `ek`, `dk_ek_over_Rk`, `cum_B` are `std::vector<std::vector<double>>(n_events, std::vector<double>(p, 0.0))` — n_events separate heap allocations each. At n_events=50, p=5: 150 separate heap allocs. `cluster_scores` is `std::map<int, Eigen::VectorXd>` (O(log n) per insert). Fix: replace nested vectors with flat `Eigen::MatrixXd(p, n_events)` indexed as `[:,k]`; replace `std::map` with `std::unordered_map`. Also preallocate `cluster_scores` at construction when n_clusters is known.
+Implemented the three event-by-covariate work arrays as contiguous `Eigen::MatrixXd` buffers and changed cluster-score aggregation to a reserved `std::unordered_map`. The retained input-order permutation now writes each score row back to its original subject, fixing the pre-existing mismatch between event-time-sorted scores and unsorted cluster IDs. Correctness: the dedicated `test-coxph-robust-vcov.R` test matches coefficients and the complete robust covariance matrix from `survival::coxph` at `1e-7`; `test-rcpp-fitting-equivalence.R` and `test-rcpp-fitting-real-data.R` also pass. Clustered Cox benchmark at N=1000, p=5, 100 clusters (1,000 iterations): 0.870ms → 0.453ms median (−47.9%, 1.92× throughput).
 
 **TODO-31: Ordinal regression — compute hessian once, not 3–4 times**
 File: `EDI/src/fast_ordinal_regression.cpp:183–185,311`
@@ -1101,6 +1104,11 @@ Scoping analysis: compile-only per-TU removes the FTZ hazard (verified) but NOT 
 ~~Recommended alternative: `fast_log1pexp` polynomial helper in `_helper_functions.h`~~ — **FALSIFIED (see RESULT above):** a scalar/Kahan `fast_log1pexp` does not autovectorize on its own and is not faster than `std::log1p` on valid inputs; the softplus speedup exists only as SIMD array ops under TODO-67 route 1.
 
 Decision: **DROPPED.** Do not add `-ffast-math` (hazards above), and do not add a scalar `fast_log1pexp` (no gain / slight regression, measured). Defer any softplus speedup to TODO-67 route 1 as an Eigen-array softplus (packet `exp` + vectorizable `log1p` arithmetic) once Eigen SIMD is enabled.
+
+**UPDATE (2026-07-02) — RESOLVED the right way (vectorizable array log1p, no `-ffast-math`).** The deferred "Eigen-array softplus" path is now implemented and shipped. Added **`fast_log1p_arr`** to `_helper_functions.h`: a vectorizable, accurate `log1p` for `z > -1` built as a Kahan correction over Eigen's **packet `.log()`** (Eigen's own `.log1p()` falls back to scalar `std::log1p`). Rewrote `log1pexp_array_safe` to the branchless softplus `max(x,0) + fast_log1p_arr(exp(-|x|))`, and converted the remaining scalar softplus spots to array form — `ZeroInflatedNegBin::operator()` (via TODO-67), `LogisticGLMMObjective::value()`, `ClogitPlusGLMMObjective::neg_clogit()` — removing the dead scalar helpers `lse_zinb`, `log1pexp_s`, `log1pexp_cpp`.
+- Measured (SIMD, no fast-math): bare `log1p` **22.2 → 8.28 ns/elem (2.68x)** via packet `.log()` vs Eigen `.log1p()`, accuracy **2.7e-16**; `logistic_glmm` var path **1.34x** cumulative.
+- Parity machine-precision (5.55e-17 params; bit-identical where the path is unchanged); **full testthat suite 398/398 PASS**.
+- Net: no `std::log1p`-based softplus remains in ZINB / logistic_glmm / clogit — the log1p win TODO-68 sought is captured safely (no `-ffinite-math-only` guard elision, no global FTZ). Scalar per-obs softplus in other kernels (ZAP `lse`, `log1pexp_stable`, …) still awaits ZINB-style array rewrites of their loops.
 
 ---
 
@@ -1393,4 +1401,256 @@ Each backtracking probe recomputes `X * beta_new` as a full GEMV. Precompute `de
 
 ---
 
-⚠️ **Ordinal family (prop_odds, adj_cat, cont_ratio, ord_cauchit, ord_cloglog, ord_probit) — findings PENDING** (agent a421d2a07a6313a26 still running as of 2026-07-02). Will add TODO-38+ when complete.
+## Ordinal family findings (from 2026-07-04 perf annotate run, 129 kernels)
+
+**TODO-69: FixedOrdinalRegression — preallocate per-call working vectors** ☐
+Files: `EDI/src/fast_ordinal_regression.cpp` (FixedOrdinalRegression::operator())
+
+Root cause: `malloc`/`cfree` appear prominently in prop_odds_est, prop_odds_var, ord_cauchit_est, ord_cloglog_est, and kk21_ordinal_wts profiles. `FixedOrdinalRegression::operator()` allocates working vectors (cumulative probabilities, per-threshold gradient components) on every optimizer call. Preallocate these as member fields and resize once in the constructor — same pattern applied to HurdlePoisson GLMM. Covers all families routing through FixedOrdinalRegression: prop_odds, ord_cauchit, ord_cloglog, ord_probit, and kk21_ordinal weights.
+
+---
+
+**TODO-70: adj_cat hessian — preallocate ColPivHouseholderQR workspace** ☐
+Files: `EDI/src/` adj_cat source (AdjacentCategoryLogitNegLogLik)
+
+Root cause: adj_cat_var profile shows `makeHouseholder`, `applyHouseholderOnTheLeft`, and `ColPivHouseholderQR::computeInPlace` — a full QR factorization performed per hessian call. The augmented matrix dimensions are fixed for a given dataset, so the `ColPivHouseholderQR` object and its internal workspace can be preallocated as a member field. Call `compute()` in-place each evaluation rather than constructing a new QR object.
+
+---
+
+**TODO-71: ord_probit — Rf_pnorm_both/Rf_dnorm4 → fast erfc + direct exp** ☐
+Files: ord_probit source
+
+Root cause: ord_probit_est and ord_probit_var show `Rf_pnorm_both` (#2 hotspot), `Rf_pnorm5`, and `Rf_dnorm4` — R's normal CDF and PDF dispatch functions routing through R's error-handling machinery. Replacements:
+- Φ(x) = `0.5 * erfc(-x * M_SQRT1_2)`: use `fast_erfc` already in the codebase (same fix as probit regression, TODO-20).
+- φ(x) = `exp(-x*x * 0.5) * M_1_SQRT_2PI`: one direct `std::exp`, no library dispatch.
+
+Apply at every evaluation point in the log-likelihood and gradient.
+
+---
+
+**TODO-72: ord_cauchit — investigate and eliminate per-call introsort** ☐
+Files: ord_cauchit source
+
+Root cause: `std::__introsort_loop` appears in the ord_cauchit profile alongside `__atan_fma` (cauchit link, F(x) = 0.5 + atan(x)/π). A sort is being performed per optimizer evaluation — likely sorting thresholds to enforce monotonicity after each gradient step. Replace with a constrained reparameterization (e.g., cumulative-log-spacing: θ_k = θ_1 + Σ exp(δ_j)) so thresholds are monotone by construction and no sort is needed. The `__atan_fma` itself is already glibc-optimized; the sort is the actionable bottleneck.
+
+---
+
+**TODO-73: cont_ratio — cache build_continuation_ratio_augmented_data** ☐
+Files: cont_ratio source
+
+Root cause: `build_continuation_ratio_augmented_data` and `unlink_chunk.isra.0` (glibc allocator) appear in cont_ratio_est profile. The continuation-ratio model expands the design matrix into K-1 binary subproblems on every optimizer call. This augmented data depends only on the fixed design matrix and outcome (not the current coefficient values) — compute once in the constructor or at first call, store as member fields, and reuse across all optimizer evaluations.
+
+---
+
+**TODO-74: OrdinalGLMMObjective — preallocate working buffers** ☐
+Files: ordinal GLMM source (OrdinalGLMMObjective)
+
+Root cause: ordinal_glmm_est profile shows `_int_malloc` prominently — unlike `LogisticGLMMObjective` and `PoissonGLMMObjective` (which have preallocated lam/eneg buffers), `OrdinalGLMMObjective` still allocates working arrays inside `operator()`. Apply the same preallocated buffer pattern used in the HurdlePoisson GLMM refactor: add member `Eigen::VectorXd` scratch fields sized in the constructor, overwrite in-place each call.
+
+---
+
+## Stats helpers (new from 2026-07-04 run)
+
+**TODO-75: mn_ci — move R-level bisection loop to C++** ☐
+Files: mn_ci R source + `EDI/src/mn_ci_cpp.cpp` (or equivalent)
+
+Root cause: mn_ci profile shows `bcEval_loop` (R bytecode) + `Rf_pnorm_both` + `mn_constrained_mle_pc_cpp` + `mn_z_statistic_cpp`. The R-level code drives a bisection loop calling these C++ functions one at a time, paying R→C++ call overhead plus R GC on every bisection step. `mn_ci_cpp` exists as a C++ function that should encapsulate the full bisection internally — verify it is being called, or redirect the R caller to use it directly instead of driving the loop from R.
+
+---
+
+**TODO-76: zhang_fisher_pval — std::lgamma for chi-squared CDF** ☐
+Files: zhang_fisher_pval source
+
+Root cause: `Rf_chebyshev_eval` (#1 hotspot) + `Rf_lgammacor` + `__log1p_fma` — the Fisher P-value computation uses a chi-squared CDF that internally calls R's incomplete gamma via Chebyshev series. Replace `R::lgammafn` calls with `std::lgamma` to bypass the Chebyshev/Stirling dispatch layer. Same pattern as TODO-14 and TODO-24.
+
+---
+
+## KK21 weight functions (new from 2026-07-04 run)
+
+**TODO-77: kk21_beta_wts — std::lgamma + fast_digamma** ☐
+Files: kk21 beta weights source (kk21_beta_weights_cpp)
+
+Root cause: `Rf_chebyshev_eval` (#1 hotspot, ~41% of samples) + `Rf_gammafn` + `Rf_lgammafn_sign` — the beta distribution weight function uses R's lgamma dispatch, which internally calls Chebyshev evaluation for the Stirling series. Replace `R::lgammafn` → `std::lgamma` and `R::digamma` → `fast_digamma`. Same pattern as TODO-14 (beta regression) and TODO-24 (negbin).
+
+---
+
+**TODO-78: kk21_negbin_wts — fast_digamma + pow→exp(log)** ☐
+Files: kk21 negbin weights source (kk21_negbin_weights_cpp)
+
+Root cause: `Rf_dpsifn` (#1, digamma dispatch) + `__ieee754_pow_fma` + `__ieee754_log_fma` + `__ieee754_exp_fma`. The negative-binomial weight function calls digamma for the NB score/hessian. Two fixes:
+1. `R::digamma(x)` → `fast_digamma(x)` (polynomial approximation, same as TODO-23 for ZINB).
+2. `pow(x, y)` where y is a floating-point parameter → `std::exp(y * std::log(x))`, fusing with adjacent log computations to eliminate the full `pow` dispatch.
+
+---
+
+**TODO-79: kk21_stepwise_logistic_wts + kk21_survival_wts — XtWX via weighted_crossprod** ☐
+Files: kk21_stepwise_logistic_weights_cpp, kk21 survival weights source (univariate_weibull_tstat)
+
+Root cause: `lhs_process_one_packet` (#1 in kk21_stepwise_logistic_wts; also visible in kk21_survival_wts) — the stepwise logistic and Weibull-based survival weight functions re-fit internal regressions using the full XtWX GEMM triple-product. Apply `weighted_crossprod` (DSYRK symmetric update, same as TODO-26) to halve FLOP count. If the internal re-fits share code paths with fast_logistic/fast_weibull, TODO-26's fix propagates automatically; otherwise apply explicitly here.
+
+---
+
+## Permutation generators (new from 2026-07-04 run)
+
+**TODO-80: generate_permutations_atkinson — preallocate QR + LU workspace** ☐
+Files: `EDI/src/generate_permutations_atkinson_cpp.cpp` (or equivalent)
+
+Root cause: `FullPivHouseholderQR::computeInPlace` (#1) + `FullPivLU::computeInPlace` + `lhs_process_one_packet` (GEMM) + `_int_malloc` per permutation. The Atkinson D-optimal design algorithm performs QR and LU factorizations for each candidate permutation, with matrix dimensions fixed by the design size. Preallocate `Eigen::FullPivHouseholderQR` and `Eigen::FullPivLU` objects outside the permutation loop and call `compute()` in-place each iteration.
+
+---
+
+**TODO-81: generate_permutations_pocock_simon — eliminate per-permutation SEXP allocation** ☐
+Files: `EDI/src/generate_permutations_pocock_simon_cpp.cpp` (or equivalent)
+
+Root cause: `Rf_allocVector3` + `SETCDR` per permutation — R linked-list construction inside the generation loop (178 hits on `Rf_allocVector3`/`SETCDR`). Currently appends one SEXP per permutation, triggering allocation + GC pressure. Fix: accumulate permutations into a `std::vector<std::vector<int>>` inside the loop; convert to R list once at the end. Secondary: `__strcmp_avx2` (string comparison) also visible — see TODO-84 for the strata-key pattern.
+
+---
+
+**TODO-82: generate_permutations_cluster — eliminate per-permutation R linked list** ☐
+Files: cluster permutation generator source
+
+Root cause: `SETCDR` + `unif_rand` per permutation — same R linked-list append pattern as TODO-50. Accumulate in `std::vector`, convert to R list once at the end.
+
+---
+
+## Redraw functions (new from 2026-07-04 run)
+
+**TODO-83: atkinson_redraw — preallocate QR/GEMM workspace** ☐
+Files: `EDI/src/atkinson_redraw_batch_cpp.cpp` (or equivalent)
+
+Root cause: `lhs_process_one_packet` (GEMM, #1) + `ColPivHouseholderQR::computeInPlace` per call. Same root cause as TODO-80 (Atkinson permutations) but in the sequential redraw path. Preallocate QR object and scratch matrices as member fields; call `compute()` in-place each redraw.
+
+---
+
+**TODO-84: pocock_simon_redraw_w — eliminate per-call SEXP allocation** ☐
+Files: pocock_simon_redraw_w source (pocock_simon_assign_cpp)
+
+Root cause: `Rf_allocVector3` + `SETCDR` per redraw call — allocating an R structure on every arm assignment within the redraw loop. Use a pre-allocated C++ buffer and return as a fixed-size integer vector, or accumulate into `std::vector<int>` and wrap once at the end.
+
+---
+
+## Bootstrap index generators (new from 2026-07-04 run)
+
+**TODO-85: stratified_bootstrap_indices — replace string strata keys with integer IDs** ☐
+Files: `EDI/src/stratified_bootstrap_indices_cpp.cpp` (or equivalent)
+
+Root cause: `__memcmp_avx2_movbe` (AVX2-accelerated string compare) visible in the hot path. Strata are represented as strings in the C++ layer, requiring string comparison on every sample assignment. Pre-convert strata labels to integer indices at the R layer (`match(strata, unique(strata))` or `as.integer(as.factor(strata))`) before calling C++; C++ then compares `int`s (single instruction) rather than byte strings.
+
+---
+
+**TODO-86: bootstrap_m_indices — consolidate dual RNG paths** ☐
+Files: bootstrap_m_indices source
+
+Root cause: Both `unif_rand` and `Rf_runif` appear in the profile — two different call paths for uniform random draws in the same function. Consolidate to `unif_rand` (the standard R RNG API used everywhere else); `Rf_runif` duplicates state tracking and adds unnecessary dispatch overhead.
+
+---
+
+## Post-fit variance helpers (new from 2026-07-04 run)
+
+**TODO-87: gcomp_frac_logit_post_fit_var — eliminate per-bootstrap Rf_allocVector3** ☐
+Files: `EDI/src/gcomp_logistic_post_fit_cpp.cpp` (or equivalent)
+
+Root cause: `Rf_allocVector3` visible alongside `lhs_process_one_packet` (GEMM) and `R_gc_internal` — a new R vector (SEXP) is being allocated per bootstrap replicate inside `gcomp_logistic_post_fit_cpp`. Pre-allocate once in the outer C++ function and overwrite in-place across replicates to eliminate per-replicate GC pressure.
+
+---
+
+## Additional findings from direct perf report analysis (2026-07-04)
+
+**TODO-88: Ordinal cauchit — fast_atan approximation for cauchit link** ☐
+File: `EDI/src/fast_ordinal_cauchit_regression.cpp`, `EDI/src/_helper_functions.h`
+
+Root cause: `__atan_fma` accounts for 19.8% of `ord_cauchit_est` samples — the second largest hotspot behind the operator() loop itself. The cauchit CDF `F(x) = 0.5 + atan(x)/π` requires one `atan` call per threshold per observation. For K=5 categories and n=400 obs: 1,600 atan calls per optimizer step; for K=5, n=2000: 8,000 calls. `__atan_fma` is glibc's AVX2-tuned atan, but a 9-term minimax polynomial on `[-6, 6]` with argument reduction `atan(x) = π/2 − atan(1/x)` for |x|>6 achieves ≤1e-10 relative error and is ~2–3× faster (avoids the range-reduction table lookup in glibc). Implement as `fast_atan(x)` in `_helper_functions.h`. Apply inside `FixedOrdinalRegression` for the cauchit CDF and PDF evaluations. Guard: validate ≤1e-9 max error on a grid of x values before committing.
+
+---
+
+**TODO-89: Ordinal cloglog — cache exp(x) to avoid double exp per CDF eval** ☐
+File: `EDI/src/fast_ordinal_cloglog_regression.cpp` (or wherever cloglog CDF is evaluated)
+
+Root cause: `ord_cloglog_est` shows 26% `__ieee754_exp_fma` + 11% `exp@@GLIBC_2.29` = **37% total exp**. The cloglog CDF is `F(x) = 1 − exp(−exp(x))`: two sequential `exp` calls per evaluation. The inner `e_x = exp(x)` is the value needed for both the CDF (`exp(-e_x)`) and its derivative (`e_x * exp(-e_x)`). Current code likely calls `exp` twice per threshold per obs. Fix: compute `e_x = std::exp(x)` once; then `F = 1 − std::exp(−e_x)` and `f = e_x * (1−F)`. Also add fast-path: for `x > 37`, `e_x > 1.17e16` so `exp(-e_x) < 1e-16` and `F ≈ 1.0` — skip the second exp entirely.
+
+---
+
+**TODO-90: Stereotype logit — GEMV refactor for loglik_grad** ☐
+File: `EDI/src/fast_stereotype_logit.cpp`
+
+Root cause: `StereotypeLogitRegression::loglik_grad` accounts for 36–37% of both `stereotype_est` and `stereotype_var` samples. The gradient function likely accumulates per-observation rank-1 outer products: `gradient += score_i * x_i.T` (same scatter anti-pattern fixed by TODO-15/16/62 for ZIP/ZINB/NegBin). Fix: accumulate scalar score weights `w_i` for each parameter block into a preallocated weight vector, then apply a single `X.transpose() * w` GEMV after the observation loop. Also preallocate the per-obs working vectors `logit_grad(K)` and `logit_hess(K)` flagged in TODO-36 (hessian allocs) — the gradient path has the same per-obs allocation pattern.
+
+---
+
+**TODO-91: Permutation/bootstrap generators — replace R RNG with seeded local mt19937** ☐
+Files: `EDI/src/generate_permutations.cpp`, `EDI/src/bootstrap_indices.cpp` (and related)
+
+Root cause: `unif_rand` accounts for 31% of `generate_permutations_bernoulli`, 33% of `generate_permutations_efron`, 27% of `generate_permutations_matching`, 34% of `bootstrap_indices`, and 24% of `bootstrap_m_indices`. Each call to `unif_rand()` acquires R's global RNG state, performs a full MT19937 step, and dispatches through R's RNG kind switch. For B×n draws (e.g., 5000 permutations × 400 subjects = 2M calls), this overhead dominates. Fix: at the start of each C++ function, draw one seed from `R::unif_rand()`, then use a local `std::mt19937_64` for all subsequent draws. Use Lemire's nearly-divisionless method for bounded integers to avoid the modulo bias fix overhead. Reproducibility: fully reproducible given the R seed, since the local RNG is deterministically derived. Expected: 3–5× faster for the RNG-bound portion.
+
+---
+
+**TODO-92: generate_permutations_spbr — replace memcmp dedup with integer hash** ☐
+File: `EDI/src/generate_permutations.cpp` (SPBR branch)
+
+Root cause: `__memcmp_avx2_movbe` accounts for **22%** of `generate_permutations_spbr` samples — the second largest hotspot after the SPBR function itself (21%). SPBR generates permutations then checks for duplicates by byte-comparing treatment vectors. For B=5000 permutations of n=400 subjects: 2M bytes compared per generation. Fix: hash each generated permutation with a fast 64-bit hash (e.g., `std::hash<std::string_view>` over the int array's bytes, or a direct FNV-1a/xxHash over the `int*` data), store hashes in an `std::unordered_set<uint64_t>`. Collision probability for 5000 out of ~2^400 distinct permutations is negligible. Eliminates 22% of wall time.
+
+---
+
+**TODO-93: Ordinal GLMM — preallocate alpha_buf in GLMMObjective** ☐
+File: `EDI/src/_glmm_engine.h`
+
+Root cause: `_int_malloc` at 5% + `_int_free_merge_chunk` at 4% persist in both `ordinal_glmm_est` and `ordinal_glmm_var` after Phase 1 fixes. The most likely source is `alpha_buf` — a `std::vector<double>(nm)` allocated once per `operator()` call in TODO-1's implementation (moved outside the GH inner loop, but still heap-allocated every optimizer step). Since `nm` is fixed for a given dataset (= n_thresholds), add `std::vector<double> m_alpha_buf` as a preallocated member of `GLMMObjective`, sized in the constructor. Safety: `m_alpha_buf` is only READ inside the GH quadrature loop (after being filled by `fill_alpha` before the loop), so the mutable-field LICM concern does not apply — the inner loop never writes to it.
+
+---
+
+**TODO-94: Logistic GLMM — fast log1pexp to reduce log1p overhead** ☐
+File: `EDI/src/fast_logistic_glmm.cpp`, `EDI/src/_helper_functions.h`
+
+Root cause: `__log1p_fma` accounts for 18% of `logistic_glmm_est` and 14% of `logistic_glmm_var` — the dominant remaining hotspot after all prior optimizations. This is `log1pexp(x) = log(1 + exp(x))` used in the node log-likelihood (log normalizer for the logistic GLMM). The glibc `log1p` + `exp` path uses separate range-reduction tables. Implement `fast_log1pexp(x)` in `_helper_functions.h`: for `x > 37`, return `x` (overflow-safe); for `x < -37`, return `exp(x)`; otherwise `x + log1p(exp(-|x|))` using a precomputed 8-term polynomial for `log1p` on `[-1, 0]` that avoids the glibc dispatch. Also applicable to `hurdle_p_glmm_est` (12% `__log1p_fma`) and `logistic_glmm_var`.
+
+---
+
+## Findings confirmed from direct file inspection (not covered above)
+
+**TODO-95: draw_binary_match_assignments — thread-unsafe unif_rand inside OpenMP section** ☐
+Files: `EDI/src/draw_binary_match_assignments_cpp.cpp` (or equivalent)
+
+Root cause: The profiler shows `draw_binary_match_assignments_cpp [clone ._omp_fn.0]` (OpenMP parallel clone) + `unif_rand` in the same call stack. R's `unif_rand()` accesses a global, non-reentrant RNG state (`GetRNGstate`/`PutRNGstate` serialized by R's mutex), so concurrent calls from multiple OpenMP threads cause a data race — producing either corrupted PRNG state or correlated samples depending on timing. This is a **correctness bug**, not just a performance issue. Fix: before the `#pragma omp parallel` region, call `unif_rand()` once to obtain a seed; inside each thread, use a local `std::mt19937_64` seeded from `seed + thread_id`. Same approach as TODO-91. Also addresses the `__strcmp_avx2` visible in the OpenMP section (string strata comparison — apply TODO-54's integer-ID fix).
+
+---
+
+**TODO-96: poisson_glmm_var — preallocate PoissonGLMMObjective variance-path working buffers** ☐
+Files: `EDI/src/fast_poisson_glmm.cpp` (PoissonGLMMObjective)
+
+Root cause: `_int_malloc` appears in the `poisson_glmm_var` profile alongside `__ieee754_exp_fma` and GEMV. The variance/hessian computation path allocates working vectors inside `PoissonGLMMObjective::operator()` or a separate hessian method. Unlike `LogisticGLMMObjective` (which has preallocated buffers), the Poisson GLMM variance path still heap-allocates. Apply the same preallocated member buffer pattern used for HurdlePoisson GLMM and OrdinalGLMMObjective (TODO-74/93).
+
+---
+
+**TODO-97: gaussian_lmm_var — preallocate lmm_analytic_hessian temporary matrices** ☐
+Files: `EDI/src/fast_lmm.cpp` (lmm_analytic_hessian)
+
+Root cause: `Eigen::PlainObjectBase::resize` + `cfree` visible in `gaussian_lmm_var` — Eigen is dynamically allocating and immediately freeing temporary matrices inside `lmm_analytic_hessian` per call. The `generic_product_impl` (GEMM) creating intermediate `Matrix<double, -1, -1>` objects triggers heap allocation for each matrix product. Fix: pre-declare named `Eigen::MatrixXd` temporaries at the top of `lmm_analytic_hessian` sized from data dimensions, then use `.noalias()` assignments to write directly into them without allocation. For repeated variance calls (bootstrap), store as class member fields.
+
+---
+
+## Profiling coverage gaps — kernels to add (2026-07-04 audit)
+
+The 2026-07-04 profiling run covered 129 kernels but left the following C++ files with **zero kernel coverage**. Each contains real computation; any optimization findings from the above analysis may also apply to these paths.
+
+**TODO-98: Add profiler kernels for uncovered C++ paths** ☐
+Files: `profile/edi_kernel_profiler.R`
+
+The following source files have no entry in `edi_kernel_profiler.R`. Add one kernel per exported function and re-run `perf record` + `perf annotate` on each:
+
+| Source file | Size | Key exported functions | Priority |
+|---|---|---|---|
+| `fast_clogit_plus_glmm.cpp` | 592 lines | `ClogitPlusGLMMObjective` (full GLMM objective with GH quadrature) | **HIGH** — same class of hotspots as logistic_glmm/ordinal_glmm but never sampled |
+| `fast_survival_models_optim.cpp` | 721 lines | 7 exported parametric survival functions | **HIGH** — largest unsampled file |
+| `lrt_ci_newton.cpp` | 286 lines | `lrt_ci_nr_cpp`, `pval_invert_ci_cpp` | **HIGH** — Newton-Raphson CI loop, likely special-function heavy |
+| `optimal_design_search.cpp` | 251 lines | `d_optimal_search_cpp`, `a_optimal_search_cpp` | **HIGH** — iterative D/A-optimal search with matrix operations |
+| `kk_compound_distr_parallel.cpp` | 251 lines | `compute_matching_compound_distr_parallel_cpp`, bootstrap variant | **HIGH** — OpenMP parallel, likely dominant in matching workflows |
+| `fast_bai_parallel.cpp` | 157 lines | `compute_bai_distr_parallel_cpp` | **MEDIUM** — OpenMP parallel BAI distribution |
+| `bisection_ci.cpp` | 117 lines | bisection CI loop | **MEDIUM** — looped CI computation |
+| `cmh_speedups.cpp` | 144 lines | 2 CMH test functions | **MEDIUM** |
+| `kk_bootstrap_loop.cpp` | 69 lines | `matching_bootstrap_loop_cpp` (OpenMP) | **MEDIUM** — OpenMP matching bootstrap |
+| `rerandomization_helpers.cpp` | — | `rerandomization_search_cpp`, `compute_objective_vals_cpp` | **MEDIUM** — rerandomization search loop |
+| `fast_cpoisson_combined.cpp` | — | combined constrained Poisson | **LOW** |
+| `match_data_compute_speedup.cpp` | 39 lines | `match_diffs_cpp` | **LOW** |
+| `sample_bootstrap_distr_weighted_distances.cpp` | 40 lines | `compute_bootstrapped_weighted_sqd_distances_cpp` | **LOW** |
+
+Note: `fast_clogit_plus_glmm.cpp` contains a `ClogitPlusGLMMObjective` with its own `log1pexp_cpp` and `log_sum_exp_cpp` — by inspection, likely has the same `__log1p_fma` / `__ieee754_exp_fma` / GH-quadrature GEMV hotspots as the other GLMM objectives, and the same preallocated-buffer and fast-log1pexp fixes (TODO-93/94) will apply. Profile to confirm before implementing.

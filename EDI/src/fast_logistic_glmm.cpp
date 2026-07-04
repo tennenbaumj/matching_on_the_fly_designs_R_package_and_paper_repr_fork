@@ -49,10 +49,6 @@ inline double log_sum_exp_v(const Eigen::Ref<const Eigen::VectorXd>& x) {
 	return m + std::log((x.array() - m).exp().sum());
 }
 
-inline double log1pexp_s(double x) {
-	if (x > 0.0) return x + std::log1p(std::exp(-x));
-	return std::log1p(std::exp(x));
-}
 
 // Soft barrier: adds a smooth penalty when |log_sigma| is large,
 // avoiding the hard-wall numerical catastrophe.
@@ -150,20 +146,19 @@ public:
 		const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * dat.gh.nodes;
 		const int n_nodes = (int)b_vals.size();
 
+		const Eigen::Map<const Eigen::VectorXd> y_all(dat.y_s.data(), dat.n);
 		double total_ll = 0.0;
+		Eigen::VectorXd log_terms(n_nodes);
 		for (int gi = 0; gi < dat.G; ++gi) {
-			const int warm_start_params = dat.grp_start[gi];
-			const int sz    = dat.grp_size[gi];
-			const Eigen::VectorXd eta0 = dat.X_s.middleRows(warm_start_params, sz) * beta;
-
-			Eigen::VectorXd log_terms(n_nodes);
+			const int gs = dat.grp_start[gi];
+			const int sz = dat.grp_size[gi];
+			const Eigen::ArrayXd eta0 = (dat.X_s.middleRows(gs, sz) * beta).array();
+			const double y_eta0 = y_all.segment(gs, sz).dot(eta0.matrix());
+			const double y_sum  = dat.grp_y_sum[gi];
 			for (int k = 0; k < n_nodes; ++k) {
-				double ll = dat.gh.log_norm_weights[k];
-				for (int r = 0; r < sz; ++r) {
-					const double eta = eta0[r] + b_vals[k];
-					ll += dat.y_s[warm_start_params + r] * eta - log1pexp_s(eta);
-				}
-				log_terms[k] = ll;
+				// vectorized softplus over the group's eta (was a scalar r-loop with log1pexp_s)
+				log_terms[k] = dat.gh.log_norm_weights[k] + y_eta0 + b_vals[k] * y_sum
+				             - log1pexp_array_safe(eta0 + b_vals[k]).sum();
 			}
 			const double ll_g = log_sum_exp_v(log_terms);
 			if (!std::isfinite(ll_g)) return 1e50;

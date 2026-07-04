@@ -1387,6 +1387,134 @@ get_kernel = function(name) {
                                                               dup_inference_fn, compute_estimate_fn, 1L))
     }),
 
+    # ================================================================
+    # MISSING COVERAGE PATHS — added 2026-07-04
+    # ================================================================
+
+    # --- ClogitPlusGLMM (fast_clogit_plus_glmm.cpp) ---
+    clogit_glmm_est = local({
+        set.seed(SEED)
+        n_disc = 200L; n_conc = 200L; p = 4L; n_grp = 80L
+        X_disc = matrix(rnorm(n_disc * (p + 1L)), n_disc, p + 1L)
+        X_disc[, 1L] = 1; X_disc[, 2L] = sample(c(-1L, 1L), n_disc, replace = TRUE)
+        y_disc = as.numeric(rbinom(n_disc, 1L, 0.4))
+        X_conc = matrix(rnorm(n_conc * (p + 1L)), n_conc, p + 1L)
+        X_conc[, 1L] = 1; X_conc[, 2L] = as.numeric(rep(c(0L, 1L), n_conc / 2L))
+        y_conc = as.numeric(rbinom(n_conc, 1L, 0.4))
+        group_conc = as.integer(rep(seq_len(n_grp), length.out = n_conc))
+        list(desc = "fast_clogit_plus_glmm_cpp(..., estimate_only=TRUE) [n_disc=200, n_conc=200, p=4, G=80]",
+             REPS = 1000L,
+             fn   = function() EDI:::fast_clogit_plus_glmm_cpp(
+                 X_disc, y_disc, X_conc, y_conc, group_conc,
+                 has_discordant = TRUE, has_concordant = TRUE, estimate_only = TRUE))
+    }),
+
+    clogit_glmm_var = local({
+        set.seed(SEED)
+        n_disc = 200L; n_conc = 200L; p = 4L; n_grp = 80L
+        X_disc = matrix(rnorm(n_disc * (p + 1L)), n_disc, p + 1L)
+        X_disc[, 1L] = 1; X_disc[, 2L] = sample(c(-1L, 1L), n_disc, replace = TRUE)
+        y_disc = as.numeric(rbinom(n_disc, 1L, 0.4))
+        X_conc = matrix(rnorm(n_conc * (p + 1L)), n_conc, p + 1L)
+        X_conc[, 1L] = 1; X_conc[, 2L] = as.numeric(rep(c(0L, 1L), n_conc / 2L))
+        y_conc = as.numeric(rbinom(n_conc, 1L, 0.4))
+        group_conc = as.integer(rep(seq_len(n_grp), length.out = n_conc))
+        list(desc = "fast_clogit_plus_glmm_cpp(..., estimate_only=FALSE) [n_disc=200, n_conc=200, p=4, G=80]",
+             REPS = 300L,
+             fn   = function() EDI:::fast_clogit_plus_glmm_cpp(
+                 X_disc, y_disc, X_conc, y_conc, group_conc,
+                 has_discordant = TRUE, has_concordant = TRUE, estimate_only = FALSE))
+    }),
+
+    # --- Dep-cens-transform survival (fast_survival_models_optim.cpp) ---
+    dep_cens_transform_est = local({
+        d = make_data(500L, "cox")
+        list(desc = "fast_dep_cens_transform_optim_cpp(X_ord, y_bm, dead_bm, smart_cold_start=TRUE, estimate_only=TRUE) [n=500]",
+             REPS = 200L,
+             fn   = function() EDI:::fast_dep_cens_transform_optim_cpp(
+                 d$X_ord, d$y_bm, as.numeric(d$dead_bm),
+                 smart_cold_start = TRUE, estimate_only = TRUE))
+    }),
+
+    dep_cens_transform_var = local({
+        d = make_data(500L, "cox")
+        list(desc = "fast_dep_cens_transform_optim_cpp(X_ord, y_bm, dead_bm, smart_cold_start=TRUE, estimate_only=FALSE) [n=500]",
+             REPS = 100L,
+             fn   = function() EDI:::fast_dep_cens_transform_optim_cpp(
+                 d$X_ord, d$y_bm, as.numeric(d$dead_bm),
+                 smart_cold_start = TRUE, estimate_only = FALSE))
+    }),
+
+    # --- D-optimal design search (optimal_design_search.cpp) ---
+    d_optimal_search = local({
+        set.seed(SEED)
+        n = 60L; p = 5L; n_T = 30L; nsim = 500L
+        X = cbind(1, matrix(rnorm(n * (p - 1L)), n, p - 1L))
+        XtX_inv = solve(crossprod(X) + diag(1e-8, p))
+        P = X %*% XtX_inv %*% t(X)
+        list(desc = "d_optimal_search_cpp(P, nsim=500, n_T=30) [n=60, p=5]",
+             REPS = 200L,
+             fn   = function() EDI:::d_optimal_search_cpp(P, nsim, n_T))
+    }),
+
+    # --- KK compound distribution (kk_compound_distr_parallel.cpp) ---
+    kk_compound_distr = local({
+        set.seed(SEED)
+        n = 400L; nsim = 2000L; n_pairs = n / 2L
+        y = rnorm(n)
+        w_mat = matrix(as.integer(sample(c(0L, 1L), n * nsim, replace = TRUE)), nrow = n, ncol = nsim)
+        m_mat = matrix(as.integer(rep(seq_len(n_pairs), each = 2L)), nrow = n, ncol = nsim)
+        list(desc = "compute_matching_compound_distr_parallel_cpp(y, w_mat, m_mat, num_cores=1) [n=400, nsim=2000]",
+             REPS = 200L,
+             fn   = function() EDI:::compute_matching_compound_distr_parallel_cpp(y, w_mat, m_mat, 1L))
+    }),
+
+    # --- BAI parallel statistic (fast_bai_parallel.cpp) ---
+    bai_distr = local({
+        set.seed(SEED)
+        n = 400L; nsim = 2000L; n_pairs = n / 2L; n_halves = n_pairs / 2L
+        y = rnorm(n)
+        w_mat = matrix(as.integer(sample(c(0L, 1L), n * nsim, replace = TRUE)), nrow = n, ncol = nsim)
+        m_mat = matrix(as.integer(rep(seq_len(n_pairs), each = 2L)), nrow = n, ncol = nsim)
+        pair_ids = seq_len(n_pairs)
+        halves_idx = matrix(as.integer(sample(pair_ids, n_halves * 2L, replace = FALSE)), nrow = n_halves, ncol = 2L)
+        list(desc = "compute_bai_distr_parallel_cpp(w_mat, m_mat, y, delta=0, halves_idx, convex_flag=TRUE, num_cores=1) [n=400, nsim=2000]",
+             REPS = 200L,
+             fn   = function() compute_bai_distr_parallel_cpp(w_mat, m_mat, y, 0, halves_idx, TRUE, 1L))
+    }),
+
+    # --- Rerandomization search (rerandomization_helpers.cpp) ---
+    rerandomization_search = local({
+        set.seed(SEED)
+        n = 200L; p = 4L; r = 500L
+        X = matrix(rnorm(n * p), n, p)
+        # cutoff of ~1.0 accepts ~10% of randomizations for abs_sum_diff
+        list(desc = "rerandomization_search_cpp(X, r=500, 'abs_sum_diff', cutoff=1.0, max_draws=50000) [n=200, p=4]",
+             REPS = 50L,
+             fn   = function() EDI:::rerandomization_search_cpp(X, r, "abs_sum_diff", 1.0, 50000L))
+    }),
+
+    rerandomization_obj_vals = local({
+        set.seed(SEED)
+        n = 200L; p = 4L; r = 5000L
+        X = matrix(rnorm(n * p), n, p)
+        indicTs = matrix(as.integer(sample(c(0L, 1L), n * r, replace = TRUE)), nrow = r, ncol = n)
+        list(desc = "compute_objective_vals_cpp(X, indicTs, 'abs_sum_diff') [n=200, p=4, r=5000]",
+             REPS = 100L,
+             fn   = function() EDI:::compute_objective_vals_cpp(X, indicTs, "abs_sum_diff"))
+    }),
+
+    # --- CMH block SE (cmh_speedups.cpp) ---
+    cmh_block_se = local({
+        set.seed(SEED)
+        n = 2000L; n_blocks = 500L
+        y    = as.numeric(rbinom(n, 1L, 0.4))
+        m_vec = as.integer(rep(seq_len(n_blocks), each = n / n_blocks))
+        list(desc = "compute_cmh_block_se_cpp(y, m_vec, n_total=2000) [n=2000, B=500]",
+             REPS = 20000L,
+             fn   = function() EDI:::compute_cmh_block_se_cpp(y, m_vec, n))
+    }),
+
     # Unknown kernel
     stop("Unknown kernel: '", name, "'. Run without args to see list.")
     )

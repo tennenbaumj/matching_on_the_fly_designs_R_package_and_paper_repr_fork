@@ -392,16 +392,20 @@ inline double log1pexp_safe(double x) {
     return std::log1p(std::exp(x));
 }
 
+// Vectorizable accurate log1p for z > -1: built from Eigen's packet .log() so it
+// SIMD-vectorizes, unlike Eigen's .log1p() (which falls back to scalar std::log1p).
+// Kahan correction keeps full precision even where (1+z) rounds to 1.
+inline Eigen::ArrayXd fast_log1p_arr(const Eigen::ArrayXd& z) {
+    const Eigen::ArrayXd u = 1.0 + z;
+    const Eigen::ArrayXd r = u.log() * (z / (u - 1.0));
+    return (u == 1.0).select(z, r);
+}
+
 inline Eigen::ArrayXd log1pexp_array_safe(const Eigen::ArrayXd& x) {
-    Eigen::ArrayXd res(x.size());
-    for (int i = 0; i < x.size(); ++i) {
-        if (x[i] > 0.0) {
-            res[i] = x[i] + std::log1p(std::exp(-x[i]));
-        } else {
-            res[i] = std::log1p(std::exp(x[i]));
-        }
-    }
-    return res;
+    // softplus = max(x,0) + log1p(exp(-|x|)); branchless + fully vectorized (packet exp/log
+    // via fast_log1p_arr). Numerically identical to the per-branch std::log1p form.
+    const Eigen::ArrayXd z = (-x.abs()).exp();
+    return x.max(0.0) + fast_log1p_arr(z);
 }
 
 inline bool try_safe_ols_solve(const Eigen::MatrixXd& X,

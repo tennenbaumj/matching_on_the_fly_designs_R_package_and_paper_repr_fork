@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <unordered_map>
 
 using namespace Rcpp;
 
@@ -16,6 +17,7 @@ struct CoxData {
     RowMajorMatrixXd X;
     std::vector<double> unique_event_times;
     std::vector<int> event_counts;
+    std::vector<int> input_idx;
     int n;
     int p;
 
@@ -23,9 +25,9 @@ struct CoxData {
     CoxData(const Eigen::VectorXd& y_in, const Eigen::VectorXd& dead_in, const Eigen::MatrixBase<Derived>& X_in) :
         n((int)y_in.size()), p((int)X_in.cols()) {
 
-        std::vector<int> idx_asc(n);
-        std::iota(idx_asc.begin(), idx_asc.end(), 0);
-        std::sort(idx_asc.begin(), idx_asc.end(), [&](int i, int j) {
+        input_idx.resize(n);
+        std::iota(input_idx.begin(), input_idx.end(), 0);
+        std::sort(input_idx.begin(), input_idx.end(), [&](int i, int j) {
             if (y_in[i] == y_in[j]) return dead_in[i] > dead_in[j];
             return y_in[i] < y_in[j];
         });
@@ -35,7 +37,7 @@ struct CoxData {
         X.resize(n, p);
 
         for (int i = 0; i < n; ++i) {
-            int id = idx_asc[i];
+            int id = input_idx[i];
             y[i] = y_in[id];
             dead[i] = dead_in[id];
             X.row(i) = X_in.row(id);
@@ -482,21 +484,19 @@ Eigen::MatrixXd compute_robust_vcov(
     for (const CoxData& sd : strata_data) {
         const int ns = sd.n;
         Eigen::VectorXd eta = sd.X * beta_map;
-        std::vector<double> exp_eta(ns);
-        Eigen::Map<Eigen::VectorXd>(exp_eta.data(), ns) =
-            (eta.array() - eta.maxCoeff()).exp().matrix();
+        Eigen::VectorXd exp_eta = (eta.array() - eta.maxCoeff()).exp().matrix();
 
         double r_exp = 0.0;
-        std::vector<double> r_x_exp(p, 0.0);
+        Eigen::VectorXd r_x_exp = Eigen::VectorXd::Zero(p);
         for (int i = 0; i < ns; ++i) {
             r_exp += exp_eta[i];
             for (int q = 0; q < p; ++q) r_x_exp[q] += sd.X(i, q) * exp_eta[i];
         }
 
         const int n_events = (int)sd.unique_event_times.size();
-        std::vector<double> dk_over_Rk(n_events, 0.0);
-        std::vector<std::vector<double>> ek(n_events, std::vector<double>(p, 0.0));
-        std::vector<std::vector<double>> dk_ek_over_Rk(n_events, std::vector<double>(p, 0.0));
+        Eigen::VectorXd dk_over_Rk = Eigen::VectorXd::Zero(n_events);
+        Eigen::MatrixXd ek = Eigen::MatrixXd::Zero(p, n_events);
+        Eigen::MatrixXd dk_ek_over_Rk = Eigen::MatrixXd::Zero(p, n_events);
 
         int j = 0;
         for (int k = 0; k < n_events; ++k) {
@@ -512,21 +512,20 @@ Eigen::MatrixXd compute_robust_vcov(
                 double safe_r = std::max(r_exp, 1e-100);
                 dk_over_Rk[k] = (double)dk / safe_r;
                 for (int q = 0; q < p; ++q) {
-                    ek[k][q] = r_x_exp[q] / safe_r;
-                    dk_ek_over_Rk[k][q] = (double)dk * ek[k][q] / safe_r;
+                    ek(q, k) = r_x_exp[q] / safe_r;
+                    dk_ek_over_Rk(q, k) = (double)dk * ek(q, k) / safe_r;
                 }
             }
         }
 
-        std::vector<double> cum_A(n_events, 0.0);
-        std::vector<std::vector<double>> cum_B(n_events, std::vector<double>(p, 0.0));
+        Eigen::VectorXd cum_A = Eigen::VectorXd::Zero(n_events);
+        Eigen::MatrixXd cum_B = Eigen::MatrixXd::Zero(p, n_events);
         if (n_events > 0) {
             cum_A[0] = dk_over_Rk[0];
-            for (int q = 0; q < p; ++q) cum_B[0][q] = dk_ek_over_Rk[0][q];
+            cum_B.col(0) = dk_ek_over_Rk.col(0);
             for (int k = 1; k < n_events; ++k) {
                 cum_A[k] = cum_A[k-1] + dk_over_Rk[k];
-                for (int q = 0; q < p; ++q)
-                    cum_B[k][q] = cum_B[k-1][q] + dk_ek_over_Rk[k][q];
+                cum_B.col(k) = cum_B.col(k - 1) + dk_ek_over_Rk.col(k);
             }
         }
 
@@ -546,19 +545,21 @@ Eigen::MatrixXd compute_robust_vcov(
             }
             double A_i = (k_last >= 0) ? cum_A[k_last] : 0.0;
             for (int q = 0; q < p; ++q) {
-                double B_iq    = (k_last >= 0) ? cum_B[k_last][q] : 0.0;
-                double e_yi_q  = (di > 0.5 && k_last >= 0) ? ek[k_last][q] : 0.0;
-                U(row_offset + i, q) = (sd.X(i, q) - e_yi_q) * di - ei * (sd.X(i, q) * A_i - B_iq);
+                double B_iq    = (k_last >= 0) ? cum_B(q, k_last) : 0.0;
+                double e_yi_q  = (di > 0.5 && k_last >= 0) ? ek(q, k_last) : 0.0;
+                U(row_offset + sd.input_idx[i], q) =
+                    (sd.X(i, q) - e_yi_q) * di - ei * (sd.X(i, q) * A_i - B_iq);
             }
         }
         row_offset += ns;
     }
 
-    std::map<int, Eigen::VectorXd> cluster_scores;
+    std::unordered_map<int, Eigen::VectorXd> cluster_scores;
+    cluster_scores.reserve(cluster.size());
     for (int i = 0; i < n_total; ++i) {
         int c = cluster[i];
-        if (cluster_scores.find(c) == cluster_scores.end()) cluster_scores[c] = U.row(i).transpose();
-        else cluster_scores[c] += U.row(i).transpose();
+        auto [it, inserted] = cluster_scores.try_emplace(c, U.row(i).transpose());
+        if (!inserted) it->second += U.row(i).transpose();
     }
 
     Eigen::MatrixXd B = Eigen::MatrixXd::Zero(p, p);

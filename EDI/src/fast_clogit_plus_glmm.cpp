@@ -7,10 +7,6 @@ using namespace Rcpp;
 
 namespace {
 
-inline double log1pexp_cpp(double x) {
-	if (x > 0.0) return x + std::log1p(std::exp(-x));
-	return std::log1p(std::exp(x));
-}
 
 inline double log_sum_exp_cpp(const Eigen::Ref<const Eigen::VectorXd>& x) {
 	const double m = x.maxCoeff();
@@ -107,14 +103,10 @@ public:
 
 	double neg_clogit(const Eigen::Ref<const Eigen::VectorXd>& beta_no_intercept) const {
 		if (!has_discordant) return 0.0;
-		const Eigen::VectorXd eta = X_disc * beta_no_intercept;
-		double nll = 0.0;
-		for (int i = 0; i < eta.size(); ++i) {
-			const double ll = y_disc[i] * eta[i] - log1pexp_cpp(eta[i]);
-			if (!std::isfinite(ll)) return 1e100;
-			nll -= ll;
-		}
-		return nll;
+		const Eigen::ArrayXd eta = (X_disc * beta_no_intercept).array();
+		const Eigen::ArrayXd ll = y_disc.array() * eta - log1pexp_array_safe(eta);  // vectorized softplus
+		if (!ll.allFinite()) return 1e100;
+		return -ll.sum();
 	}
 
 		double neg_glmm(const Eigen::Ref<const Eigen::VectorXd>& par_full) const {
