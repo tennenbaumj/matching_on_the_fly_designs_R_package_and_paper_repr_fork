@@ -162,7 +162,8 @@ public:
 			for (int g = 0; g < m_n_groups; ++g) {
 				const int start = m_group_start[g];
 				const int sz    = m_group_end[g] - start;
-				double log_lik_g_k = m_group_dead_sum[g] * (-log_sigma_eps) - m_group_dead_log_y_sum[g] * inv_eps;
+				// Per-obs conditional log-lik: dead*(w - log_sigma_eps - log_y) - exp(w)
+				double log_lik_g_k = m_group_dead_sum[g] * (-log_sigma_eps) - m_group_dead_log_y_sum[g];
 
 				for (int i = 0; i < sz; ++i) {
 					const int idx = start + i;
@@ -170,7 +171,7 @@ public:
 					// exp(wik) = exp(base_wi) * exp(delta_k); fallback for rare float overflow.
 					double exp_wik = m_base_exp[idx] * exp_delta_k;
 					if (!std::isfinite(exp_wik)) exp_wik = std::exp(std::min(wik, 700.0));
-					log_lik_g_k += m_dead[idx] * (wik * inv_eps) - exp_wik;
+					log_lik_g_k += m_dead[idx] * wik - exp_wik;
 					m_r_all_k_mat(idx, k) = exp_wik;
 					m_w_all_k_mat(idx, k) = wik;
 				}
@@ -192,22 +193,29 @@ public:
 			total_neg_ll -= ll_g;
 		}
 
+		// grad accumulates the gradient of the NEGATIVE log-likelihood
+		// (matching the convention of the other likelihood functors, e.g.
+		// fast_weibull_regression.cpp: return -loglik, grad = d(-loglik)/d params).
 		for (int k = 0; k < K; ++k) {
+			const double uk = sigma_u * m_u_vals[k];
 			for (int g = 0; g < m_n_groups; ++g) {
 				const double pw_gk = m_post_weights(g, k);
 				const int start    = m_group_start[g];
 				const int sz       = m_group_end[g] - start;
+				double sum_s_gk = 0.0;
 				for (int i = 0; i < sz; ++i) {
 					const int idx = start + i;
 					const double d_log_f_d_eta = (m_r_all_k_mat(idx, k) - m_dead[idx]) * inv_eps;
-					grad.head(m_p).noalias() += pw_gk * d_log_f_d_eta * m_X.row(idx).transpose();
+					sum_s_gk += d_log_f_d_eta;
+					grad.head(m_p).noalias() -= pw_gk * d_log_f_d_eta * m_X.row(idx).transpose();
 
 					const double wik = m_w_all_k_mat(idx, k);
 					const double d_log_f_d_log_sigma_eps = m_r_all_k_mat(idx, k) * wik - m_dead[idx] * (wik + 1.0);
-					grad[m_p] += pw_gk * d_log_f_d_log_sigma_eps;
+					grad[m_p] -= pw_gk * d_log_f_d_log_sigma_eps;
 				}
-				const double d_log_f_d_log_sigma_u = pw_gk * (m_gh.nodes[k] * m_gh.nodes[k] - 1.0);
-				grad[m_p + 1] -= d_log_f_d_log_sigma_u;
+				// d loglik_g / d log_sigma_u flows only through u_k = sigma_u*sqrt(2)*t_k:
+				// d w_ik / d log_sigma_u = -u_k/sigma_eps, so d l_ik/d log_sigma_u = s_ik*u_k.
+				grad[m_p + 1] -= pw_gk * uk * sum_s_gk;
 			}
 		}
 

@@ -3624,6 +3624,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         count_shift = private$count_shift,
         norm_sq_beta_vec = private$norm_sq_beta_vec,
         prob_censoring = private$prob_censoring,
+        dgp_params = private$dgp_params,
         rep = rep
       )
     },

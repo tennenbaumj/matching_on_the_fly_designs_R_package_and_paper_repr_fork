@@ -201,6 +201,7 @@ Collate:
     'inference_survival_KK_rank_regr.R'
     'inference_survival_KK_strat_cox.R'
     'inference_survival_KK_weibull_frailty.R'
+    'inference_survival_KK_weibull_marginal.R'
     'inference_survival_km_diff.R'
     'inference_survival_log_rank.R'
     'inference_survival_rmst.R'
