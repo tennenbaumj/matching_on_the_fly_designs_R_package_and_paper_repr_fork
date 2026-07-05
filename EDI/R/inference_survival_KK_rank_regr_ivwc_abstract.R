@@ -99,6 +99,47 @@ InferenceAbstractKKSurvivalRankRegrIVWC = R6::R6Class("InferenceAbstractKKSurviv
 		best_X_colnames_reservoir = NULL,
 		max_abs_reasonable_coef = 1e4,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
+		# Ladder of design-matrix candidates for the aftsrr fits: the full hardened-QR
+		# matrix first, then versions with increasingly aggressive correlated-column
+		# dropping. (Reinstated: this helper was removed in the model_formula refactor
+		# while its call sites in aftsrr_for_matched_pairs/_reservoir remained.)
+		aft_design_candidates = function(w, X, cache_key = "default"){
+			cache_name = paste0("rank_regr_design_candidates_", cache_key)
+			if (!is.null(private$cached_values[[cache_name]])) {
+				return(private$cached_values[[cache_name]])
+			}
+			X_full = cbind(w = w, X)
+
+			# Standard candidate: all covariates
+			attempt = private$fit_with_hardened_qr_column_dropping(
+				X_full = X_full,
+				required_cols = 1L,
+				fit_fun = function(X_fit) X_fit,
+				fit_ok = function(mod, X_fit, keep) TRUE
+			)
+			candidates = list(attempt$X)
+			keys = paste(colnames(candidates[[1L]]), collapse = "|")
+
+			thresholds = c(0.99, 0.95, 0.90, 0.85, 0.80, 0.70, 0.60, 0.50, 0.40, 0.30, 0.20, 0.10)
+			X_cov_orig = X_full[, -1, drop = FALSE]
+			for (thresh in thresholds){
+				X_cov = drop_highly_correlated_cols(X_cov_orig, threshold = thresh)$M
+				X_try = cbind(w = w, X_cov)
+				attempt_try = private$fit_with_hardened_qr_column_dropping(
+					X_full = X_try,
+					required_cols = 1L,
+					fit_fun = function(X_fit) X_fit,
+					fit_ok = function(mod, X_fit, keep) TRUE
+				)
+				key = paste(colnames(attempt_try$X), collapse = "|")
+				if (!(key %in% keys)){
+					candidates[[length(candidates) + 1L]] = attempt_try$X
+					keys = c(keys, key)
+				}
+			}
+			private$cached_values[[cache_name]] = candidates
+			candidates
+		},
 		# Abstract: subclasses return TRUE (multivariate) or FALSE (univariate).
 		extract_term_estimate = function(mod, term_name = "w"){
 			coefs = tryCatch(stats::coef(mod), error = function(e) NULL)
