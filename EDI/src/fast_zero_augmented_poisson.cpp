@@ -6,13 +6,6 @@ using namespace Rcpp;
 
 namespace {
 
-// Helper for log1mexp(x) = log(1 - exp(x)) for x < 0
-double log1mexp(double x) {
-    if (x >= 0) return -std::numeric_limits<double>::infinity();
-    if (x > -0.6931471805599453) return std::log(-std::expm1(x));
-    return std::log1p(-std::exp(x));
-}
-
 // Helper for log1pexp(x) = log(1 + exp(x))
 double log1pexp(double x) {
     if (x > 0) return x + std::log1p(std::exp(-x));
@@ -69,7 +62,10 @@ public:
                     m_w_zi[i] = -(1.0 - p);
                 } else {
                     const double eml = std::exp(-lam);
-                    neg_ll -= (-lse + m_y[i] * eta_c - lam - log1mexp(-lam));
+                    const double log1m_eml = (lam > 0.6931471805599453)
+                        ? std::log1p(-eml)
+                        : std::log(-std::expm1(-lam));
+                    neg_ll -= (-lse + m_y[i] * eta_c - lam - log1m_eml);
                     m_w_zi[i]   = p;
                     m_w_cond[i] = -(m_y[i] - lam / (1.0 - eml));
                 }

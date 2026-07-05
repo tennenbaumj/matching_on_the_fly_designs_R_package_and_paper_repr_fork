@@ -172,6 +172,7 @@ List fast_ordinal_regression_cpp(const Rcpp::NumericMatrix& X, const Rcpp::Numer
         );
     }
 
+    MatrixXd H = model.hessian(params);
     return List::create(
         Named("b") = params.tail(p),
         Named("alpha") = params.head(n_alpha),
@@ -180,9 +181,9 @@ List fast_ordinal_regression_cpp(const Rcpp::NumericMatrix& X, const Rcpp::Numer
         Named("neg_loglik") = fit.value,
         Named("converged") = fit.converged,
         Named("iterations") = fit.niter,
-        Named("observed_information") = model.hessian(params),
-        Named("fisher_information") = model.hessian(params),
-        Named("information") = model.hessian(params),
+        Named("observed_information") = H,
+        Named("fisher_information") = H,
+        Named("information") = H,
         Named("information_type") = "observed"
     );
 }
@@ -261,6 +262,7 @@ List fast_ordinal_regression_weighted_cpp(const Rcpp::NumericMatrix& X, const Rc
     LikelihoodFitResult fit = optimize_fixed_likelihood(model, params, fixed_spec, maxit, tol, optimization_alg, "lbfgs", 0, h_ptr);
     params = fit.params;
 
+    MatrixXd H = model.hessian(params);
     return List::create(
         Named("b") = params.tail(p),
         Named("alpha") = params.head(n_alpha),
@@ -269,9 +271,9 @@ List fast_ordinal_regression_weighted_cpp(const Rcpp::NumericMatrix& X, const Rc
         Named("neg_loglik") = fit.value,
         Named("converged") = fit.converged,
         Named("iterations") = fit.niter,
-        Named("observed_information") = model.hessian(params),
-        Named("fisher_information") = model.hessian(params),
-        Named("information") = model.hessian(params),
+        Named("observed_information") = H,
+        Named("fisher_information") = H,
+        Named("information") = H,
         Named("information_type") = "observed"
     );
 }
@@ -305,10 +307,7 @@ List fast_ordinal_regression_with_var_cpp(const Rcpp::NumericMatrix& X, const Rc
     bool converged = res["converged"];
     
     Eigen::Map<const Eigen::MatrixXd> map_X(X.begin(), X.rows(), X.cols());
-    Eigen::Map<const Eigen::VectorXd> map_y(y.begin(), y.size());
-
-    OrdinalRegression model(map_X, map_y);
-    MatrixXd H = model.hessian(params);
+    MatrixXd H = as<MatrixXd>(res["observed_information"]);
     
     int n_params = params.size();
     FixedParamSpec fixed_spec = make_fixed_param_spec(n_params, fixed_idx, fixed_values);
@@ -418,22 +417,22 @@ List ordinal_gcomp_post_fit_cpp(const Rcpp::NumericMatrix& X_fit,
         return total_mean / static_cast<double>(n);
     };
 
-    auto compute_md_from_params = [&](const VectorXd& par) {
-        const VectorXd alpha = par.head(n_alpha);
+    VectorXd eta1_scratch(n);
+    VectorXd eta0_scratch(n);
+    auto compute_md_from_alpha_eta = [&](const auto& alpha,
+                                         const VectorXd& eta1_values,
+                                         const VectorXd& eta0_values) {
         for (int k = 1; k < n_alpha; ++k) {
             if (alpha[k] <= alpha[k - 1]) return NA_REAL;
         }
-        const VectorXd beta = par.tail(p);
-        const VectorXd eta1_loc = X1 * beta;
-        const VectorXd eta0_loc = X0 * beta;
         double mean1_loc = 0.0;
         double mean0_loc = 0.0;
         for (int i = 0; i < n; ++i) {
             double m1 = 1.0;
             double m0 = 1.0;
             for (int k = 0; k < n_alpha; ++k) {
-                m1 += plogis_stable_cpp(eta1_loc[i] - alpha[k]);
-                m0 += plogis_stable_cpp(eta0_loc[i] - alpha[k]);
+                m1 += plogis_stable_cpp(eta1_values[i] - alpha[k]);
+                m0 += plogis_stable_cpp(eta0_values[i] - alpha[k]);
             }
             mean1_loc += m1;
             mean0_loc += m0;
@@ -447,18 +446,32 @@ List ordinal_gcomp_post_fit_cpp(const Rcpp::NumericMatrix& X_fit,
 
     const double h_step = 1e-5;
     VectorXd grad_md(params.size());
+    VectorXd p_plus = params;
+    VectorXd p_minus = params;
     for (int j = 0; j < params.size(); ++j) {
-        VectorXd p_plus = params;
-        VectorXd p_minus = params;
-        p_plus[j] += h_step;
-        p_minus[j] -= h_step;
-        const double f_plus = compute_md_from_params(p_plus);
-        const double f_minus = compute_md_from_params(p_minus);
+        p_plus[j] = params[j] + h_step;
+        p_minus[j] = params[j] - h_step;
+        double f_plus;
+        double f_minus;
+        if (j < n_alpha) {
+            f_plus = compute_md_from_alpha_eta(p_plus.head(n_alpha), eta1, eta0);
+            f_minus = compute_md_from_alpha_eta(p_minus.head(n_alpha), eta1, eta0);
+        } else {
+            const int beta_j = j - n_alpha;
+            eta1_scratch.noalias() = eta1 + h_step * X1.col(beta_j);
+            eta0_scratch.noalias() = eta0 + h_step * X0.col(beta_j);
+            f_plus = compute_md_from_alpha_eta(params.head(n_alpha), eta1_scratch, eta0_scratch);
+            eta1_scratch.noalias() = eta1 - h_step * X1.col(beta_j);
+            eta0_scratch.noalias() = eta0 - h_step * X0.col(beta_j);
+            f_minus = compute_md_from_alpha_eta(params.head(n_alpha), eta1_scratch, eta0_scratch);
+        }
         if (!R_finite(f_plus) || !R_finite(f_minus)) {
             grad_md[j] = NA_REAL;
         } else {
             grad_md[j] = (f_plus - f_minus) / (2.0 * h_step);
         }
+        p_plus[j] = params[j];
+        p_minus[j] = params[j];
     }
 
     double se_md = NA_REAL;

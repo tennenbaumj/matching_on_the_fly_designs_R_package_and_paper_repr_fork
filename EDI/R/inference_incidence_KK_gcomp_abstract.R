@@ -84,6 +84,7 @@ InferenceIncidKKGCompAbstract = R6::R6Class("InferenceIncidKKGCompAbstract",
 	private = list(
 		max_abs_reasonable_coef = 1e4,
 		best_X_colnames = NULL,
+		gcomp_boot_beta = NULL,
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			# Ensure we have the best design from the original data
 			if (is.null(private$best_X_colnames)){
@@ -146,18 +147,28 @@ InferenceIncidKKGCompAbstract = R6::R6Class("InferenceIncidKKGCompAbstract",
 			X_fit = X[ok, , drop = FALSE]
 			y_fit = as.numeric(private$y[ok])
 			w_fit = as.numeric(row_weights[ok])
+			p_fit = ncol(X_fit)
+			boot_ws = if (!is.null(private$gcomp_boot_beta) && length(private$gcomp_boot_beta) == p_fit) {
+				private$gcomp_boot_beta
+			} else {
+				private$get_fit_warm_start_for_length("beta", p_fit)
+			}
 			mod = tryCatch(
 				fast_logistic_regression_weighted_cpp(
 					X = X_fit,
 					y = y_fit,
 					weights = w_fit,
-					warm_start_beta = private$get_fit_warm_start_for_length("beta", ncol(X_fit)),
-					warm_start_fisher_info = private$get_fit_warm_start_fisher(ncol(X_fit))
+					warm_start_beta = boot_ws,
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(p_fit)
 				),
 				error = function(e) NULL
 			)
-			if (is.null(mod) || is.null(mod$b)) return(NA_real_)
+			if (is.null(mod) || is.null(mod$b)) {
+				private$gcomp_boot_beta = NULL
+				return(NA_real_)
+			}
 			coef_hat = as.numeric(mod$b)
+			private$gcomp_boot_beta = coef_hat
 			X1 = X_fit
 			X0 = X_fit
 			X1[, 2L] = 1

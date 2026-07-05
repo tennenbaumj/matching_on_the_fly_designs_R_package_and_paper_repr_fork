@@ -25,58 +25,50 @@ public:
 
     double operator()(const VectorXd& params, VectorXd& grad) const {
         const int n_alpha = m_K - 1;
-        const VectorXd alpha = params.head(n_alpha);
-        const VectorXd beta = params.tail(m_p);
+        Eigen::Map<const VectorXd> beta(params.data() + n_alpha, m_p);
 
         grad.setZero(params.size());
 
-        double neg_ll = 0.0;
-        std::vector<double> alpha_suffix(m_K, 0.0);
-        for (int j = m_K - 2; j >= 0; --j) {
-            alpha_suffix[j] = alpha_suffix[j + 1] + alpha[j];
-        }
+        // Precompute exp(alpha[k]) once per call — amortised over n obs
+        // unnorm[k] = u^(K-1-k) * prod_{j=k}^{K-2} exp_alpha[j],  u = exp(-eta)
+        std::vector<double> exp_alpha(n_alpha);
+        for (int k = 0; k < n_alpha; ++k) exp_alpha[k] = std::exp(params[k]);
 
-        VectorXd score_offsets(m_K);
-        for (int j = 0; j < m_K - 1; ++j) {
-            score_offsets[j] = -static_cast<double>(m_K - 1 - j);
-        }
-        score_offsets[m_K - 1] = 0.0;
-        VectorXd scores = VectorXd::Zero(m_K);
-        VectorXd probs = VectorXd::Zero(m_K);
-        VectorXd cdf = VectorXd::Zero(m_K - 1);
-        VectorXd y_levels = VectorXd::LinSpaced(m_K, 1.0, static_cast<double>(m_K));
+        double neg_ll = 0.0;
+        std::vector<double> prob(m_K);
+        std::vector<double> cdf(n_alpha);
 
         for (int i = 0; i < m_n; ++i) {
             const double eta = (m_p > 0) ? m_X.row(i).dot(beta) : 0.0;
+            const double u   = std::exp(-eta);
 
-            for (int j = 0; j < m_K - 1; ++j) {
-                scores[j] = alpha_suffix[j] - static_cast<double>(m_K - 1 - j) * eta;
+            // Build unnorm probs right-to-left via product recurrence
+            prob[n_alpha] = 1.0;
+            double total = 1.0;
+            for (int k = n_alpha - 1; k >= 0; --k) {
+                prob[k] = prob[k + 1] * exp_alpha[k] * u;
+                total += prob[k];
             }
-            scores[m_K - 1] = 0.0;
-
-            const double max_score = scores.maxCoeff();
-            probs = (scores.array() - max_score).exp().matrix();
-            const double denom = probs.sum();
-            probs /= denom;
+            const double inv_total = 1.0 / total;
+            for (int k = 0; k < m_K; ++k) prob[k] *= inv_total;
 
             const int y_i = m_y[i];
-            neg_ll -= (scores[y_i - 1] - max_score - std::log(denom));
+            neg_ll -= std::log(prob[y_i - 1]);
 
-            double running_cdf = 0.0;
-            double ey = probs.dot(y_levels);
-            for (int j = 0; j < m_K; ++j) {
-                if (j < m_K - 1) {
-                    running_cdf += probs[j];
-                    cdf[j] = running_cdf;
-                }
+            // CDF and E[Y] in one pass
+            double running_cdf = 0.0, ey = 0.0;
+            for (int k = 0; k < m_K; ++k) {
+                ey += static_cast<double>(k + 1) * prob[k];
+                if (k < n_alpha) { running_cdf += prob[k]; cdf[k] = running_cdf; }
             }
 
-            for (int j = 0; j < m_K - 1; ++j) {
-                grad[j] -= (((y_i <= (j + 1)) ? 1.0 : 0.0) - cdf[j]);
-            }
-            if (m_p > 0) {
+            // Alpha gradient: split at y_i to avoid branch inside hot inner loop
+            const int thresh = y_i - 1;
+            for (int j = 0;      j < thresh;  ++j) grad[j] += cdf[j];
+            for (int j = thresh; j < n_alpha; ++j) grad[j] -= (1.0 - cdf[j]);
+
+            if (m_p > 0)
                 grad.tail(m_p).noalias() -= m_X.row(i).transpose() * (static_cast<double>(y_i) - ey);
-            }
         }
 
         return neg_ll;
@@ -84,70 +76,66 @@ public:
 
     MatrixXd hessian(const VectorXd& params) const {
         const int n_alpha = m_K - 1;
-        const VectorXd beta = params.tail(m_p);
-        
+        Eigen::Map<const VectorXd> beta(params.data() + n_alpha, m_p);
+
         MatrixXd hess = MatrixXd::Zero(params.size(), params.size());
 
-        std::vector<double> alpha_suffix(m_K, 0.0);
-        for (int j = m_K - 2; j >= 0; --j) {
-            alpha_suffix[j] = alpha_suffix[j + 1] + params[j];
-        }
+        std::vector<double> exp_alpha(n_alpha);
+        for (int k = 0; k < n_alpha; ++k) exp_alpha[k] = std::exp(params[k]);
 
-        VectorXd y_levels = VectorXd::LinSpaced(m_K, 1.0, static_cast<double>(m_K));
-        VectorXd scores = VectorXd::Zero(m_K);
-        VectorXd probs = VectorXd::Zero(m_K);
-        VectorXd cdf = VectorXd::Zero(m_K - 1);
-        VectorXd prefix_first_moment = VectorXd::Zero(m_K - 1);
+        std::vector<double> prob(m_K);
+        std::vector<double> cdf(n_alpha);
+        std::vector<double> prefix_first_moment(n_alpha);
         const int total_p = params.size();
         double* H_data = hess.data();
 
         for (int i = 0; i < m_n; ++i) {
             const double eta = (m_p > 0) ? m_X.row(i).dot(beta) : 0.0;
+            const double u   = std::exp(-eta);
 
-            for (int j = 0; j < m_K - 1; ++j) {
-                scores[j] = alpha_suffix[j] - static_cast<double>(m_K - 1 - j) * eta;
+            prob[n_alpha] = 1.0;
+            double total = 1.0;
+            for (int k = n_alpha - 1; k >= 0; --k) {
+                prob[k] = prob[k + 1] * exp_alpha[k] * u;
+                total += prob[k];
             }
-            scores[m_K - 1] = 0.0;
+            const double inv_total = 1.0 / total;
+            for (int k = 0; k < m_K; ++k) prob[k] *= inv_total;
 
-            const double max_score = scores.maxCoeff();
-            probs = (scores.array() - max_score).exp().matrix();
-            probs /= probs.sum();
-
-            const double ey = probs.dot(y_levels);
-            const double ey2 = probs.dot(y_levels.array().square().matrix());
-            double running_cdf = 0.0;
-            double running_first_moment = 0.0;
-            for (int j = 0; j < m_K; ++j) {
-                if (j < m_K - 1) {
-                    running_cdf += probs[j];
-                    running_first_moment += y_levels[j] * probs[j];
-                    cdf[j] = running_cdf;
-                    prefix_first_moment[j] = running_first_moment;
+            double ey = 0.0, ey2 = 0.0;
+            double running_cdf = 0.0, running_first_moment = 0.0;
+            for (int k = 0; k < m_K; ++k) {
+                const double kp1 = static_cast<double>(k + 1);
+                ey  += kp1 * prob[k];
+                ey2 += kp1 * kp1 * prob[k];
+                if (k < n_alpha) {
+                    running_cdf += prob[k];
+                    running_first_moment += kp1 * prob[k];
+                    cdf[k] = running_cdf;
+                    prefix_first_moment[k] = running_first_moment;
                 }
             }
-            double var_y = std::max(0.0, ey2 - ey * ey);
+            const double var_y = std::max(0.0, ey2 - ey * ey);
 
-            for (int j = 0; j < m_K - 1; ++j) {
-                for (int k = j; k < m_K - 1; ++k) {
-                    double f_min = cdf[std::min(j, k)];
-                    double val = (f_min - cdf[j] * cdf[k]);
+            // Alpha-alpha block: val = cdf[j] * (1 - cdf[k])  (since k >= j => cdf[j]=min)
+            for (int j = 0; j < n_alpha; ++j) {
+                for (int k = j; k < n_alpha; ++k) {
+                    const double val = cdf[j] * (1.0 - cdf[k]);
                     hess(j, k) += val;
                     if (j != k) hess(k, j) += val;
                 }
             }
 
             if (m_p > 0) {
-                const double* xi = m_X.data() + i;  // xi[b * m_n] == X(i,b)
-                // Cross block: alpha-beta and beta-alpha (both triangles filled directly)
-                for (int j = 0; j < m_K - 1; ++j) {
-                    double cov_ind_y = prefix_first_moment[j] - ey * cdf[j];
+                const double* xi = m_X.data() + i;
+                for (int j = 0; j < n_alpha; ++j) {
+                    const double cov_ind_y = prefix_first_moment[j] - ey * cdf[j];
                     for (int b = 0; b < m_p; ++b) {
-                        double val = cov_ind_y * xi[b * m_n];
-                        H_data[j + (n_alpha + b) * total_p] += val;  // hess(j, n_alpha+b)
-                        H_data[(n_alpha + b) + j * total_p] += val;  // hess(n_alpha+b, j)
+                        const double val = cov_ind_y * xi[b * m_n];
+                        H_data[j + (n_alpha + b) * total_p] += val;
+                        H_data[(n_alpha + b) + j * total_p] += val;
                     }
                 }
-                // Beta-beta block (upper triangle only)
                 for (int c = 0; c < m_p; ++c) {
                     const double s = var_y * xi[c * m_n];
                     for (int r = 0; r <= c; ++r)
@@ -156,7 +144,6 @@ public:
             }
         }
 
-        // Reflect upper triangle to lower for beta-beta block only
         if (m_p > 0) {
             for (int c = 0; c < m_p; ++c)
                 for (int r = 0; r < c; ++r)

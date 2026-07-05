@@ -60,31 +60,25 @@ static List build_continuation_ratio_augmented_data(const Eigen::Ref<const Matri
 	}
 	int n_alpha = K - 1;
 
-	std::vector<double> z_vals;
-	std::vector<VectorXd> x_aug_vecs;
+	std::vector<int> y_level(n);
+	int total_rows = 0;
 	for (int i = 0; i < n; ++i) {
-		int yi_level = -1;
-		for (int k = 0; k < K; ++k) {
-			if (y[i] == levels[k]) {
-				yi_level = k;
-				break;
-			}
-		}
-		for (int j = 0; j < std::min(yi_level + 1, n_alpha); ++j) {
-			VectorXd x_row(n_alpha + p);
-			x_row.setZero();
-			x_row[j] = 1.0;
-			if (p > 0) x_row.tail(p) = X.row(i);
-			x_aug_vecs.push_back(x_row);
-			z_vals.push_back((yi_level == j) ? 1.0 : 0.0);
-		}
+		y_level[i] = static_cast<int>(
+			std::lower_bound(levels.begin(), levels.end(), y[i]) - levels.begin());
+		total_rows += std::min(y_level[i] + 1, n_alpha);
 	}
 
-	MatrixXd X_aug(z_vals.size(), n_alpha + p);
-	VectorXd z(z_vals.size());
-	for (int i = 0; i < X_aug.rows(); ++i) {
-		X_aug.row(i) = x_aug_vecs[i];
-		z[i] = z_vals[i];
+	MatrixXd X_aug = MatrixXd::Zero(total_rows, n_alpha + p);
+	VectorXd z(total_rows);
+	int row = 0;
+	for (int i = 0; i < n; ++i) {
+		const int yi_level = y_level[i];
+		const int rows_i = std::min(yi_level + 1, n_alpha);
+		for (int j = 0; j < rows_i; ++j, ++row) {
+			X_aug(row, j) = 1.0;
+			if (p > 0) X_aug.row(row).tail(p) = X.row(i);
+			z[row] = (yi_level == j) ? 1.0 : 0.0;
+		}
 	}
 	return List::create(Named("X_aug") = X_aug, Named("z") = z, Named("n_alpha") = n_alpha);
 }

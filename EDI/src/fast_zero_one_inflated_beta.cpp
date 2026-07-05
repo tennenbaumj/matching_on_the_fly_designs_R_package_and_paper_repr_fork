@@ -6,13 +6,13 @@ using namespace Rcpp;
 
 struct DigammaFunctor {
 	double operator()(double x) const {
-		return R::digamma(x);
+		return fast_digamma(x);
 	}
 };
 
 struct LgammaFunctor {
 	double operator()(double x) const {
-		return R::lgammafn(x);
+		return std::lgamma(x);
 	}
 };
 
@@ -40,7 +40,12 @@ public:
 		m_X_zero_one(X_zero_one),
 		m_n(X.rows()),
 		m_p(X.cols()),
-		m_p_zero_one(X_zero_one.cols())
+		m_p_zero_one(X_zero_one.cols()),
+		m_pi0(m_n),
+		m_pi1(m_n),
+		m_pib(m_n),
+		m_grad_gamma0(m_p_zero_one),
+		m_grad_gamma1(m_p_zero_one)
 	{
 		m_n_zero = 0;
 		m_n_one = 0;
@@ -85,44 +90,41 @@ public:
 
 		Eigen::VectorXd eta0 = m_X_zero_one * gamma0;
 		Eigen::VectorXd eta1 = m_X_zero_one * gamma1;
-		Eigen::VectorXd pi0(m_n);
-		Eigen::VectorXd pi1(m_n);
-		Eigen::VectorXd pib(m_n);
 		double mixture_loglik = 0.0;
-		Eigen::VectorXd grad_gamma0 = Eigen::VectorXd::Zero(m_p_zero_one);
-		Eigen::VectorXd grad_gamma1 = Eigen::VectorXd::Zero(m_p_zero_one);
-		double* g0 = grad_gamma0.data();
-		double* g1 = grad_gamma1.data();
+		m_grad_gamma0.setZero();
+		m_grad_gamma1.setZero();
+		double* g0 = m_grad_gamma0.data();
+		double* g1 = m_grad_gamma1.data();
 		for (int i = 0; i < m_n; ++i){
 			double max_logit = std::max(std::max(eta0[i], eta1[i]), 0.0);
 			double e0 = std::exp(eta0[i] - max_logit);
 			double e1 = std::exp(eta1[i] - max_logit);
 			double eb = std::exp(-max_logit);
 			double denom = e0 + e1 + eb;
-			pi0[i] = e0 / denom;
-			pi1[i] = e1 / denom;
-			pib[i] = eb / denom;
+			m_pi0[i] = e0 / denom;
+			m_pi1[i] = e1 / denom;
+			m_pib[i] = eb / denom;
 			const double* xzi_ptr = m_X_zero_one.data() + i;  // xzi_ptr[j * m_n] == X_zero_one(i,j)
 			if (m_y[i] <= 0){
-				mixture_loglik += std::log(pi0[i]);
+				mixture_loglik += std::log(m_pi0[i]);
 				for (int j = 0; j < m_p_zero_one; ++j) {
 					const double xj = xzi_ptr[j * m_n];
-					g0[j] += xj * (1.0 - pi0[i]);
-					g1[j] -= xj * pi1[i];
+					g0[j] += xj * (1.0 - m_pi0[i]);
+					g1[j] -= xj * m_pi1[i];
 				}
 			} else if (m_y[i] >= 1){
-				mixture_loglik += std::log(pi1[i]);
+				mixture_loglik += std::log(m_pi1[i]);
 				for (int j = 0; j < m_p_zero_one; ++j) {
 					const double xj = xzi_ptr[j * m_n];
-					g0[j] -= xj * pi0[i];
-					g1[j] += xj * (1.0 - pi1[i]);
+					g0[j] -= xj * m_pi0[i];
+					g1[j] += xj * (1.0 - m_pi1[i]);
 				}
 			} else {
-				mixture_loglik += std::log(pib[i]);
+				mixture_loglik += std::log(m_pib[i]);
 				for (int j = 0; j < m_p_zero_one; ++j) {
 					const double xj = xzi_ptr[j * m_n];
-					g0[j] -= xj * pi0[i];
-					g1[j] -= xj * pi1[i];
+					g0[j] -= xj * m_pi0[i];
+					g1[j] -= xj * m_pi1[i];
 				}
 			}
 		}
@@ -134,7 +136,7 @@ public:
 		double sum_term3 = ((mu_beta_phi.array() - 1.0) * m_log_y_beta.array()).sum();
 		double sum_term4 = ((one_minus_mu_beta_phi.array() - 1.0) * m_log1_y_beta.array()).sum();
 		double neg_ll_beta = -(
-			m_n_beta * R::lgammafn(phi) -
+			m_n_beta * std::lgamma(phi) -
 			sum_loggamma_mu_phi -
 			sum_loggamma_one_minus_mu_phi +
 			sum_term3 +
@@ -161,14 +163,14 @@ public:
 		double sum_mu_logy = (mu_beta.array() * m_log_y_beta.array()).sum();
 		double sum_one_minus_log1y = ((1.0 - mu_beta.array()) * m_log1_y_beta.array()).sum();
 
-		double d_neg_ll_d_phi = -m_n_beta * R::digamma(phi) +
+		double d_neg_ll_d_phi = -m_n_beta * fast_digamma(phi) +
 			sum_mu_digamma +
 			sum_one_minus_digamma -
 			sum_mu_logy -
 			sum_one_minus_log1y;
 		grad[m_p] = d_neg_ll_d_phi * phi;
-		grad.segment(m_p + 1, m_p_zero_one) = -grad_gamma0;
-		grad.tail(m_p_zero_one) = -grad_gamma1;
+		grad.segment(m_p + 1, m_p_zero_one) = -m_grad_gamma0;
+		grad.tail(m_p_zero_one) = -m_grad_gamma1;
 
 		return neg_ll;
 	}
@@ -186,7 +188,7 @@ public:
 			Eigen::VectorXd mu_beta = logistic(eta_beta);
 			clamp_probs(mu_beta);
 
-			double d_neg_ll_d_phi = -m_n_beta * R::digamma(phi);
+			double d_neg_ll_d_phi = -m_n_beta * fast_digamma(phi);
 			double d2_neg_ll_d_phi2 = -m_n_beta * R::trigamma(phi);
 			// total_H is the full H matrix column stride
 			const int total_H = m_p + 1 + 2 * m_p_zero_one;
@@ -199,8 +201,8 @@ public:
 				const double d2mu_deta2 = dmu_deta * (1.0 - 2.0 * mu);
 				const double a = mu * phi;
 				const double b = one_minus_mu * phi;
-				const double digamma_a = R::digamma(a);
-				const double digamma_b = R::digamma(b);
+				const double digamma_a = fast_digamma(a);
+				const double digamma_b = fast_digamma(b);
 				const double trigamma_a = R::trigamma(a);
 				const double trigamma_b = R::trigamma(b);
 				const double c = digamma_a - digamma_b - m_log_y_beta[i] + m_log1_y_beta[i];
@@ -388,6 +390,11 @@ private:
 	int m_n_beta;
 	int m_n_zero;
 	int m_n_one;
+	Eigen::VectorXd m_pi0;
+	Eigen::VectorXd m_pi1;
+	Eigen::VectorXd m_pib;
+	Eigen::VectorXd m_grad_gamma0;
+	Eigen::VectorXd m_grad_gamma1;
 };
 
 // [[Rcpp::export]]

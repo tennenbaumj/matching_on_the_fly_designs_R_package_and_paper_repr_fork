@@ -1,6 +1,7 @@
 #ifndef EDI_ORDINAL_FIXED_LINK_HELPERS_H
 #define EDI_ORDINAL_FIXED_LINK_HELPERS_H
 
+#include "fast_erfc.h"
 #include <Rcpp.h>
 #include <RcppEigen.h>
 #include <algorithm>
@@ -34,7 +35,7 @@ inline double cdf(Link link, double z) {
             return e / (1.0 + e);
         }
     case Link::Probit:
-        return R::pnorm5(z, 0.0, 1.0, 1, 0);
+        return pnorm_fast(z);
     case Link::Cloglog:
         if (z > 5.0) return 1.0;
         if (z < -37.0) return 0.0;
@@ -52,7 +53,7 @@ inline double pdf(Link link, double z) {
         return F * (1.0 - F);
     }
     case Link::Probit:
-        return R::dnorm4(z, 0.0, 1.0, 0);
+        return dnorm_fast(z);
     case Link::Cloglog:
         if (z > 5.0 || z < -37.0) return 0.0;
         return std::exp(z - std::exp(z));
@@ -70,7 +71,7 @@ inline double pdf_derivative(Link link, double z) {
         return f * (1.0 - 2.0 * F);
     }
     case Link::Probit: {
-        const double f = R::dnorm4(z, 0.0, 1.0, 0);
+        const double f = dnorm_fast(z);
         return -z * f;
     }
     case Link::Cloglog: {
@@ -109,6 +110,7 @@ private:
     mutable Eigen::VectorXd m_scratch_dq;
     mutable Eigen::MatrixXd m_scratch_d2q;
     mutable Eigen::VectorXd m_scratch_v;
+    mutable Eigen::VectorXd m_scratch_eta;
 
     inline double obs_weight(int i) const {
         return m_use_weights ? std::max(m_weights[i], 0.0) : 1.0;
@@ -159,7 +161,8 @@ public:
         m_K(m_levels.size()), m_link(link), m_eta_sign(eta_sign), m_use_weights(weights.size() == X.rows()),
         m_scratch_dq((m_K - 1) + m_p),
         m_scratch_d2q((m_K - 1) + m_p, (m_K - 1) + m_p),
-        m_scratch_v((m_K - 1) + m_p) {}
+        m_scratch_v((m_K - 1) + m_p),
+        m_scratch_eta(m_n) {}
 
     static std::vector<double> init_levels_static(const Eigen::Ref<const Eigen::VectorXd>& y) {
         return init_levels(y);
@@ -168,16 +171,16 @@ public:
     double neg_log_likelihood(const Eigen::Ref<const Eigen::VectorXd>& params) const {
         if (!validate_params(params)) return 1e10;
         const int n_alpha = m_K - 1;
-        const Eigen::VectorXd alpha = params.head(n_alpha);
-        const Eigen::VectorXd beta = params.tail(m_p);
-        const Eigen::VectorXd eta = m_X * beta;
+        const auto alpha = params.head(n_alpha);
+        const auto beta = params.tail(m_p);
+        m_scratch_eta.noalias() = m_X * beta;
         double nll = 0.0;
 
         for (int i = 0; i < m_n; ++i) {
             const int yi_idx = level_index(m_levels, m_y[i]);
             if (yi_idx < 0) return 1e10;
-            const double p_upper = (yi_idx == m_K - 1) ? 1.0 : cdf(m_link, alpha[yi_idx] + m_eta_sign * eta[i]);
-            const double p_lower = (yi_idx == 0) ? 0.0 : cdf(m_link, alpha[yi_idx - 1] + m_eta_sign * eta[i]);
+            const double p_upper = (yi_idx == m_K - 1) ? 1.0 : cdf(m_link, alpha[yi_idx] + m_eta_sign * m_scratch_eta[i]);
+            const double p_lower = (yi_idx == 0) ? 0.0 : cdf(m_link, alpha[yi_idx - 1] + m_eta_sign * m_scratch_eta[i]);
             const double prob = std::max(1e-12, p_upper - p_lower);
             nll -= obs_weight(i) * std::log(prob);
         }
@@ -190,26 +193,26 @@ public:
         if (!validate_params(params)) return 1e10;
 
         const int n_alpha = m_K - 1;
-        const Eigen::VectorXd alpha = params.head(n_alpha);
-        const Eigen::VectorXd beta = params.tail(m_p);
-        const Eigen::VectorXd eta = m_X * beta;
+        const auto alpha = params.head(n_alpha);
+        const auto beta = params.tail(m_p);
+        m_scratch_eta.noalias() = m_X * beta;
         double nll = 0.0;
 
         for (int i = 0; i < m_n; ++i) {
             const int yi_idx = level_index(m_levels, m_y[i]);
             if (yi_idx < 0) return 1e10;
 
-            const double p_upper = (yi_idx == m_K - 1) ? 1.0 : cdf(m_link, alpha[yi_idx] + m_eta_sign * eta[i]);
-            const double p_lower = (yi_idx == 0) ? 0.0 : cdf(m_link, alpha[yi_idx - 1] + m_eta_sign * eta[i]);
+            const double p_upper = (yi_idx == m_K - 1) ? 1.0 : cdf(m_link, alpha[yi_idx] + m_eta_sign * m_scratch_eta[i]);
+            const double p_lower = (yi_idx == 0) ? 0.0 : cdf(m_link, alpha[yi_idx - 1] + m_eta_sign * m_scratch_eta[i]);
             const double prob = std::max(1e-12, p_upper - p_lower);
             m_scratch_dq.setZero();
             const double wi = obs_weight(i);
 
             if (yi_idx < m_K - 1) {
-                add_endpoint_gradient(yi_idx, alpha[yi_idx] + m_eta_sign * eta[i], 1.0, m_X.row(i), m_scratch_dq);
+                add_endpoint_gradient(yi_idx, alpha[yi_idx] + m_eta_sign * m_scratch_eta[i], 1.0, m_X.row(i), m_scratch_dq);
             }
             if (yi_idx > 0) {
-                add_endpoint_gradient(yi_idx - 1, alpha[yi_idx - 1] + m_eta_sign * eta[i], -1.0, m_X.row(i), m_scratch_dq);
+                add_endpoint_gradient(yi_idx - 1, alpha[yi_idx - 1] + m_eta_sign * m_scratch_eta[i], -1.0, m_X.row(i), m_scratch_dq);
             }
             nll -= wi * std::log(prob);
             grad.noalias() -= wi * m_scratch_dq / prob;
@@ -226,12 +229,13 @@ public:
         }
 
         const int n_alpha = m_K - 1;
-        const Eigen::VectorXd alpha = params.head(n_alpha);
-        const Eigen::VectorXd beta = params.tail(m_p);
-        const Eigen::VectorXd eta = m_X * beta;
+        const auto alpha = params.head(n_alpha);
+        const auto beta = params.tail(m_p);
+        m_scratch_eta.noalias() = m_X * beta;
         double* H_data = H.data();
 
-        // Local arrays for dq, v_upper, v_lower — allocated once, reset per observation
+        // Local arrays are faster than Eigen scratch vectors for these small
+        // parameter dimensions and are allocated only on Hessian calls.
         std::vector<double> dq(n_params, 0.0);
         std::vector<double> v_upper(n_params, 0.0);
         std::vector<double> v_lower(n_params, 0.0);
@@ -240,7 +244,7 @@ public:
             const int yi_idx = level_index(m_levels, m_y[i]);
             if (yi_idx < 0) continue;
 
-            const double eta_i = eta[i];
+            const double eta_i = m_scratch_eta[i];
             const double wi = obs_weight(i);
 
             // Compute endpoint quantities
@@ -317,18 +321,18 @@ public:
         if (!validate_params(params)) return H;
 
         const int n_alpha = m_K - 1;
-        const Eigen::VectorXd alpha = params.head(n_alpha);
-        const Eigen::VectorXd beta = params.tail(m_p);
-        const Eigen::VectorXd eta = m_X * beta;
+        const auto alpha = params.head(n_alpha);
+        const auto beta = params.tail(m_p);
+        m_scratch_eta.noalias() = m_X * beta;
         double* H_data = H.data();
 
-        // Cached per-category gradients for this observation
+        // Cached per-category gradients for this observation.
         std::vector<std::vector<double>> grad_pi(m_K, std::vector<double>(n_params, 0.0));
         std::vector<double> f(n_alpha, 0.0);
         std::vector<double> p(n_alpha, 0.0);
 
         for (int i = 0; i < m_n; ++i) {
-            const double eta_i = eta[i];
+            const double eta_i = m_scratch_eta[i];
             const double wi = obs_weight(i);
             const double* xi = m_X.data() + i;
 

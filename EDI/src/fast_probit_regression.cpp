@@ -7,29 +7,13 @@ using namespace Rcpp;
 
 namespace {
 
-// 1/sqrt(2) and 1/sqrt(2*pi) as compile-time constants
-static const double kSqrt1_2    = 0.7071067811865476;
-static const double k1_Sqrt2Pi  = 0.3989422804014327;
-
-// Clamped pnorm to avoid log(0) and stability issues.
-inline double pnorm_fast(double x) {
-    if (x >= 8.0) return 1.0 - 6e-16;
-    if (x <= -8.0) return 6e-16;
-    return 0.5 * std::erfc(-x * kSqrt1_2);
-}
-
-// phi(x) = exp(-x^2/2) / sqrt(2*pi)
-inline double dnorm_fast(double x) {
-    return k1_Sqrt2Pi * std::exp(-0.5 * x * x);
-}
-
 // Log-scale pnorm: falls back to R for |x| > 6 where direct log(erfc) loses precision.
 inline double log_pnorm_lower(double x) {
-    if (x > -6.0 && x < 6.0) return std::log(0.5 * std::erfc(-x * kSqrt1_2));
+    if (x > -6.0 && x < 6.0) return std::log(0.5 * fast_erfc(-x * kSqrt1_2));
     return R::pnorm5(x, 0.0, 1.0, 1, 1);
 }
 inline double log_pnorm_upper(double x) {
-    if (x > -6.0 && x < 6.0) return std::log(0.5 * std::erfc(x * kSqrt1_2));
+    if (x > -6.0 && x < 6.0) return std::log(0.5 * fast_erfc(x * kSqrt1_2));
     return R::pnorm5(x, 0.0, 1.0, 0, 1);
 }
 
@@ -219,12 +203,11 @@ ModelResult fast_probit_regression_internal(
         res.XtWX = expand_free_covariance(p, fixed_spec, XtWX, false);
         res.score = expand_free_params(score_free, Eigen::VectorXd::Zero(p), fixed_spec);
         
-        // Final negative log-likelihood for IRLS
+        // Reuse mu[] from last IRLS iteration — avoids 1 GEMV + n erfc calls
         double nl = 0.0;
-        const Eigen::VectorXd final_eta = X_free * beta_free + eta_fixed;
         for (int i = 0; i < n; ++i) {
             const double wi = use_weights ? weights_eigen[i] : 1.0;
-            nl -= wi * (y_eigen[i] * log_pnorm_lower(final_eta[i]) + (1.0 - y_eigen[i]) * log_pnorm_upper(final_eta[i]));
+            nl -= wi * (y_eigen[i] > 0.5 ? std::log(mu[i]) : std::log1p(-mu[i]));
         }
         res.neg_ll = nl;
     }

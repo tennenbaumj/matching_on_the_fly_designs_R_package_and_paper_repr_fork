@@ -397,11 +397,15 @@ List gcomp_ordinal_proportional_odds_post_fit_cpp(SEXP X_fit_sexp,
   Eigen::VectorXd eta0 = eta_base;
 
   auto compute_mean = [&](const Eigen::VectorXd& eta_vec) {
-    Eigen::ArrayXd mean = Eigen::ArrayXd::Ones(n);
-    for (int k = 0; k < K_minus_1; ++k) {
-      mean += 1.0 - plogis_array(Eigen::ArrayXd::Constant(n, alpha_hat[k]) - eta_vec.array());
+    double sum = 0.0;
+    for (int i = 0; i < n; ++i) {
+      double m = 1.0;
+      for (int k = 0; k < K_minus_1; ++k) {
+        m += 1.0 - plogis_stable(alpha_hat[k] - eta_vec[i]);
+      }
+      sum += m;
     }
-    return mean.mean();
+    return sum / n;
   };
 
   double mean1 = compute_mean(eta1);

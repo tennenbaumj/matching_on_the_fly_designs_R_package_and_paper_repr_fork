@@ -124,6 +124,7 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 	),
 	private = list(
 		best_X_colnames = NULL,
+		gcomp_boot_beta = NULL,
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			# Ensure we have the best design from the original data
 			if (is.null(private$best_X_colnames)){
@@ -246,20 +247,30 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 				}
 				ok = is.finite(row_weights) & row_weights > 0 & is.finite(private$y)
 				if (sum(ok) <= ncol(X_fit)) return(NULL)
+				p_fit = ncol(X_fit)
+				boot_ws = if (!is.null(private$gcomp_boot_beta) && length(private$gcomp_boot_beta) == p_fit) {
+					private$gcomp_boot_beta
+				} else {
+					private$get_fit_warm_start_for_length("beta", p_fit)
+				}
 				mod = tryCatch(
 					fast_logistic_regression_weighted_cpp(
 						X = X_fit[ok, , drop = FALSE],
 						y = as.numeric(private$y[ok]),
 						weights = as.numeric(row_weights[ok]),
-						warm_start_beta = private$get_fit_warm_start_for_length("beta", ncol(X_fit)),
-						warm_start_fisher_info = private$get_fit_warm_start_fisher(ncol(X_fit))
+						warm_start_beta = boot_ws,
+						warm_start_fisher_info = private$get_fit_warm_start_fisher(p_fit)
 					),
 					error = function(e) NULL
 				)
-				if (is.null(mod)) return(NULL)
+				if (is.null(mod)) {
+					private$gcomp_boot_beta = NULL
+					return(NULL)
+				}
 				coef_hat = as.numeric(mod$b)
 				if (private$coefficients_are_usable(coef_hat)) {
 					private$set_fit_warm_start(coef_hat, "beta", fisher = mod$fisher_information)
+					private$gcomp_boot_beta = coef_hat
 					names(coef_hat) = colnames(X_fit)
 					return(list(X = X_fit, j_treat = j_treat, coefficients = coef_hat, estimate_only = TRUE))
 				}

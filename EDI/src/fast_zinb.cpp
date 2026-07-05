@@ -62,7 +62,7 @@ public:
                 const int slot = static_cast<int>(m_distinct_y.size());
                 seen[yi_int] = slot;
                 m_distinct_y.push_back(static_cast<double>(yi_int));
-                m_lgamma_y1.push_back(R::lgammafn(static_cast<double>(yi_int) + 1.0));
+                m_lgamma_y1.push_back(std::lgamma(static_cast<double>(yi_int) + 1.0));
                 m_y_slot[i] = slot;
             } else {
                 m_y_slot[i] = it->second;
@@ -93,13 +93,13 @@ public:
 
         // Hoist theta-only special functions out of the observation loop.
         const double digamma_theta = fast_digamma(theta);
-        const double lgamma_theta  = R::lgammafn(theta);
+        const double lgamma_theta  = std::lgamma(theta);
 
         // Fill preallocated per-distinct-y tables.
         const int nd = static_cast<int>(m_distinct_y.size());
         for (int k = 0; k < nd; ++k) {
             const double ypt = m_distinct_y[k] + theta;
-            m_lgamma_yptheta[k]  = R::lgammafn(ypt);
+            m_lgamma_yptheta[k]  = std::lgamma(ypt);
             m_digamma_yptheta[k] = fast_digamma(ypt);
         }
 

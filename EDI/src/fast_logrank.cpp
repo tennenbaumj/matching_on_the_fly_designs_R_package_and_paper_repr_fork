@@ -40,29 +40,38 @@ ModelResult fast_logrank_internal(const Eigen::Ref<const Eigen::VectorXd>& time,
   }
   std::sort(recs.begin(), recs.end(), record_less);
 
-  std::vector<double> martingale(n, NA_REAL);
+  // Precompute group boundaries: eliminates FP equality check inside the hot loop
+  std::vector<int> gstart;
+  gstart.reserve(n);
+  {
+    int i = 0;
+    while (i < n) {
+      gstart.push_back(i);
+      const double t = recs[i].time;
+      while (++i < n && recs[i].time == t);
+    }
+  }
+  gstart.push_back(n);
+  const int n_groups = static_cast<int>(gstart.size()) - 1;
+
   double score = 0.0;
   double var_score = 0.0;
   double cum_hazard = 0.0;
   int risk_all = n;
   int risk_treat = n_treat;
+  // Fused martingale accumulators — no martingale[] array needed
+  double sum_m_treat = 0.0, sum_m_control = 0.0;
+  double sum_sq_m_treat = 0.0, sum_sq_m_control = 0.0;
 
-  int warm_start_params = 0;
-  while (warm_start_params < n) {
-    const double curr_time = recs[warm_start_params].time;
-    int end = warm_start_params;
-    int d_all = 0;
-    int d_treat = 0;
-    int remove_treat = 0;
+  for (int g = 0; g < n_groups; ++g) {
+    const int start = gstart[g];
+    const int end   = gstart[g + 1];
+    int d_all = 0, d_treat = 0, remove_treat = 0;
 
-    while (end < n && recs[end].time == curr_time) {
-      const SubjectRecord& rec = recs[end];
-      if (rec.dead == 1) {
-        ++d_all;
-        if (rec.w == 1) ++d_treat;
-      }
+    for (int i = start; i < end; ++i) {
+      const SubjectRecord& rec = recs[i];
+      if (rec.dead == 1) { ++d_all; if (rec.w == 1) ++d_treat; }
       if (rec.w == 1) ++remove_treat;
-      ++end;
     }
 
     if (d_all > 0 && risk_all > 0) {
@@ -75,33 +84,27 @@ ModelResult fast_logrank_internal(const Eigen::Ref<const Eigen::VectorXd>& time,
       cum_hazard += static_cast<double>(d_all) / static_cast<double>(risk_all);
     }
 
-    for (int i = warm_start_params; i < end; ++i) martingale[i] = static_cast<double>(recs[i].dead) - cum_hazard;
-    risk_all -= (end - warm_start_params);
+    // Accumulate martingale sums directly — cum_hazard is now final for this group
+    for (int i = start; i < end; ++i) {
+      const double m = static_cast<double>(recs[i].dead) - cum_hazard;
+      if (recs[i].w == 1) { sum_m_treat += m; sum_sq_m_treat += m * m; }
+      else { sum_m_control += m; sum_sq_m_control += m * m; }
+    }
+
+    risk_all -= (end - start);
     risk_treat -= remove_treat;
-    warm_start_params = end;
   }
 
-  double mean_treat = 0.0, mean_control = 0.0;
-  for (int i = 0; i < n; ++i) {
-    if (recs[i].w == 1) mean_treat += martingale[i];
-    else mean_control += martingale[i];
-  }
-  if (n_treat > 0) mean_treat /= static_cast<double>(n_treat);
-  if (n_control > 0) mean_control /= static_cast<double>(n_control);
+  const double mean_treat   = (n_treat   > 0) ? sum_m_treat   / static_cast<double>(n_treat)   : 0.0;
+  const double mean_control = (n_control > 0) ? sum_m_control / static_cast<double>(n_control) : 0.0;
   res.b = Eigen::VectorXd(1);
   res.b[0] = (n_treat > 0 && n_control > 0) ? (mean_treat - mean_control) : NA_REAL;
 
   double var_treat = 0.0, var_control = 0.0;
-  if (n_treat > 1) {
-    double ss = 0.0;
-    for (int i = 0; i < n; ++i) if (recs[i].w == 1) { double diff = martingale[i] - mean_treat; ss += diff * diff; }
-    var_treat = ss / static_cast<double>(n_treat - 1);
-  }
-  if (n_control > 1) {
-    double ss = 0.0;
-    for (int i = 0; i < n; ++i) if (recs[i].w == 0) { double diff = martingale[i] - mean_control; ss += diff * diff; }
-    var_control = ss / static_cast<double>(n_control - 1);
-  }
+  if (n_treat > 1)
+    var_treat = (sum_sq_m_treat - static_cast<double>(n_treat) * mean_treat * mean_treat) / static_cast<double>(n_treat - 1);
+  if (n_control > 1)
+    var_control = (sum_sq_m_control - static_cast<double>(n_control) * mean_control * mean_control) / static_cast<double>(n_control - 1);
 
   if (std::isfinite(var_treat) && std::isfinite(var_control)) {
     const double se_sq = var_treat / static_cast<double>(n_treat) + var_control / static_cast<double>(n_control);

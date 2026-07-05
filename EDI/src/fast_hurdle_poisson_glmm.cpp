@@ -12,6 +12,7 @@
 //   Total length: p + 1
 
 #include "_helper_functions.h"
+#include "_glmm_engine.h"
 #include <RcppEigen.h>
 #include <cmath>
 #include <vector>
@@ -43,12 +44,6 @@ GHRuleHP gauss_hermite_rule_hp(int n) {
 	return rule;
 }
 
-inline double log_sum_exp_hp(const Eigen::Ref<const Eigen::VectorXd>& x) {
-	const double m = x.maxCoeff();
-	if (!std::isfinite(m)) return m;
-	return m + std::log((x.array() - m).exp().sum());
-}
-
 inline double soft_barrier_hp(double log_sigma, double center = 5.0, double scale = 10.0) {
 	const double d = std::abs(log_sigma) - center;
 	if (d <= 0.0) return 0.0;
@@ -65,6 +60,12 @@ inline double soft_barrier_hp_hessian(double log_sigma, double center = 5.0, dou
 	const double d = std::abs(log_sigma) - center;
 	if (d <= 0.0) return 0.0;
 	return 2.0 * scale;
+}
+
+inline double log_one_minus_exp_neg_hp(double lam, double eneg, double eta) {
+	if (lam < 1e-10) return eta;
+	// log1p(-x) = -x + O(x^2); at x < 1e-7 the absolute error is < 5.1e-15.
+	return (eneg < 1e-7) ? -eneg : std::log1p(-eneg);
 }
 
 template<typename XDerived, typename WDerived, typename OutDerived>
@@ -170,6 +171,7 @@ class HurdlePoissonGLMMObjective {
 	std::vector<double> m_exp_bvals;
 	Eigen::VectorXd m_b_vals;
 	Eigen::VectorXd m_log_terms;
+	Eigen::VectorXd m_post_weights;
 	Eigen::VectorXd m_eta0;
 	Eigen::VectorXd m_res_k;
 	Eigen::VectorXd m_d2e_k;
@@ -189,6 +191,7 @@ public:
 		m_exp_bvals.resize(K);
 		m_b_vals.resize(K);
 		m_log_terms.resize(K);
+		m_post_weights.resize(K);
 		m_eta0.resize(d.max_grp_sz);
 		m_res_k.resize(d.max_grp_sz);
 		m_d2e_k.resize(d.max_grp_sz);
@@ -248,13 +251,13 @@ public:
 					const double eneg   = eneg_k[i];
 					const double eta_ki = eta0[i] + bk;
 					// log(1-exp(-lam)): for tiny lam use log(lam)=eta_ki (avoids cancellation).
-					const double lne = (lam < 1e-10) ? eta_ki : std::log1p(-eneg);
+					const double lne = log_one_minus_exp_neg_hp(lam, eneg, eta_ki);
 					ll_k += y_g[i] * eta_ki - lam - lfg[i] - lne;
 				}
 				m_log_terms[k] = ll_k;
 			}
 
-			const double ll_g = log_sum_exp_hp(m_log_terms);
+			const double ll_g = glmm::log_sum_exp_and_weights(m_log_terms, m_post_weights);
 			if (!std::isfinite(ll_g)) { grad.setZero(); return 1e100; }
 			total_nll -= ll_g;
 
@@ -265,7 +268,7 @@ public:
 			double w_sigma = 0.0;
 
 			for (int k = 0; k < K; ++k) {
-				const double post_k = std::exp(m_log_terms[k] - ll_g);
+				const double post_k = m_post_weights[k];
 				if (post_k < 1e-15) continue;
 				const double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;
 				const double* eneg_k = m_eneg.data() + k * dat.max_grp_sz;
@@ -331,19 +334,19 @@ public:
 					const double lam    = lam_k[i];
 					const double eneg   = eneg_k[i];
 					const double eta_ki = eta0[i] + bk;
-					const double lne    = (lam < 1e-10) ? eta_ki : std::log1p(-eneg);
+					const double lne    = log_one_minus_exp_neg_hp(lam, eneg, eta_ki);
 					ll_k += y_g[i] * eta_ki - lam - lfg[i] - lne;
 				}
 				m_log_terms[k] = ll_k;
 			}
-			const double ll_g = log_sum_exp_hp(m_log_terms);
+			const double ll_g = glmm::log_sum_exp_and_weights(m_log_terms, m_post_weights);
 
 			m_E_Hik.setZero();
 			m_E_GiGiT.setZero();
 			m_G_avg.setZero();
 
 			for (int k = 0; k < K; k++) {
-				const double pk = std::exp(m_log_terms[k] - ll_g);
+				const double pk = m_post_weights[k];
 				if (pk < 1e-15) continue;
 
 				const double* lam_k  = m_lam.data()  + k * dat.max_grp_sz;

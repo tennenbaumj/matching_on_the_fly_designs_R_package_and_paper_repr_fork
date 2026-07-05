@@ -510,14 +510,14 @@ get_kernel = function(name) {
     }),
 
     mn_var = local({
-        # mn_pvalue_cpp(x_t, n_t, x_c, n_c, delta, p_t, p_c)
+        # mn_ci_cpp(x_t, n_t, x_c, n_c, p_t, p_c, alpha, pval_epsilon)
         # Class: InferenceIncidMiettinenNurminenRiskDiff (Wald)
         d = make_data(200L, "logistic")
         x_t = sum(d$y_bm[d$w_bm == 1L]); n_t = sum(d$w_bm == 1L)
         x_c = sum(d$y_bm[d$w_bm == 0L]); n_c = sum(d$w_bm == 0L)
-        list(desc = "mn_pvalue_cpp(x_t, n_t, x_c, n_c, 0, x_t/n_t, x_c/n_c)",
-             REPS = 1500000L,
-             fn   = function() mn_pvalue_cpp(x_t, n_t, x_c, n_c, 0, x_t/n_t, x_c/n_c))
+        list(desc = "mn_ci_cpp(x_t, n_t, x_c, n_c, x_t/n_t, x_c/n_c, 0.05, 1e-7)",
+             REPS = 500000L,
+             fn   = function() mn_ci_cpp(x_t, n_t, x_c, n_c, x_t/n_t, x_c/n_c, 0.05, 1e-7))
     }),
 
     poisson_var = local({

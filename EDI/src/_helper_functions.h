@@ -29,6 +29,8 @@ using Rcpp::List;
 using Rcpp::Named;
 using Rcpp::stop;
 
+#include "fast_erfc.h"
+
 // Pure C++ result structure to avoid R List contention
 struct ModelResult {
     Eigen::VectorXd b;

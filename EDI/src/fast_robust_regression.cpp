@@ -91,8 +91,20 @@ RobustModelResult fast_robust_regression_internal(
     if (scale_est < 0) {
         std::vector<double> abs_r(n);
         for (int i = 0; i < n; ++i) abs_r[i] = std::abs(r[i]);
-        std::sort(abs_r.begin(), abs_r.end());
-        double median_abs_r = (n % 2 == 0) ? (abs_r[n / 2 - 1] + abs_r[n / 2]) / 2.0 : abs_r[n / 2];
+        double median_abs_r;
+        if (n < 512) {
+            // Full sorting is faster for small vectors because selection has higher fixed overhead.
+            std::sort(abs_r.begin(), abs_r.end());
+            median_abs_r = (n % 2 == 0) ? (abs_r[n / 2 - 1] + abs_r[n / 2]) / 2.0 : abs_r[n / 2];
+        } else {
+            const auto upper_mid = abs_r.begin() + n / 2;
+            std::nth_element(abs_r.begin(), upper_mid, abs_r.end());
+            median_abs_r = *upper_mid;
+            if (n % 2 == 0) {
+                const double lower_mid = *std::max_element(abs_r.begin(), upper_mid);
+                median_abs_r = (lower_mid + median_abs_r) / 2.0;
+            }
+        }
         res.scale = median_abs_r / 0.6745;
     } else {
         res.scale = scale_est;
