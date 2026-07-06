@@ -52,12 +52,25 @@ private:
 	const int m_G_conc;
 	const int m_max_group_size_conc;
 	const Eigen::VectorXd m_grp_y_sum_conc;
-	Eigen::VectorXd m_eta_conc_all;
-	Eigen::VectorXd m_grp_y_eta0_conc;
+	mutable Eigen::VectorXd m_eta_conc_all;
+	mutable Eigen::VectorXd m_grp_y_eta0_conc;
 	Eigen::VectorXd m_ll_g_vec;
-	Eigen::MatrixXd m_log_terms_mat;
+	mutable Eigen::MatrixXd m_log_terms_mat;
 	Eigen::MatrixXd m_mu_conc_all_k_mat;
 	Eigen::VectorXd m_weighted_res;
+	mutable Eigen::ArrayXd m_eta_k_g;    // per-group scratch — eliminates per-call inner-loop allocs
+	Eigen::VectorXd m_grad_beta_conc;    // beta gradient accumulator — eliminates per-call alloc
+	// hessian() scratch — promoted from per-call locals
+	mutable Eigen::MatrixXd m_w_conc_all_k_mat;  // n_conc × n_gh
+	mutable Eigen::MatrixXd m_mu_group_sum_mat;  // G × n_gh
+	mutable Eigen::MatrixXd m_w_group_sum_mat;   // G × n_gh
+	mutable Eigen::MatrixXd m_res_group_sum_mat; // G × n_gh
+	mutable Eigen::VectorXd m_hess_pk_vec;       // G
+	mutable Eigen::VectorXd m_hess_d2L;          // n_beta
+	mutable Eigen::VectorXd m_hess_beta_avg;     // n_beta
+	mutable Eigen::MatrixXd m_hess_beta_beta;    // n_beta × n_beta
+	mutable Eigen::VectorXd m_hess_beta_sigma;   // n_beta
+	mutable Eigen::VectorXd m_hess_g_beta;       // n_beta
 
 	static ContiguousGroupLayout build_concordant_layout(const Eigen::Ref<const Eigen::VectorXi>& group_conc_) {
 		return build_contiguous_group_layout(group_conc_.size(), [&](int idx) { return group_conc_[idx]; });
@@ -99,7 +112,20 @@ public:
 		m_ll_g_vec(std::max(1, static_cast<int>(m_grp_start_conc.size()))),
 		m_log_terms_mat(std::max(1, static_cast<int>(m_grp_start_conc.size())), n_gh),
 		m_mu_conc_all_k_mat(std::max(1, static_cast<int>(X_conc_.rows())), n_gh),
-		m_weighted_res(std::max(1, build_concordant_layout(group_conc_).max_size)) {}
+		m_weighted_res(std::max(1, build_concordant_layout(group_conc_).max_size)),
+		m_eta_k_g(std::max(1, m_max_group_size_conc)),
+		m_grad_beta_conc(std::max(1, static_cast<int>(X_conc_.cols()))),
+		m_w_conc_all_k_mat(std::max(1, static_cast<int>(X_conc_.rows())), n_gh),
+		m_mu_group_sum_mat(std::max(1, static_cast<int>(m_grp_start_conc.size())), n_gh),
+		m_w_group_sum_mat(std::max(1, static_cast<int>(m_grp_start_conc.size())), n_gh),
+		m_res_group_sum_mat(std::max(1, static_cast<int>(m_grp_start_conc.size())), n_gh),
+		m_hess_pk_vec(std::max(1, static_cast<int>(m_grp_start_conc.size()))),
+		m_hess_d2L(std::max(1, static_cast<int>(X_conc_.cols()))),
+		m_hess_beta_avg(std::max(1, static_cast<int>(X_conc_.cols()))),
+		m_hess_beta_beta(std::max(1, static_cast<int>(X_conc_.cols())),
+		                 std::max(1, static_cast<int>(X_conc_.cols()))),
+		m_hess_beta_sigma(std::max(1, static_cast<int>(X_conc_.cols()))),
+		m_hess_g_beta(std::max(1, static_cast<int>(X_conc_.cols()))) {}
 
 	double neg_clogit(const Eigen::Ref<const Eigen::VectorXd>& beta_no_intercept) const {
 		if (!has_discordant) return 0.0;
@@ -109,45 +135,42 @@ public:
 		return -ll.sum();
 	}
 
-		double neg_glmm(const Eigen::Ref<const Eigen::VectorXd>& par_full) const {
-			if (!has_concordant) return 0.0;
-			const int p_full = par_full.size();
-			const double log_sigma = par_full[p_full - 1];
-			if (!std::isfinite(log_sigma) || std::abs(log_sigma) > max_abs_log_sigma) return 1e100;
-			const double sigma = std::exp(log_sigma);
-			const Eigen::VectorXd beta = par_full.head(p_full - 1);
-			const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * gh.nodes;
-			const int n_nodes = (int)b_vals.size();
+	double neg_glmm(const Eigen::Ref<const Eigen::VectorXd>& par_full) const {
+		if (!has_concordant) return 0.0;
+		const int p_full = par_full.size();
+		const double log_sigma = par_full[p_full - 1];
+		if (!std::isfinite(log_sigma) || std::abs(log_sigma) > max_abs_log_sigma) return 1e100;
+		const double sigma = std::exp(log_sigma);
+		const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * gh.nodes;
+		const int n_nodes = (int)b_vals.size();
 
-			const Eigen::VectorXd eta_conc_all = X_conc * beta;
-			Eigen::VectorXd grp_y_eta0(m_G_conc);
+		m_eta_conc_all.noalias() = X_conc * par_full.head(p_full - 1);
+		for (int gi = 0; gi < m_G_conc; ++gi) {
+			const int warm_start_params = m_grp_start_conc[gi];
+			const int sz = m_grp_size_conc[gi];
+			m_grp_y_eta0_conc[gi] = y_conc.segment(warm_start_params, sz).dot(m_eta_conc_all.segment(warm_start_params, sz));
+		}
+		for (int k = 0; k < n_nodes; ++k) {
 			for (int gi = 0; gi < m_G_conc; ++gi) {
 				const int warm_start_params = m_grp_start_conc[gi];
 				const int sz = m_grp_size_conc[gi];
-				grp_y_eta0[gi] = y_conc.segment(warm_start_params, sz).dot(eta_conc_all.segment(warm_start_params, sz));
+				m_eta_k_g.head(sz) = m_eta_conc_all.segment(warm_start_params, sz).array() + b_vals[k];
+				double lse_sum = 0.0;
+				for (int j = 0; j < sz; ++j) lse_sum += log1pexp_safe(m_eta_k_g[j]);
+				m_log_terms_mat(gi, k) = gh.log_norm_weights[k]
+				                         + m_grp_y_eta0_conc[gi]
+				                         + b_vals[k] * m_grp_y_sum_conc[gi]
+				                         - lse_sum;
 			}
-
-			Eigen::MatrixXd log_terms_mat(m_G_conc, n_nodes);
-			for (int k = 0; k < n_nodes; ++k) {
-				for (int gi = 0; gi < m_G_conc; ++gi) {
-					const int warm_start_params = m_grp_start_conc[gi];
-					const int sz = m_grp_size_conc[gi];
-					const Eigen::ArrayXd eta_k_g = eta_conc_all.segment(warm_start_params, sz).array() + b_vals[k];
-					log_terms_mat(gi, k) = gh.log_norm_weights[k]
-					                       + grp_y_eta0[gi]
-					                       + b_vals[k] * m_grp_y_sum_conc[gi]
-					                       - log1pexp_array_safe(eta_k_g).sum();
-				}
-			}
-
-			double total_ll = 0.0;
-			for (int gi = 0; gi < m_G_conc; ++gi) {
-				const double ll_g = log_sum_exp_cpp(log_terms_mat.row(gi));
-				if (!std::isfinite(ll_g)) return 1e100;
-				total_ll += ll_g;
-			}
-			return -total_ll;
 		}
+		double total_ll = 0.0;
+		for (int gi = 0; gi < m_G_conc; ++gi) {
+			const double ll_g = log_sum_exp_cpp(m_log_terms_mat.row(gi));
+			if (!std::isfinite(ll_g)) return 1e100;
+			total_ll += ll_g;
+		}
+		return -total_ll;
+	}
 
 	double value(const Eigen::Ref<const Eigen::VectorXd>& par) const {
 		double out = 0.0;
@@ -192,25 +215,25 @@ public:
 			const int n_nodes = (int)b_vals.size();
 
 			m_eta_conc_all.noalias() = X_conc * beta;
-			const Eigen::ArrayXd y_conc_all = y_conc.array();
-
 			for (int gi = 0; gi < m_G_conc; ++gi) {
 				const int warm_start_params = m_grp_start_conc[gi];
 				const int sz = m_grp_size_conc[gi];
-				m_grp_y_eta0_conc[gi] = y_conc_all.segment(warm_start_params, sz).matrix().dot(m_eta_conc_all.segment(warm_start_params, sz));
+				m_grp_y_eta0_conc[gi] = y_conc.segment(warm_start_params, sz).dot(m_eta_conc_all.segment(warm_start_params, sz));
 			}
 
 			for (int k = 0; k < n_nodes; ++k) {
 				for (int gi = 0; gi < m_G_conc; ++gi) {
 					const int warm_start_params = m_grp_start_conc[gi];
 					const int sz = m_grp_size_conc[gi];
-					const Eigen::ArrayXd eta_k_g = m_eta_conc_all.segment(warm_start_params, sz).array() + b_vals[k];
-					const Eigen::ArrayXd mu_k_g = plogis_array_safe(eta_k_g);
-					m_mu_conc_all_k_mat.block(warm_start_params, k, sz, 1) = mu_k_g.matrix();
+					m_eta_k_g.head(sz) = m_eta_conc_all.segment(warm_start_params, sz).array() + b_vals[k];
+					m_mu_conc_all_k_mat.col(k).segment(warm_start_params, sz) =
+						(1.0 / (1.0 + (-m_eta_k_g.head(sz)).exp())).matrix();
+					double lse_sum = 0.0;
+					for (int j = 0; j < sz; ++j) lse_sum += log1pexp_safe(m_eta_k_g[j]);
 					m_log_terms_mat(gi, k) = gh.log_norm_weights[k] +
 					                       m_grp_y_eta0_conc[gi] +
 					                       b_vals[k] * m_grp_y_sum_conc[gi] -
-					                       log1pexp_array_safe(eta_k_g).sum();
+					                       lse_sum;
 				}
 			}
 
@@ -219,7 +242,7 @@ public:
 				total_nll -= m_ll_g_vec[gi];
 			}
 
-			Eigen::VectorXd grad_beta_conc = Eigen::VectorXd::Zero(p_full - 1);
+			m_grad_beta_conc.setZero();
 			double grad_log_sigma_conc = 0.0;
 
 			for (int gi = 0; gi < m_G_conc; ++gi) {
@@ -239,10 +262,10 @@ public:
 					grad_log_sigma_gi += pk * res_sum * b_vals[k];
 				}
 
-				grad_beta_conc.noalias() -= X_conc.middleRows(warm_start_params, sz).transpose() * m_weighted_res.head(sz);
+				m_grad_beta_conc.noalias() -= X_conc.middleRows(warm_start_params, sz).transpose() * m_weighted_res.head(sz);
 				grad_log_sigma_conc -= grad_log_sigma_gi;
 			}
-			grad.head(p_full - 1) += grad_beta_conc;
+			grad.head(p_full - 1) += m_grad_beta_conc;
 			grad[p_full - 1] += grad_log_sigma_conc;
 		}
 
@@ -280,101 +303,102 @@ public:
 			const Eigen::VectorXd beta = par.head(p_full - 1);
 			const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * gh.nodes;
 			const int n_nodes = (int)b_vals.size();
-				const int n_beta = p_full - 1;
-				const Eigen::VectorXd eta_conc_all = X_conc * beta;
-				Eigen::VectorXd grp_y_eta0(m_G_conc);
+			const int n_beta = p_full - 1;
+
+			// Reuse mutable members (all already sized in constructor)
+			m_eta_conc_all.noalias() = X_conc * beta;
+			for (int gi = 0; gi < m_G_conc; ++gi) {
+				const int s = m_grp_start_conc[gi];
+				const int sz = m_grp_size_conc[gi];
+				m_grp_y_eta0_conc[gi] = y_conc.segment(s, sz).dot(m_eta_conc_all.segment(s, sz));
+			}
+
+			for (int k = 0; k < n_nodes; ++k) {
+				// mu and w for all observations at node k — no per-k temporaries
+				m_mu_conc_all_k_mat.col(k) =
+					(1.0 / (1.0 + (-(m_eta_conc_all.array() + b_vals[k])).exp())).matrix();
+				m_w_conc_all_k_mat.col(k) =
+					(m_mu_conc_all_k_mat.col(k).array() * (1.0 - m_mu_conc_all_k_mat.col(k).array())).matrix();
 				for (int gi = 0; gi < m_G_conc; ++gi) {
-					const int warm_start_params = m_grp_start_conc[gi];
+					const int s = m_grp_start_conc[gi];
 					const int sz = m_grp_size_conc[gi];
-					grp_y_eta0[gi] = y_conc.segment(warm_start_params, sz).dot(eta_conc_all.segment(warm_start_params, sz));
+					m_eta_k_g.head(sz) = m_eta_conc_all.segment(s, sz).array() + b_vals[k];
+					double lse_sum = 0.0;
+					for (int j = 0; j < sz; ++j) lse_sum += log1pexp_safe(m_eta_k_g[j]);
+					const double mu_sum = m_mu_conc_all_k_mat.col(k).segment(s, sz).sum();
+					m_mu_group_sum_mat(gi, k) = mu_sum;
+					m_w_group_sum_mat(gi, k) = m_w_conc_all_k_mat.col(k).segment(s, sz).sum();
+					m_res_group_sum_mat(gi, k) = m_grp_y_sum_conc[gi] - mu_sum;
+					m_log_terms_mat(gi, k) = gh.log_norm_weights[k]
+					                         + m_grp_y_eta0_conc[gi]
+					                         + b_vals[k] * m_grp_y_sum_conc[gi]
+					                         - lse_sum;
 				}
+			}
 
-				Eigen::MatrixXd log_terms_mat(m_G_conc, n_nodes);
-				Eigen::MatrixXd mu_conc_all_k_mat(X_conc.rows(), n_nodes);
-				Eigen::MatrixXd w_conc_all_k_mat(X_conc.rows(), n_nodes);
-				Eigen::MatrixXd mu_group_sum_mat(m_G_conc, n_nodes);
-				Eigen::MatrixXd w_group_sum_mat(m_G_conc, n_nodes);
-				Eigen::MatrixXd res_group_sum_mat(m_G_conc, n_nodes);
+			for (int gi = 0; gi < m_G_conc; ++gi)
+				m_ll_g_vec[gi] = log_sum_exp_cpp(m_log_terms_mat.row(gi));
 
-				for (int k = 0; k < n_nodes; ++k) {
-					const Eigen::ArrayXd eta_k_all = eta_conc_all.array() + b_vals[k];
-					const Eigen::VectorXd mu_k_all = plogis_array_safe(eta_k_all).matrix();
-					mu_conc_all_k_mat.col(k) = mu_k_all;
-					w_conc_all_k_mat.col(k) = (mu_k_all.array() * (1.0 - mu_k_all.array())).matrix();
-					for (int gi = 0; gi < m_G_conc; ++gi) {
-						const int warm_start_params = m_grp_start_conc[gi];
-						const int sz = m_grp_size_conc[gi];
-						const Eigen::ArrayXd eta_k_g = eta_conc_all.segment(warm_start_params, sz).array() + b_vals[k];
-						const double mu_sum = mu_conc_all_k_mat.block(warm_start_params, k, sz, 1).sum();
-						mu_group_sum_mat(gi, k) = mu_sum;
-						w_group_sum_mat(gi, k) = w_conc_all_k_mat.block(warm_start_params, k, sz, 1).sum();
-						res_group_sum_mat(gi, k) = m_grp_y_sum_conc[gi] - mu_sum;
-						log_terms_mat(gi, k) = gh.log_norm_weights[k]
-						                       + grp_y_eta0[gi]
-						                       + b_vals[k] * m_grp_y_sum_conc[gi]
-						                       - log1pexp_array_safe(eta_k_g).sum();
-					}
-				}
+			Eigen::MatrixXd E_Hik_sum = Eigen::MatrixXd::Zero(p_full, p_full);
+			Eigen::MatrixXd E_GiGiT_sum = Eigen::MatrixXd::Zero(p_full, p_full);
+			Eigen::MatrixXd G_avg_outer_sum = Eigen::MatrixXd::Zero(p_full, p_full);
 
-				Eigen::VectorXd ll_g_vec(m_G_conc);
-				for (int gi = 0; gi < m_G_conc; ++gi) ll_g_vec[gi] = log_sum_exp_cpp(log_terms_mat.row(gi));
-
-				Eigen::MatrixXd E_Hik_sum = Eigen::MatrixXd::Zero(p_full, p_full);
-				Eigen::MatrixXd E_GiGiT_sum = Eigen::MatrixXd::Zero(p_full, p_full);
-				Eigen::MatrixXd G_avg_outer_sum = Eigen::MatrixXd::Zero(p_full, p_full);
-
-				for (int k = 0; k < n_nodes; k++) {
-					Eigen::VectorXd pk_vec(m_G_conc);
-					for (int gi = 0; gi < m_G_conc; gi++) pk_vec[gi] = std::exp(log_terms_mat(gi, k) - ll_g_vec[gi]);
-
-					for (int gi = 0; gi < m_G_conc; gi++) {
-						const double pk = pk_vec[gi];
-						if (pk < 1e-15) continue;
-						const int warm_start_params = m_grp_start_conc[gi];
-						const int sz = m_grp_size_conc[gi];
-						const Eigen::MatrixXd Xg = X_conc.middleRows(warm_start_params, sz);
-						const auto w_seg = w_conc_all_k_mat.col(k).segment(warm_start_params, sz);
-						const double sum_w_k_gi = w_group_sum_mat(gi, k);
-						const double sum_res_k_gi = res_group_sum_mat(gi, k);
-						const double b = b_vals[k];
-						E_Hik_sum.topLeftCorner(n_beta, n_beta).noalias() -= pk * weighted_crossprod(Xg, w_seg);
-						E_Hik_sum(p_full - 1, p_full - 1) += pk * (b * sum_res_k_gi - b * b * sum_w_k_gi);
-						Eigen::VectorXd d2L_db_dsigma_k_gi = -b * (Xg.transpose() * w_seg);
-						E_Hik_sum.block(0, p_full - 1, n_beta, 1).noalias() += pk * d2L_db_dsigma_k_gi;
-					}
-				}
+			for (int k = 0; k < n_nodes; k++) {
+				for (int gi = 0; gi < m_G_conc; gi++)
+					m_hess_pk_vec[gi] = std::exp(m_log_terms_mat(gi, k) - m_ll_g_vec[gi]);
 
 				for (int gi = 0; gi < m_G_conc; gi++) {
-					Eigen::VectorXd beta_avg_gi = Eigen::VectorXd::Zero(n_beta);
-					double sigma_avg_gi = 0.0;
-					Eigen::MatrixXd beta_beta_gi = Eigen::MatrixXd::Zero(n_beta, n_beta);
-					Eigen::VectorXd beta_sigma_gi = Eigen::VectorXd::Zero(n_beta);
-					double sigma_sigma_gi = 0.0;
-					const int warm_start_params = m_grp_start_conc[gi];
+					const double pk = m_hess_pk_vec[gi];
+					if (pk < 1e-15) continue;
+					const int s = m_grp_start_conc[gi];
 					const int sz = m_grp_size_conc[gi];
-					const Eigen::MatrixXd Xg = X_conc.middleRows(warm_start_params, sz);
-
-					for (int k = 0; k < n_nodes; k++) {
-						const double pk = std::exp(log_terms_mat(gi, k) - ll_g_vec[gi]);
-						if (pk < 1e-15) continue;
-						const Eigen::VectorXd g_beta = Xg.transpose() * (y_conc.segment(warm_start_params, sz) - mu_conc_all_k_mat.col(k).segment(warm_start_params, sz));
-						const double g_sigma = res_group_sum_mat(gi, k) * b_vals[k];
-
-						beta_avg_gi.noalias() += pk * g_beta;
-						sigma_avg_gi += pk * g_sigma;
-						beta_beta_gi.noalias() += pk * (g_beta * g_beta.transpose());
-						beta_sigma_gi.noalias() += pk * (g_beta * g_sigma);
-						sigma_sigma_gi += pk * g_sigma * g_sigma;
-					}
-					E_GiGiT_sum.topLeftCorner(n_beta, n_beta).noalias() += beta_beta_gi;
-					E_GiGiT_sum.block(0, p_full - 1, n_beta, 1).noalias() += beta_sigma_gi;
-					E_GiGiT_sum.block(p_full - 1, 0, 1, n_beta).noalias() += beta_sigma_gi.transpose();
-					E_GiGiT_sum(p_full - 1, p_full - 1) += sigma_sigma_gi;
-					G_avg_outer_sum.topLeftCorner(n_beta, n_beta).noalias() += beta_avg_gi * beta_avg_gi.transpose();
-					G_avg_outer_sum.block(0, p_full - 1, n_beta, 1).noalias() += beta_avg_gi * sigma_avg_gi;
-					G_avg_outer_sum.block(p_full - 1, 0, 1, n_beta).noalias() += (beta_avg_gi * sigma_avg_gi).transpose();
-					G_avg_outer_sum(p_full - 1, p_full - 1) += sigma_avg_gi * sigma_avg_gi;
+					// X_conc.middleRows() is MatrixBase<Derived> — no copy needed
+					const auto w_seg = m_w_conc_all_k_mat.col(k).segment(s, sz);
+					const double b = b_vals[k];
+					E_Hik_sum.topLeftCorner(n_beta, n_beta).noalias() -=
+						pk * weighted_crossprod(X_conc.middleRows(s, sz), w_seg);
+					E_Hik_sum(p_full - 1, p_full - 1) +=
+						pk * (b * m_res_group_sum_mat(gi, k) - b * b * m_w_group_sum_mat(gi, k));
+					m_hess_d2L.noalias() = -b * (X_conc.middleRows(s, sz).transpose() * w_seg);
+					E_Hik_sum.block(0, p_full - 1, n_beta, 1).noalias() += pk * m_hess_d2L;
 				}
+			}
+
+			for (int gi = 0; gi < m_G_conc; gi++) {
+				m_hess_beta_avg.setZero();
+				double sigma_avg_gi = 0.0;
+				m_hess_beta_beta.setZero();
+				m_hess_beta_sigma.setZero();
+				double sigma_sigma_gi = 0.0;
+				const int s = m_grp_start_conc[gi];
+				const int sz = m_grp_size_conc[gi];
+
+				for (int k = 0; k < n_nodes; k++) {
+					const double pk = std::exp(m_log_terms_mat(gi, k) - m_ll_g_vec[gi]);
+					if (pk < 1e-15) continue;
+					// g_beta: p-vector, computed directly into preallocated buffer
+					m_hess_g_beta.noalias() = X_conc.middleRows(s, sz).transpose() *
+						(y_conc.segment(s, sz) - m_mu_conc_all_k_mat.col(k).segment(s, sz));
+					const double g_sigma = m_res_group_sum_mat(gi, k) * b_vals[k];
+
+					m_hess_beta_avg.noalias() += pk * m_hess_g_beta;
+					sigma_avg_gi += pk * g_sigma;
+					m_hess_beta_beta.noalias() += pk * (m_hess_g_beta * m_hess_g_beta.transpose());
+					m_hess_beta_sigma.noalias() += pk * (m_hess_g_beta * g_sigma);
+					sigma_sigma_gi += pk * g_sigma * g_sigma;
+				}
+				E_GiGiT_sum.topLeftCorner(n_beta, n_beta).noalias() += m_hess_beta_beta;
+				E_GiGiT_sum.block(0, p_full - 1, n_beta, 1).noalias() += m_hess_beta_sigma;
+				E_GiGiT_sum.block(p_full - 1, 0, 1, n_beta).noalias() += m_hess_beta_sigma.transpose();
+				E_GiGiT_sum(p_full - 1, p_full - 1) += sigma_sigma_gi;
+				G_avg_outer_sum.topLeftCorner(n_beta, n_beta).noalias() +=
+					m_hess_beta_avg * m_hess_beta_avg.transpose();
+				G_avg_outer_sum.block(0, p_full - 1, n_beta, 1).noalias() +=
+					m_hess_beta_avg * sigma_avg_gi;
+				G_avg_outer_sum.block(p_full - 1, 0, 1, n_beta).noalias() +=
+					(m_hess_beta_avg * sigma_avg_gi).transpose();
+				G_avg_outer_sum(p_full - 1, p_full - 1) += sigma_avg_gi * sigma_avg_gi;
+			}
 
 			for (int r = 0; r < n_beta; r++) for (int c = 0; c < r; c++) E_Hik_sum(r, c) = E_Hik_sum(c, r);
 			E_Hik_sum.block(p_full - 1, 0, 1, n_beta) = E_Hik_sum.block(0, p_full - 1, n_beta, 1).transpose();

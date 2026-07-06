@@ -372,13 +372,15 @@ public:
 			double p0 = std::exp(log_p0);
 			p0 = std::min(std::max(p0, 1e-12), 1.0 - 1e-12);
 			const double trunc_denom = 1.0 - p0;
+			// log(1-p0) ≈ -p0 when p0 < 1e-7 (error < 5e-15); avoids std::log
+			const double log_trunc_denom = (p0 < 1e-7) ? -p0 : std::log(trunc_denom);
 
 			// Explicit NB log-PMF — replaces R::dnbinom_mu overhead
 			const double log_mu_i = std::log(mu_i);
 			neg_ll -= m_lgamma_yptheta[slot] - lgamma_r - m_lgamma_y1[slot]
 			        + theta * (log_r - log_denom)
 			        + yi * (log_mu_i - log_denom)
-			        - std::log(trunc_denom);
+			        - log_trunc_denom;
 
 			const double standard_eta_score = yi - mu_i * (yi + theta) / denom;
 			const double trunc_eta_corr = -mu_i * p0 * theta / (trunc_denom * denom);

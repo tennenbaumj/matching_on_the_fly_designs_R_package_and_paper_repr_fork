@@ -166,6 +166,10 @@ public:
         return init_levels(y);
     }
 
+    int n_levels() const {
+        return m_K;
+    }
+
     double neg_log_likelihood(const Eigen::Ref<const Eigen::VectorXd>& params) const {
         if (!validate_params(params)) return 1e10;
         const int n_alpha = m_K - 1;

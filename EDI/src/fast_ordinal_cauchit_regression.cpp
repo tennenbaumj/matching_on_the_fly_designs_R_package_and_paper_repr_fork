@@ -18,8 +18,8 @@ public:
     OrdinalCauchitRegression(const Eigen::Ref<const Eigen::MatrixXd>& X, const Eigen::Ref<const Eigen::VectorXd>& y) :
         m_model(X, y, edi_ordinal::Link::Cauchit, -1.0) {}
 
-    static std::vector<double> init_levels(const Eigen::Ref<const Eigen::VectorXd>& y) {
-        return edi_ordinal::init_levels(y);
+    int n_levels() const {
+        return m_model.n_levels();
     }
 
     double neg_log_likelihood(const Eigen::Ref<const Eigen::VectorXd>& params) const {
@@ -105,7 +105,7 @@ List fast_ordinal_cauchit_regression_cpp(const Rcpp::NumericMatrix& X,
 
     OrdinalCauchitRegression model(map_X, map_y);
     int p = map_X.cols();
-    int K = OrdinalCauchitRegression::init_levels(map_y).size();
+    int K = model.n_levels();
     if (K < 2) return List::create();
     int n_alpha = K - 1;
     int n_params = n_alpha + p;

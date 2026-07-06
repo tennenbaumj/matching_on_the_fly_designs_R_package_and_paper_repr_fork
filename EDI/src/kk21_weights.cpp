@@ -462,6 +462,7 @@ static double univariate_beta_tstat(
 
 	for (double log_phi = -2.0; log_phi <= 7.0; log_phi += 0.5) {
 		double phi = std::exp(log_phi);
+		const double lgamma_phi = std::lgamma(phi);
 		double ll = 0.0;
 		for (int i = 0; i < n; ++i) {
 			double mu_i = prob[i];
@@ -471,7 +472,7 @@ static double univariate_beta_tstat(
 			mu_phi = std::max(1e-12, mu_phi);
 			one_minus_mu_phi = std::max(1e-12, one_minus_mu_phi);
 
-			ll += R::lgammafn(phi) - R::lgammafn(mu_phi) - R::lgammafn(one_minus_mu_phi)
+			ll += lgamma_phi - std::lgamma(mu_phi) - std::lgamma(one_minus_mu_phi)
 				+ (mu_phi - 1.0) * std::log(yi)
 				+ (one_minus_mu_phi - 1.0) * std::log1p(-yi);
 		}
@@ -551,14 +552,18 @@ static double univariate_negbin_tstat(
 		// M-step: update theta using one-step Newton-Raphson
 		double score = 0.0;
 		double info = 0.0;
+		const double digamma_theta = fast_digamma(theta);
+		const double trigamma_theta = R::trigamma(theta);
+		const double log_theta = std::log(theta);
+		const double inv_theta = 1.0 / theta;
 		for (int i = 0; i < n; ++i) {
 			double yi = y[i];
 			double mui = mu[i];
-			score += R::digamma(yi + theta) - R::digamma(theta)
-					 + std::log(theta) - std::log(theta + mui) + 1.0
+			score += fast_digamma(yi + theta) - digamma_theta
+					 + log_theta - std::log(theta + mui) + 1.0
 					 - (yi + theta) / (theta + mui);
-			info += -R::trigamma(yi + theta) + R::trigamma(theta)
-					- 1.0 / theta + 2.0 / (theta + mui)
+			info += -R::trigamma(yi + theta) + trigamma_theta
+					- inv_theta + 2.0 / (theta + mui)
 					- (yi + theta) / ((theta + mui) * (theta + mui));
 		}
 
@@ -778,15 +783,30 @@ static double univariate_weibull_tstat(
 		Eigen::ArrayXd adj = (delta.array() > 0.5).select(z - 1.0 + w.array(), w.array());
 
 		// Weighted least squares update
-		Eigen::VectorXd sqrt_w = w.array().sqrt();
-		Eigen::MatrixXd Xw = X.array().colwise() * sqrt_w.array();
-		Eigen::VectorXd yw = ((log_y.array() - scale * adj / w.array()) * sqrt_w.array()).matrix();
-
-		Eigen::MatrixXd XwXw = Xw.transpose() * Xw;
-		Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr_w(XwXw);
+		Eigen::VectorXd pseudo_response = (log_y.array() - scale * adj / w.array()).matrix();
+		double sum_w = 0.0;
+		double sum_wx = 0.0;
+		double sum_wxx = 0.0;
+		double sum_wz = 0.0;
+		double sum_wxz = 0.0;
+		for (int i = 0; i < n; ++i) {
+			const double wi = w[i];
+			const double xi = x[i];
+			const double zi = pseudo_response[i];
+			sum_w += wi;
+			sum_wx += wi * xi;
+			sum_wxx += wi * xi * xi;
+			sum_wz += wi * zi;
+			sum_wxz += wi * xi * zi;
+		}
+		Eigen::Matrix2d XwXw;
+		XwXw << sum_w, sum_wx,
+		          sum_wx, sum_wxx;
+		Eigen::Vector2d Xwz(sum_wz, sum_wxz);
+		Eigen::ColPivHouseholderQR<Eigen::Matrix2d> qr_w(XwXw);
 		if (qr_w.rank() < 2) return -1.0;
 
-		Eigen::VectorXd beta_new = qr_w.solve(Xw.transpose() * yw);
+		Eigen::VectorXd beta_new = qr_w.solve(Xwz);
 		Eigen::VectorXd resid_new = log_y - X * beta_new;
 
 		// Scale update
@@ -954,6 +974,7 @@ static double multivariate_beta_tstat(
 
 	for (double log_phi = -2.0; log_phi <= 7.0; log_phi += 0.5) {
 		double phi = std::exp(log_phi);
+		const double lgamma_phi = std::lgamma(phi);
 		double ll = 0.0;
 		for (int i = 0; i < n; ++i) {
 			double mu_i = prob[i];
@@ -963,7 +984,7 @@ static double multivariate_beta_tstat(
 			mu_phi = std::max(1e-12, mu_phi);
 			one_minus_mu_phi = std::max(1e-12, one_minus_mu_phi);
 
-			ll += R::lgammafn(phi) - R::lgammafn(mu_phi) - R::lgammafn(one_minus_mu_phi)
+			ll += lgamma_phi - std::lgamma(mu_phi) - std::lgamma(one_minus_mu_phi)
 				+ (mu_phi - 1.0) * std::log(std::max(yi, 1e-12))
 				+ (one_minus_mu_phi - 1.0) * std::log1p(-std::min(yi, 1.0 - 1e-12));
 		}
@@ -1040,14 +1061,18 @@ static double multivariate_negbin_tstat(
 		// Update theta using Newton-Raphson
 		double score = 0.0;
 		double info = 0.0;
+		const double digamma_theta = fast_digamma(theta);
+		const double trigamma_theta = R::trigamma(theta);
+		const double log_theta = std::log(theta);
+		const double inv_theta = 1.0 / theta;
 		for (int i = 0; i < n; ++i) {
 			double yi = y[i];
 			double mui = mu[i];
-			score += R::digamma(yi + theta) - R::digamma(theta)
-					 + std::log(theta) - std::log(theta + mui) + 1.0
+			score += fast_digamma(yi + theta) - digamma_theta
+					 + log_theta - std::log(theta + mui) + 1.0
 					 - (yi + theta) / (theta + mui);
-			info += -R::trigamma(yi + theta) + R::trigamma(theta)
-					- 1.0 / theta + 2.0 / (theta + mui)
+			info += -R::trigamma(yi + theta) + trigamma_theta
+					- inv_theta + 2.0 / (theta + mui)
 					- (yi + theta) / ((theta + mui) * (theta + mui));
 		}
 

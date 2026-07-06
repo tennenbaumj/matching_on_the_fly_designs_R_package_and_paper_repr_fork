@@ -90,14 +90,16 @@ struct LMMData {
 //
 // where W_g = Q_g - (v_b/a_g)·S_g²
 
+// neg_ll_and_grad with caller-supplied scratch vectors (avoids per-call heap alloc).
 double neg_ll_and_grad(const LMMData& dat,
                        const Eigen::Ref<const Eigen::VectorXd>& par,
-                       Eigen::Ref<VectorXd> grad)
+                       Eigen::Ref<VectorXd> grad,
+                       Eigen::VectorXd& r,          // scratch n (preallocated)
+                       Eigen::VectorXd& grad_beta)   // scratch p  (preallocated)
 {
     const int p = dat.p, n = dat.n;
-    const Eigen::VectorXd beta = par.head(p);
-    const double lse = par[p];       // log σ_e
-    const double lsb = par[p + 1];   // log σ_b
+    const double lse = par[p];
+    const double lsb = par[p + 1];
 
     const double v_e = std::exp(2.0 * lse);
     const double v_b = std::exp(2.0 * lsb);
@@ -105,19 +107,12 @@ double neg_ll_and_grad(const LMMData& dat,
     if (!std::isfinite(v_e) || !std::isfinite(v_b) || v_e < 1e-300)
         return 1e300;
 
-    // Residuals
-    Eigen::VectorXd r = dat.y_s - dat.X_s * beta;
+    r.noalias() = dat.y_s - dat.X_s * par.head(p);
 
-    // Accumulators for the two variance-parameter gradients
-    double d_lse = 0.0;   // will add contributions below
+    double d_lse = 0.0;
     double d_lsb = 0.0;
 
-    // Accumulate: weighted residual for β gradient
-    // ∂/∂β contribution from group g:
-    //   -(1/v_e)·r_g  +  (v_b/v_e)·(S_g/a_g)·1_g
-    // We accumulate into grad_beta using the sorted obs.
-
-    Eigen::VectorXd grad_beta = Eigen::VectorXd::Zero(p);
+    grad_beta.setZero();
 
     double neg_ll = (n * 0.5) * LOG2PI;
 
@@ -160,22 +155,51 @@ double neg_ll_and_grad(const LMMData& dat,
         d_lsb += (m * v_b * inv_a) - v_b * (S * S) * (inv_a * inv_a);
     }
 
-    // Fix the gradient sign for β (we subtracted above, which was the score; now it's already
-    // the neg_ll gradient direction after the sign flip in the loop)
-    grad.resize(p + 2);
-    grad.head(p) = -grad_beta;   // grad_beta accumulated score; neg_ll grad = -score
+    grad.head(p) = -grad_beta;
     grad[p]     = d_lse;
     grad[p + 1] = d_lsb;
 
     return neg_ll;
 }
 
+// Scratch-allocating wrapper for non-hot callers (score export, fisher export).
+double neg_ll_and_grad(const LMMData& dat,
+                       const Eigen::Ref<const Eigen::VectorXd>& par,
+                       Eigen::Ref<VectorXd> grad)
+{
+    Eigen::VectorXd r(dat.n), gb(dat.p);
+    return neg_ll_and_grad(dat, par, grad, r, gb);
+}
+
+// Stack-allocated 2×2 matrix/vector — no heap alloc for group-level temporaries.
+// MaxRows=2, MaxCols=2 tells Eigen to use internal fixed storage even for dynamic size.
+using SM2 = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor, 2, 2>;
+using SV2 = Eigen::Matrix<double, Eigen::Dynamic, 1,              Eigen::ColMajor, 2, 1>;
+
+// Analytical inverse of V = v_e*I + v_b*J (m×m, m ∈ {1,2}).
+// For m=1: P = 1/(v_e+v_b).
+// For m=2: det = v_e*(v_e+2*v_b), P_diag=(v_e+v_b)/det, P_off=-v_b/det.
+inline SM2 lmm_P_analytic(int m, double v_e, double v_b) {
+    SM2 P(m, m);
+    if (m == 1) {
+        P(0, 0) = 1.0 / (v_e + v_b);
+    } else {
+        const double det = v_e * (v_e + 2.0 * v_b);
+        P(0,0) = P(1,1) = (v_e + v_b) / det;
+        P(0,1) = P(1,0) = -v_b / det;
+    }
+    return P;
+}
+
+// lmm_analytic_hessian: uses preallocated scratch (buf_r: n, buf_XtA: p×max_m).
+// All per-group temporaries are SM2/SV2 (stack-allocated ≤2×2) — no per-group heap alloc.
 Eigen::MatrixXd lmm_analytic_hessian(const LMMData& dat,
-                                     const Eigen::Ref<const Eigen::VectorXd>& par)
+                                     const Eigen::Ref<const Eigen::VectorXd>& par,
+                                     Eigen::VectorXd& buf_r,    // scratch n
+                                     Eigen::MatrixXd& buf_XtA)  // scratch p × max_m
 {
     const int p = dat.p;
     const int k = (int)par.size();
-    const Eigen::VectorXd beta = par.head(p);
     const double v_e = std::exp(2.0 * par[p]);
     const double v_b = std::exp(2.0 * par[p + 1]);
 
@@ -185,53 +209,65 @@ Eigen::MatrixXd lmm_analytic_hessian(const LMMData& dat,
         return H;
     }
 
-    const Eigen::VectorXd r_all = dat.y_s - dat.X_s * beta;
+    buf_r.noalias() = dat.y_s - dat.X_s * par.head(p);
 
     for (int gi = 0; gi < dat.G; ++gi) {
-        const GroupInfo& g = dat.grps[gi];
-        const int m = g.size;
-        const int s = g.warm_start_params;
-        const Eigen::MatrixXd Xg = dat.X_s.middleRows(s, m);
-        const Eigen::VectorXd rg = r_all.segment(s, m);
+        const int m = dat.grps[gi].size;
+        const int s = dat.grps[gi].warm_start_params;
 
-        Eigen::MatrixXd I = Eigen::MatrixXd::Identity(m, m);
-        Eigen::MatrixXd J = Eigen::MatrixXd::Ones(m, m);
-        Eigen::MatrixXd V = v_e * I + v_b * J;
-        Eigen::LDLT<Eigen::MatrixXd> ldlt(V);
-        if (ldlt.info() != Eigen::Success) {
-            H.setConstant(NA_REAL);
-            return H;
-        }
-        Eigen::MatrixXd P = ldlt.solve(I);
+        // All per-group matrices are SM2 (stack-allocated ≤2×2)
+        const SM2 P = lmm_P_analytic(m, v_e, v_b);
 
-        Eigen::MatrixXd dV_e = 2.0 * v_e * I;
-        Eigen::MatrixXd dV_b = 2.0 * v_b * J;
-        Eigen::MatrixXd d2V_ee = 4.0 * v_e * I;
-        Eigen::MatrixXd d2V_bb = 4.0 * v_b * J;
+        // Derivative matrices w.r.t. log σ_e and log σ_b
+        SM2 dV_e(m, m); dV_e  = 2.0 * v_e * SM2::Identity(m, m);
+        SM2 dV_b(m, m); dV_b.setConstant(2.0 * v_b);  // 2*v_b*J (J = all-ones)
+        SM2 d2V_ee(m, m); d2V_ee = 4.0 * v_e * SM2::Identity(m, m);
+        SM2 d2V_bb(m, m); d2V_bb.setConstant(4.0 * v_b);
+        SM2 d2V_zero(m, m); d2V_zero.setZero();
 
-        Eigen::MatrixXd dP_e = -P * dV_e * P;
-        Eigen::MatrixXd dP_b = -P * dV_b * P;
+        // dP/d(log σ) = -P * dV * P
+        // dP_e = -2*v_e * P²
+        SM2 tmp(m, m), dP_e(m, m), dP_b(m, m);
+        tmp.noalias() = P * P;
+        dP_e = (-2.0 * v_e) * tmp;
 
-        H.topLeftCorner(p, p).noalias() += Xg.transpose() * P * Xg;
-        H.topRightCorner(p, 1).noalias() += -Xg.transpose() * dP_e * rg;
-        H.block(0, p + 1, p, 1).noalias() += -Xg.transpose() * dP_b * rg;
+        // dP_b = -2*v_b * P * J * P  (P*J: row i = row_sum_of_P[i] broadcast across cols)
+        SM2 PJ(m, m);
+        for (int i = 0; i < m; ++i) PJ.row(i).setConstant(P.row(i).sum());
+        tmp.noalias() = PJ * P;
+        dP_b = (-2.0 * v_b) * tmp;
 
-        Eigen::MatrixXd dV[2] = {dV_e, dV_b};
-        Eigen::MatrixXd dP[2] = {dP_e, dP_b};
-        Eigen::MatrixXd d2V[2][2] = {
-            {d2V_ee, Eigen::MatrixXd::Zero(m, m)},
-            {Eigen::MatrixXd::Zero(m, m), d2V_bb}
-        };
+        // β-β block: Xg^T * P * Xg  (buf_XtA reused, no Xg copy)
+        buf_XtA.leftCols(m).noalias() = dat.X_s.middleRows(s, m).transpose() * P;
+        H.topLeftCorner(p, p).noalias() += buf_XtA.leftCols(m) * dat.X_s.middleRows(s, m);
 
+        // β-σ blocks: -Xg^T * dP_a * rg  (SV2 on stack, no rg copy)
+        SV2 sv(m);
+        sv.noalias() = dP_e * buf_r.segment(s, m);
+        H.topRightCorner(p, 1).noalias() -= dat.X_s.middleRows(s, m).transpose() * sv;
+        sv.noalias() = dP_b * buf_r.segment(s, m);
+        H.block(0, p + 1, p, 1).noalias() -= dat.X_s.middleRows(s, m).transpose() * sv;
+
+        // σ-σ block: loop (a,b) ∈ {(e,e),(e,b),(b,b)}
+        const SM2* dV_arr[2]  = {&dV_e,   &dV_b};
+        const SM2* dP_arr[2]  = {&dP_e,   &dP_b};
+        const SM2* d2V_arr[2][2] = {{&d2V_ee, &d2V_zero}, {&d2V_zero, &d2V_bb}};
+
+        SM2 term(m, m), tmp2(m, m), tmp3(m, m);
         for (int a = 0; a < 2; ++a) {
             for (int b = a; b < 2; ++b) {
-                Eigen::MatrixXd term_mat =
-                    dP[a] * dV[b] * P +
-                    P * d2V[a][b] * P +
-                    P * dV[b] * dP[a];
-                const double h_ab =
-                    0.5 * (dP[a] * dV[b] + P * d2V[a][b]).trace()
-                    - 0.5 * (rg.transpose() * term_mat * rg)(0, 0);
+                tmp2.noalias() = *dP_arr[a] * *dV_arr[b];    // dP[a]*dV[b]
+                tmp3.noalias() = P * *d2V_arr[a][b];          // P*d2V[a][b]
+                const double h_tr = 0.5 * (tmp2 + tmp3).trace();
+
+                // term = dP[a]*dV[b]*P + P*d2V[a][b]*P + P*dV[b]*dP[a]
+                term.noalias()  = tmp2 * P;
+                term.noalias() += tmp3 * P;
+                tmp.noalias()   = P * *dV_arr[b];
+                term.noalias() += tmp * *dP_arr[a];
+
+                sv.noalias() = term * buf_r.segment(s, m);
+                const double h_ab = h_tr - 0.5 * buf_r.segment(s, m).dot(sv);
                 H(p + a, p + b) += h_ab;
                 if (a != b) H(p + b, p + a) += h_ab;
             }
@@ -246,10 +282,28 @@ Eigen::MatrixXd lmm_analytic_hessian(const LMMData& dat,
 class GaussianLMMObjective {
 public:
     const LMMData& dat;
-    explicit GaussianLMMObjective(const LMMData& d) : dat(d) {}
+
+private:
+    static int max_grp_size(const LMMData& d) {
+        int mm = 1;
+        for (const auto& g : d.grps) mm = std::max(mm, g.size);
+        return mm;
+    }
+
+    Eigen::VectorXd m_r;        // scratch n  — reused across operator() and hessian()
+    Eigen::VectorXd m_grad_beta; // scratch p  — reused across operator() calls
+    Eigen::MatrixXd m_buf_XtA;  // scratch p × max_m — reused in hessian()
+
+public:
+    explicit GaussianLMMObjective(const LMMData& d)
+        : dat(d),
+          m_r(d.n),
+          m_grad_beta(d.p),
+          m_buf_XtA(d.p, max_grp_size(d)) {}
 
     double operator()(const Eigen::VectorXd& par, Eigen::VectorXd& grad) {
-        double nll = neg_ll_and_grad(dat, par, grad);
+        if ((int)grad.size() != dat.p + 2) grad.resize(dat.p + 2);
+        double nll = neg_ll_and_grad(dat, par, grad, m_r, m_grad_beta);
         if (!std::isfinite(nll) || nll >= 1e299) {
             grad.setZero();
             return 1e300;
@@ -257,8 +311,8 @@ public:
         return nll;
     }
 
-    Eigen::MatrixXd hessian(const Eigen::VectorXd& par) const {
-        return lmm_analytic_hessian(dat, par);
+    Eigen::MatrixXd hessian(const Eigen::VectorXd& par) {
+        return lmm_analytic_hessian(dat, par, m_r, m_buf_XtA);
     }
 };
 
@@ -268,7 +322,12 @@ Eigen::MatrixXd lmm_fisher_hessian(const LMMData& dat,
                                    double h_rel = 1e-4)
 {
     (void)h_rel;
-    return lmm_analytic_hessian(dat, par);
+    // Non-hot path: allocate scratch locally
+    Eigen::VectorXd buf_r(dat.n);
+    int mm = 1;
+    for (const auto& g : dat.grps) mm = std::max(mm, g.size);
+    Eigen::MatrixXd buf_XtA(dat.p, mm);
+    return lmm_analytic_hessian(dat, par, buf_r, buf_XtA);
 }
 
 // ── Starting values: OLS β, residual-based σ_e, σ_b = σ_e/2 ─────────────────
@@ -390,8 +449,8 @@ List fast_gaussian_lmm_cpp(
         );
     }
 
-    // Variance-covariance via Hessian of neg_ll
-    Eigen::MatrixXd H = lmm_fisher_hessian(dat, par);
+    // Variance-covariance via Hessian of neg_ll (reuses obj's scratch buffers)
+    Eigen::MatrixXd H = obj.hessian(par);
     Eigen::MatrixXd H_free = subset_matrix(H, fixed_spec.free_idx, fixed_spec.free_idx);
     Eigen::LDLT<Eigen::MatrixXd> ldlt(H_free);
 

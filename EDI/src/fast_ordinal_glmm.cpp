@@ -57,8 +57,25 @@ struct OrdinalGLMMData {
 
 class OrdinalGLMMObjective {
 	const OrdinalGLMMData& m_dat;
+	VectorXd m_alpha;
+	VectorXd m_eta_fixed;
+	VectorXd m_log_lik_k;
+	MatrixXd m_grad_k;
+	VectorXd m_p_plus;
+	VectorXd m_p_minus;
+	VectorXd m_g_plus;
+	VectorXd m_g_minus;
 public:
-	OrdinalGLMMObjective(const OrdinalGLMMData& dat) : m_dat(dat) {}
+	OrdinalGLMMObjective(const OrdinalGLMMData& dat)
+		: m_dat(dat),
+		  m_alpha(dat.K - 1),
+		  m_eta_fixed(dat.n),
+		  m_log_lik_k(dat.n_gh),
+		  m_grad_k(dat.K - 1 + dat.p + 1, dat.n_gh),
+		  m_p_plus(dat.K - 1 + dat.p + 1),
+		  m_p_minus(dat.K - 1 + dat.p + 1),
+		  m_g_plus(dat.K - 1 + dat.p + 1),
+		  m_g_minus(dat.K - 1 + dat.p + 1) {}
 
 	// par = [alpha_1, log_diff_alpha_2, ..., log_diff_alpha_{K-1}, beta_1, ..., beta_p, log_sigma]
 	double operator()(const Eigen::Ref<const VectorXd>& par, Eigen::Ref<VectorXd> grad) {
@@ -67,17 +84,16 @@ public:
 		const int total = n_alpha + p + 1;
 
 		// Recover actual cutpoints alpha
-		VectorXd alpha(n_alpha);
-		alpha[0] = par[0];
-		for (int k = 1; k < n_alpha; ++k) alpha[k] = alpha[k - 1] + std::exp(par[k]);
+		m_alpha[0] = par[0];
+		for (int k = 1; k < n_alpha; ++k) m_alpha[k] = m_alpha[k - 1] + std::exp(par[k]);
 
-		const VectorXd beta = par.segment(n_alpha, p);
+		const auto beta = par.segment(n_alpha, p);
 		const double log_sigma = std::clamp(par[total - 1], -m_dat.max_abs_log_sigma, m_dat.max_abs_log_sigma);
 		const double sigma = std::exp(log_sigma);
 
-		const VectorXd eta_fixed = m_dat.X * beta;
-		const std::vector<double> nodes(m_dat.m_gh.nodes.data(), m_dat.m_gh.nodes.data() + m_dat.m_gh.nodes.size());
-		const std::vector<double> log_weights(m_dat.m_gh.log_norm_weights.data(), m_dat.m_gh.log_norm_weights.data() + m_dat.m_gh.log_norm_weights.size());
+		m_eta_fixed.noalias() = m_dat.X * beta;
+		const VectorXd& nodes = m_dat.m_gh.nodes;
+		const VectorXd& log_weights = m_dat.m_gh.log_norm_weights;
 
 		double total_neg_ll = 0.0;
 		grad.setZero();
@@ -86,23 +102,22 @@ public:
 			const int start = m_dat.m_group_start[gi];
 			const int end   = m_dat.m_group_end[gi];
 			
-			VectorXd log_lik_k(m_dat.n_gh);
-			std::vector<VectorXd> grad_k(m_dat.n_gh, VectorXd::Zero(total));
+			m_grad_k.setZero();
 
 			for (int k = 0; k < m_dat.n_gh; ++k) {
 				const double u = std::sqrt(2.0) * sigma * nodes[k];
 				double ll_k = 0.0;
 				for (int i = start; i < end; ++i) {
-					const double eta_ij = eta_fixed[i] + u;
+					const double eta_ij = m_eta_fixed[i] + u;
 					const int y_ij = m_dat.y[i];
 					
 					double prob_ij;
 					if (y_ij == 1) {
-						prob_ij = plogis_safe(alpha[0] - eta_ij);
+						prob_ij = plogis_safe(m_alpha[0] - eta_ij);
 					} else if (y_ij == m_dat.K) {
-						prob_ij = 1.0 - plogis_safe(alpha[n_alpha - 1] - eta_ij);
+						prob_ij = 1.0 - plogis_safe(m_alpha[n_alpha - 1] - eta_ij);
 					} else {
-						prob_ij = plogis_safe(alpha[y_ij - 1] - eta_ij) - plogis_safe(alpha[y_ij - 2] - eta_ij);
+						prob_ij = plogis_safe(m_alpha[y_ij - 1] - eta_ij) - plogis_safe(m_alpha[y_ij - 2] - eta_ij);
 					}
 					prob_ij = std::max(prob_ij, 1e-15);
 					ll_k += std::log(prob_ij);
@@ -110,49 +125,49 @@ public:
 					// Gradient w.r.t. beta
 					double dprob_deta = 0.0;
 					if (y_ij == 1) {
-						dprob_deta = -dplogis_safe(alpha[0] - eta_ij);
+						dprob_deta = -dplogis_safe(m_alpha[0] - eta_ij);
 					} else if (y_ij == m_dat.K) {
-						dprob_deta = dplogis_safe(alpha[n_alpha - 1] - eta_ij);
+						dprob_deta = dplogis_safe(m_alpha[n_alpha - 1] - eta_ij);
 					} else {
-						dprob_deta = dplogis_safe(alpha[y_ij - 2] - eta_ij) - dplogis_safe(alpha[y_ij - 1] - eta_ij);
+						dprob_deta = dplogis_safe(m_alpha[y_ij - 2] - eta_ij) - dplogis_safe(m_alpha[y_ij - 1] - eta_ij);
 					}
-					grad_k[k].segment(n_alpha, p) -= (dprob_deta / prob_ij) * m_dat.X.row(i).transpose();
+					m_grad_k.col(k).segment(n_alpha, p) -= (dprob_deta / prob_ij) * m_dat.X.row(i).transpose();
 					
 					// Gradient w.r.t. log_sigma (via u)
-					grad_k[k][total - 1] -= (dprob_deta / prob_ij) * u;
+					m_grad_k(total - 1, k) -= (dprob_deta / prob_ij) * u;
 
 					// Gradient w.r.t. alpha params
 					if (y_ij == 1) {
-						grad_k[k][0] -= dplogis_safe(alpha[0] - eta_ij) / prob_ij;
+						m_grad_k(0, k) -= dplogis_safe(m_alpha[0] - eta_ij) / prob_ij;
 					} else if (y_ij == m_dat.K) {
-						double d_alpha_Km1 = dplogis_safe(alpha[n_alpha - 1] - eta_ij);
+						double d_alpha_Km1 = dplogis_safe(m_alpha[n_alpha - 1] - eta_ij);
 						for (int j = 0; j < n_alpha; ++j) {
 							double d_cut = (j == 0) ? 1.0 : std::exp(par[j]);
-							grad_k[k][j] += (d_alpha_Km1 / prob_ij) * d_cut;
+							m_grad_k(j, k) += (d_alpha_Km1 / prob_ij) * d_cut;
 						}
 					} else {
 						// d(plogis(alpha_{y-1} - eta) - plogis(alpha_{y-2} - eta))
-						double d1 = dplogis_safe(alpha[y_ij - 1] - eta_ij);
-						double d2 = dplogis_safe(alpha[y_ij - 2] - eta_ij);
+						double d1 = dplogis_safe(m_alpha[y_ij - 1] - eta_ij);
+						double d2 = dplogis_safe(m_alpha[y_ij - 2] - eta_ij);
 						for (int j = 0; j < n_alpha; ++j) {
 							double d_cut = (j == 0) ? 1.0 : std::exp(par[j]);
-							if (j <= y_ij - 1) grad_k[k][j] -= (d1 / prob_ij) * d_cut;
-							if (j <= y_ij - 2) grad_k[k][j] += (d2 / prob_ij) * d_cut;
+							if (j <= y_ij - 1) m_grad_k(j, k) -= (d1 / prob_ij) * d_cut;
+							if (j <= y_ij - 2) m_grad_k(j, k) += (d2 / prob_ij) * d_cut;
 						}
 					}
 				}
-				log_lik_k[k] = ll_k + log_weights[k];
+				m_log_lik_k[k] = ll_k + log_weights[k];
 			}
 			
-			double max_ll = log_lik_k.maxCoeff();
+			double max_ll = m_log_lik_k.maxCoeff();
 			double sum_exp = 0.0;
-			for (int k = 0; k < m_dat.n_gh; ++k) sum_exp += std::exp(log_lik_k[k] - max_ll);
+			for (int k = 0; k < m_dat.n_gh; ++k) sum_exp += std::exp(m_log_lik_k[k] - max_ll);
 			double ll_gi = max_ll + std::log(sum_exp);
 			total_neg_ll -= ll_gi;
 
 			for (int k = 0; k < m_dat.n_gh; ++k) {
-				double pk = std::exp(log_lik_k[k] - ll_gi);
-				grad += pk * grad_k[k];
+				double pk = std::exp(m_log_lik_k[k] - ll_gi);
+				grad += pk * m_grad_k.col(k);
 			}
 		}
 		return total_neg_ll;
@@ -163,13 +178,11 @@ public:
 		MatrixXd H = MatrixXd::Zero(total, total);
 		double h = 1e-4;
 		for (int j = 0; j < total; ++j) {
-			VectorXd p_plus = par; p_plus[j] += h;
-			VectorXd g_plus(total);
-			(*this)(p_plus, g_plus);
-			VectorXd p_minus = par; p_minus[j] -= h;
-			VectorXd g_minus(total);
-			(*this)(p_minus, g_minus);
-			H.col(j) = (g_plus - g_minus) / (2.0 * h);
+			m_p_plus = par; m_p_plus[j] += h;
+			(*this)(m_p_plus, m_g_plus);
+			m_p_minus = par; m_p_minus[j] -= h;
+			(*this)(m_p_minus, m_g_minus);
+			H.col(j) = (m_g_plus - m_g_minus) / (2.0 * h);
 		}
 		return (H + H.transpose()) / 2.0;
 	}

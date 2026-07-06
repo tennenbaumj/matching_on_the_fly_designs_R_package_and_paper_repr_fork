@@ -55,8 +55,19 @@ double fisher_noncentral_two_sided_pval(int n11, int n10, int n01, int n00, doub
 
   std::vector<double> log_weights;
   log_weights.reserve(static_cast<std::size_t>(max_x - min_x + 1));
+  const double log_row1_factorial = std::lgamma(static_cast<double>(row1) + 1.0);
+  const double log_row2_factorial = std::lgamma(static_cast<double>(row2) + 1.0);
   for (int x = min_x; x <= max_x; ++x) {
-    log_weights.push_back(R::lchoose(row1, x) + R::lchoose(row2, col1 - x) + x * log_or);
+    const int row2_successes = col1 - x;
+    const double log_choose_row1 =
+      log_row1_factorial -
+      std::lgamma(static_cast<double>(x) + 1.0) -
+      std::lgamma(static_cast<double>(row1 - x) + 1.0);
+    const double log_choose_row2 =
+      log_row2_factorial -
+      std::lgamma(static_cast<double>(row2_successes) + 1.0) -
+      std::lgamma(static_cast<double>(row2 - row2_successes) + 1.0);
+    log_weights.push_back(log_choose_row1 + log_choose_row2 + x * log_or);
   }
 
   const double log_norm = log_sum_exp(log_weights);

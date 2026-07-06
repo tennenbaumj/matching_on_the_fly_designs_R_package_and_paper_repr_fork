@@ -1480,7 +1480,7 @@ get_kernel = function(name) {
         halves_idx = matrix(as.integer(sample(pair_ids, n_halves * 2L, replace = FALSE)), nrow = n_halves, ncol = 2L)
         list(desc = "compute_bai_distr_parallel_cpp(w_mat, m_mat, y, delta=0, halves_idx, convex_flag=TRUE, num_cores=1) [n=400, nsim=2000]",
              REPS = 200L,
-             fn   = function() compute_bai_distr_parallel_cpp(w_mat, m_mat, y, 0, halves_idx, TRUE, 1L))
+             fn   = function() EDI:::compute_bai_distr_parallel_cpp(w_mat, m_mat, y, 0, halves_idx, TRUE, 1L))
     }),
 
     # --- Rerandomization search (rerandomization_helpers.cpp) ---
