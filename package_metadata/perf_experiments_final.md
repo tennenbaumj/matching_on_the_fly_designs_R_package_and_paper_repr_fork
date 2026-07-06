@@ -980,11 +980,13 @@ Three changes in `operator()` and `hessian()`:
 - `adj_cat_var` (N=200): ~0.131 → ~0.113 ms/call (**~1.16× speedup**)
 - Correctness: 10 tests in `test-adj-cat-exp-batch.R`; VGAM coefficient match (K=3,4), score at MLE ≈ 0, score norm smaller at MLE than at perturbed point, Hessian vs finite-difference (K=3,4); all pass
 
-**TODO-51: Ord_cauchit — mutable scratch buffers to eliminate malloc overhead** ✓ DONE
+**TODO-51: Ord_cauchit — mutable scratch buffers to eliminate malloc overhead** ✓ RESOLVED — SUPERSEDED BY TODO-69
 File: `EDI/src/fast_ordinal_cauchit_regression.cpp`
 Profile: `ord_cauchit_est` has 43% of samples in malloc TLS arena access (23% movq %fs: TLS read + 20% TLS write). The cauchit link likely allocates intermediate arrays per optimizer call that the logistic link avoids through Eigen lazy evaluation. Add mutable scratch `VectorXd` buffers sized at construction to eliminate per-call allocs. Caution: check whether this is a `const` method inside a GLMM objective — if so, see the mutable-field antipattern warning.
 
 Implemented in the shared `ordinal_fixed_link_helpers.h`: threshold and coefficient blocks are now zero-copy Eigen views, and a constructor-sized mutable linear-predictor buffer replaces the fresh N-vector in the likelihood, score, observed-Hessian, and expected-information paths. An attempted broader conversion of the small Hessian work arrays to member Eigen buffers was benchmarked and reverted because it slowed the variance path; their original contiguous `std::vector` implementation remains. Correctness: `test-ordinal-cauchit-scratch-buffers.R` compares the analytic score and Hessian with numerical derivatives of an independent R cauchit likelihood, and the full Rcpp fitting-equivalence suite passes after installation with `R CMD INSTALL --no-docs`. Noise control used an A/B/A audit with 30 rounds × 500 iterations per phase: estimate 0.5815ms → 0.5781ms (0.58% faster, bootstrap 95% CI −0.23% to +1.26%, two-sided Wilcoxon p=0.054); variance 0.2073ms → 0.2046ms (1.27% faster, CI 0.30% to 2.41%, p=0.0063). The original 43% malloc attribution was stale because several scratch fields were already present before this TODO; the remaining end-to-end gain is correspondingly small.
+
+Superseded by the broader TODO-69 audit across all fixed ordinal links. That audit found a material ordinal-probit regression and showed that even the eta-only refinement slowed every tested estimate path; the mutable eta buffer and zero-copy parameter views were therefore reverted. The pre-existing `m_scratch_dq`, `m_scratch_d2q`, and `m_scratch_v` buffers remain.
 
 **TODO-52: Ord_probit — fast_erf approximation for probit link** ✓ DONE
 File: `EDI/src/fast_ordinal_probit_regression.cpp`
@@ -1438,10 +1440,12 @@ Each backtracking probe recomputes `X * beta_new` as a full GEMV. Precompute `de
 
 ## Ordinal family findings (from 2026-07-04 perf annotate run, 129 kernels)
 
-**TODO-69: FixedOrdinalRegression — preallocate per-call working vectors** ☐
+**TODO-69: FixedOrdinalRegression — preallocate per-call working vectors** ✓ RESOLVED — REJECTED
 Files: `EDI/src/fast_ordinal_regression.cpp` (FixedOrdinalRegression::operator())
 
 Root cause: `malloc`/`cfree` appear prominently in prop_odds_est, prop_odds_var, ord_cauchit_est, ord_cloglog_est, and kk21_ordinal_wts profiles. `FixedOrdinalRegression::operator()` allocates working vectors (cumulative probabilities, per-threshold gradient components) on every optimizer call. Preallocate these as member fields and resize once in the constructor — same pattern applied to HurdlePoisson GLMM. Covers all families routing through FixedOrdinalRegression: prop_odds, ord_cauchit, ord_cloglog, ord_probit, and kk21_ordinal weights.
+
+Benchmarked and reverted. The source had already implemented this proposal under TODO-51 by adding a constructor-sized eta buffer and replacing local alpha/beta vectors with expression views. A clean pre-change package was reconstructed from the immediately preceding header while retaining all later fast-erfc work. Noise control used an A/B/A baseline (60 round medians total) versus 30 optimized rounds, each with 300 iterations at N=1000. The broad implementation was neutral for proportional odds (0.7593ms → 0.7577ms, 0.21%; bootstrap 95% CI −1.06% to 1.48%), slightly slower for cauchit (0.6954ms → 0.7004ms, 0.72% slower), 1.34% faster for cloglog (CI 0.42%–2.68%), and **19.96% slower for ordinal probit** (0.6349ms → 0.7616ms, regression CI 18.96%–21.29%). A refined variant retained only the N-length eta buffer while restoring local alpha/beta copies; it still slowed all four links by 1.45%–2.33%. The constructor allocation is paid on every public fit, while these workloads need too few optimizer evaluations to amortize it. Production code therefore restores local alpha, beta, and eta vectors while retaining the older small gradient scratch buffers. Correctness: outputs are bit-identical and optimizer iteration counts match for all four links; `test-ordinal-cauchit-scratch-buffers.R` and `test-ordinal-information-reuse.R` pass after the final `R CMD INSTALL --no-docs` build.
 
 ---
 
@@ -1619,24 +1623,56 @@ Root cause: `unif_rand` accounts for 31% of `generate_permutations_bernoulli`, 3
 
 ---
 
-**TODO-92: generate_permutations_spbr — replace memcmp dedup with integer hash** ☐
+**TODO-92: generate_permutations_spbr — replace string map with integer-ID lookup** ✓ DONE
 File: `EDI/src/generate_permutations.cpp` (SPBR branch)
 
-Root cause: `__memcmp_avx2_movbe` accounts for **22%** of `generate_permutations_spbr` samples — the second largest hotspot after the SPBR function itself (21%). SPBR generates permutations then checks for duplicates by byte-comparing treatment vectors. For B=5000 permutations of n=400 subjects: 2M bytes compared per generation. Fix: hash each generated permutation with a fast 64-bit hash (e.g., `std::hash<std::string_view>` over the int array's bytes, or a direct FNV-1a/xxHash over the `int*` data), store hashes in an `std::unordered_set<uint64_t>`. Collision probability for 5000 out of ~2^400 distinct permutations is negligible. Eliminates 22% of wall time.
+Root cause: `__memcmp_avx2_movbe` accounts for **22%** of `generate_permutations_spbr` samples. The actual source is `std::map<std::string, std::vector<int>> strata_states` inside the nsim×n loop: for each of the n subjects in each of the nsim simulations, the map does O(log K) string comparisons via memcmp. For n=1000, nsim=500: 500,000 string map lookups per call. Fix: pre-convert all string strata keys to dense integer IDs once before the simulation loop using `std::unordered_map<std::string, int>`. Replace `std::map<std::string, ...>` with `std::vector<std::vector<int>> strata_states(num_strata)` indexed by integer ID — O(1) lookup with no string comparison. Persistent outer vector reused across simulations (inner vectors `.clear()`'d at top of each sim, keeping capacity). Also swapped `#include <map>` → `#include <unordered_map>`.
+
+Result (2026-07-06): 30 rounds × 3 reps, Wilcoxon p ≈ 0.
+
+| Kernel | Before | After | Speedup |
+|---|---|---|---|
+| `generate_permutations_spbr_cpp` (5 strata × 200, block=4, nsim=500) | 37 ms | 3 ms | **12.33×** |
+
+The outsized gain (vs the 22% profiler attribution) is because the profiler was run against the pre–TODO-91 code which also had `default_random_engine` construction overhead; both were eliminated together. The string-map replacement is the dominant fix: it removes O(n × nsim × log K) string comparisons.
+
+Test: `EDI/tests/testthat/test-spbr-integer-key.R` — 6 tests: dimensions/values, per-block balance invariant (all blocks sum to n_T_block), grand mean ≈ prob_T, single-stratum edge case, many-strata correctness, reproducibility.
 
 ---
 
-**TODO-93: Ordinal GLMM — preallocate alpha_buf in GLMMObjective** ☐
+**TODO-93: Ordinal GLMM — preallocate alpha_buf in GLMMObjective** ✓ DONE
 File: `EDI/src/_glmm_engine.h`
 
-Root cause: `_int_malloc` at 5% + `_int_free_merge_chunk` at 4% persist in both `ordinal_glmm_est` and `ordinal_glmm_var` after Phase 1 fixes. The most likely source is `alpha_buf` — a `std::vector<double>(nm)` allocated once per `operator()` call in TODO-1's implementation (moved outside the GH inner loop, but still heap-allocated every optimizer step). Since `nm` is fixed for a given dataset (= n_thresholds), add `std::vector<double> m_alpha_buf` as a preallocated member of `GLMMObjective`, sized in the constructor. Safety: `m_alpha_buf` is only READ inside the GH quadrature loop (after being filled by `fill_alpha` before the loop), so the mutable-field LICM concern does not apply — the inner loop never writes to it.
+Root cause: `_int_malloc` at 5% + `_int_free_merge_chunk` at 4% persist in both `ordinal_glmm_est` and `ordinal_glmm_var` after Phase 1 fixes. The most likely source is `alpha_buf` — a `std::vector<double>(nm)` allocated once per `operator()` call (every optimizer step). Since `nm` is fixed for a given dataset (= n_thresholds = K-1), moved to a `mutable std::vector<double> m_alpha_buf` member of `GLMMObjective`, sized in the constructor via `m.n_model_params()`. Both `value()` and `operator()` now reuse the preallocated buffer. Safety: the mutable-field LICM concern (see feedback memory) applies to Model-class fields accessed inside the GH inner loop — `m_alpha_buf` is in `GLMMObjective` itself, is written by `fill_alpha` before the loops, and only read through a `const double*` by `model.log_prob{_derivs}` (a different object). Compiler sees no aliasing; verified empirically that no regression occurs.
+
+Result (2026-07-06): 30 rounds × 3 reps, Wilcoxon p < 0.02/0.0001.
+
+| Kernel | Before | After | Speedup |
+|---|---|---|---|
+| `ordinal_glmm_est` (n=400, K=3, G=80) | 34.5 ms | 33.0 ms | **1.05×** |
+| `ordinal_glmm_var` (n=200, K=3, G=80) | 18.5 ms | 17.0 ms | **1.09×** |
+
+Gain is modest because for K=3, `nm=2` — only 16 bytes freed per optimizer step. The profiler's 9% attribution was measured against a larger K or heavier load. Allocation overhead is real but small relative to GH quadrature computation. The `var` path gains slightly more because the hessian path calls `operator()` many more times (numerical Hessian = 2p+1 evaluations per step).
+
+Test: `EDI/tests/testthat/test-ordinal-glmm-alpha-buf.R` — 4 tests: estimate_only/full consistency, finite+converged output, treatment direction, comparison with `ordinal::clmm`.
 
 ---
 
-**TODO-94: Logistic GLMM — fast log1pexp to reduce log1p overhead** ☐
+**TODO-94: Logistic GLMM — fast log1pexp to reduce log1p overhead** ✓ DONE
 File: `EDI/src/fast_logistic_glmm.cpp`, `EDI/src/_helper_functions.h`
 
 Root cause: `__log1p_fma` accounts for 18% of `logistic_glmm_est` and 14% of `logistic_glmm_var` — the dominant remaining hotspot after all prior optimizations. This is `log1pexp(x) = log(1 + exp(x))` used in the node log-likelihood (log normalizer for the logistic GLMM). The glibc `log1p` + `exp` path uses separate range-reduction tables. Implement `fast_log1pexp(x)` in `_helper_functions.h`: for `x > 37`, return `x` (overflow-safe); for `x < -37`, return `exp(x)`; otherwise `x + log1p(exp(-|x|))` using a precomputed 8-term polynomial for `log1p` on `[-1, 0]` that avoids the glibc dispatch. Also applicable to `hurdle_p_glmm_est` (12% `__log1p_fma`) and `logistic_glmm_var`.
+
+Implementation: Added `fast_log1pexp(double x)` (scalar) and `log1pexp_array_fast(ArrayXd)` (vectorized) to `_helper_functions.h`. The array version uses an atanh-series Horner polynomial: `log1p(z) = 2*s*(1 + s²/3 + … + s¹⁸/19)` where `s = z/(2+z)`, 10 odd terms, error < 5e-12 for `z ∈ [0,1]`. This is fully SIMD-vectorizable (no `.log()` or `.select()` — only `.exp()`, scalar arithmetic, and Horner FMAs). Replaced all three `log1pexp_array_safe` calls in `fast_logistic_glmm.cpp`. Note: `__log1p_fma` hotspot was already partially addressed by `fast_log1p_arr` in a prior commit; the atanh polynomial yields an additional improvement mainly on the variance (hessian) path.
+
+Benchmark (A/B/A, 30 rounds × 20 reps, n=200 subjects / 50 groups):
+
+| Kernel | Before | After | Speedup | Wilcoxon p |
+|---|---|---|---|---|
+| `logistic_glmm_est` | 0.110s | 0.110s | 1.00x | 0.618 (n.s.) |
+| `logistic_glmm_var` | 0.124s | 0.118s | **1.06x** | 1.25e-05 |
+
+Test: `EDI/tests/testthat/test-fast-log1pexp.R` (8 tests: convergence, direction, estimate/var consistency, lme4 comparison).
 
 ---
 
@@ -1783,3 +1819,95 @@ Root cause: The condition `if (objective == "abs_sum_diff")` (line 123) is evalu
 Fix: Hoist the string check to before the loop and set a `bool abs_mode` flag (the pattern already used in `rerandomization_search_cpp` line 163–182). Replace the in-loop string branch with `if (abs_mode)`.
 
 Expected speedup: negligible for large n/p (dominated by arithmetic), but removes a predictable branch-misprediction source and simplifies the inner loop.
+
+---
+
+**TODO-106: d_optimal_search_cpp — eliminate per-iteration j×n multiply by transposing P access** ☐
+Files: `EDI/src/optimal_design_search.cpp` (`d_optimal_search_cpp` line 83, `a_optimal_search_cpp` line ~200)
+
+Root cause: `perf annotate` for `d_optimal_search` (200 reps, 9 ms/call) shows 100% of samples in `d_optimal_search_cpp` — no malloc/free overhead, no sort overhead (sort ~2%). The tight inner swap loop at lines 77–92 is the sole bottleneck. Hot instruction sequence (addr 6c13a0–6c1405):
+
+```
+6c13a0  movslq  (%r15,%rdx,4), %rax    # j = c_idxs[cj]          — 4.03%
+6c13a7  imulq   %r9, %rax              # j * n (column offset)    — 3.97%
+6c13ae  vfnmadd231sd  (%rdi,%rax,8)   # delta = Ai+Bj - 2*P[j*n+i] — 3.51%
+6c13b4  vcomisd %xmm0, %xmm2          # delta < best_delta?       — 10.92%
+6c13b8  jbe     ...                   # branch on result          — 8.40%
+6c13da  incq    %rdx                  # ++cj                      — 5.39%
+6c13ea  vmovsd  (%r14,%rax,8)         # load Bj                   — 6.83%
+6c1400  vcomisd %xmm8, %xmm0          # Ai+Bj >= threshold?       — 7.29%
+6c1405  jb      6c13a0                # loop back                 — 3.22%
+```
+
+The `imulq j*n` (line 83: `p_ptr[static_cast<size_t>(j) * n + i]`) runs every inner iteration. Since P is symmetric, `P(i,j) = P(j,i)`: replace with `p_row_ptr[j]` where `p_row_ptr = P.data() + (size_t)i * n` is precomputed **once** per outer (ti) iteration. This:
+1. Eliminates the `imulq` entirely
+2. Changes the access from `p_ptr[j*n + i]` (column j, row i — one cache-line per j) to `p_row_ptr[j]` (row i — entire row fits in ~8 cache lines for n=60, stays hot in L1 for the inner loop)
+
+Same fix applies to `a_optimal_search_cpp`.
+
+Expected speedup: ~5–10% on the inner loop from eliminating the multiply + improved cache reuse for row i.
+
+Note: `TODO-104`'s prediction of allocation overhead was wrong for this kernel size (n=60, nsim=500) — the allocations are fast relative to the inner loop. The sort at ~2% is also not significant for n_T=30.
+
+---
+
+**TODO-107: compute_objective_vals_cpp — stride-r=5000 cache miss in indicTs inner loop** ☐
+Files: `EDI/src/rerandomization_helpers.cpp` (`compute_objective_vals_cpp`, lines 114–132)
+
+Root cause: `perf report` for `rerandomization_obj_vals` (r=5000, n=200, p=4): 38.46% of samples in `compute_objective_vals_cpp`. The dominant cost is the inner access `indicTs(row, i)` (line 118), where `indicTs` is an `r×n` column-major integer matrix. With the outer loop over `row` (0..r-1) and inner loop over `i` (0..n-1), each `indicTs(row, i)` access is at offset `row + i * r` — stride-r=5000 between consecutive `i` values. At r=5000 and 4 bytes/int, each column jump = 20KB > typical L1 cache line distance. Result: ~n=200 cache misses per row evaluation, for r=5000 rows = 1M cache misses per call.
+
+Fix:
+1. Transpose `indicTs` into a local `n×r` matrix at the top of the function, then access `indicTs_T(i, row) = indicTs(row, i)` with stride-1 inner loop. One-time O(n×r) transpose cost, then all inner loops are sequential.
+2. Or restructure the loop: outer loop over `i`, inner loop over `row`, accumulating `sum_T[row][j]` — but requires `r×p` accumulator matrix.
+3. The string comparison inside the row loop (`objective == "abs_sum_diff"` at line 123) is secondary (TODO-105) — the cache miss is the primary cost.
+
+Expected speedup: 3×–5× for the n×r sweep; the transpose itself is cheap.
+
+Disassembly confirmation (`objdump -d EDI.so`, function `_Z26compute_objective_vals_cpp` at 0x6ea720, size 5754 bytes):
+- **+0x63b**: `cmpl $0x1,(%rax,%r14,4)` — the `indicTs(row,i)==1` load; r14 = `stride * i + col_base` computed via `imul %r12,%r14` at +0x661 (stride=r=5000, so each i-step jumps 20 KB — L3 miss per inner iteration)
+- **+0x640 [134 samples]**: `je ...` — branch on the load result; receives the sample attribution while the CPU stalls waiting for the cache fill
+- **+0x8eb**: `vaddsd (%rax,%r8,8),%xmm0,%xmm0` — `X(i,j)` load in the `sum_T[j]` accumulation j-loop; stride = n = 200 between j-steps, and `imul %r14,%r8` at +0x90c recomputes the column offset every j-iteration
+- **+0x8f1 [50 samples]**: `vmovsd %xmm0,0x0(%r13,%r14,8)` — store back to `sum_T[j]`; samples here reflect the overall j-loop cost (p=4 so minor)
+
+The 134-sample hot instruction confirms the indicTs cache miss is the dominant cost, not the string comparison (TODO-105).
+
+---
+
+**TODO-108: rerandomization_search_cpp — OpenMP overhead dominates for small REPS** ☐  
+Files: `EDI/src/rerandomization_helpers.cpp` (`rerandomization_search_cpp`, lines 202–240)
+
+Root cause: `perf report` for `rerandomization_search` (r=500, max_draws=50000, n=200, p=4, REPS=50): `libgomp.so` accounts for **39.27%** of all samples, with the actual computation nearly invisible. The `#pragma omp parallel` block (line 202) spawns threads and sets up a barrier even when there are few accepted draws. With the `#pragma omp for schedule(static)` dividing 50000 draws across threads, each thread does relatively little work before the barrier, inflating per-call overhead.
+
+Considerations: This is a calling-pattern issue (REPS=50, short per-call time of 4.4ms) exacerbating inherent OpenMP overhead. In production (large n, many accepted draws, long-running calls), OpenMP overhead is proportionally smaller. However, callers with small `max_draws` or small `r` pay disproportionately. If `max_draws * n` is below a threshold, a sequential fallback (`#ifdef _OPENMP ... omp_get_max_threads() > 1 ...`) would reduce overhead for short jobs.
+
+---
+
+**TODO-109: kk_compound_distr — merge multiple O(n) passes per simulation into one** ☐
+Files: `EDI/src/kk_compound_distr_parallel.cpp` (`compute_matching_compound_distr_parallel_cpp`, lines 49–112)
+
+Root cause: `perf report` for `kk_compound_distr` (n=400, nsim=2000): 39.81% of samples in the OpenMP kernel — compute-bound, no malloc overhead (thread-local vectors correctly hoisted outside the for-b loop). However, each simulation iteration makes at least 4 separate O(n) passes:
+1. Lines 49–51: scan to find `max_m = max(m_col)`
+2. Lines 59–65: scan to fill `treated_idx`/`control_idx`
+3. Lines 86–91: scan for unmatched T/C sums
+4. Lines 101–106: second pass for unmatched variances
+
+Fix: Merge all 4 passes into a single O(n) pass: track `max_m`, treated/control indices, unmatched sums and sums-of-squares simultaneously. The single merged pass halves L1 cache pressure (each y[i], m_col[i], w_col[i] loaded once instead of 3–4×).
+
+Expected speedup: 2×–3× for the inner loop (cache miss reduction dominates for n=400).
+
+Disassembly confirmation (`objdump -d EDI.so`, OMP clone `compute_matching_compound_distr_parallel_cpp [._omp_fn.0]` at 0x69d510):
+- **+0x66c**: `mov (%rbx,%rdx,4),%eax` — sequential load of `m_col[i]` (stride-1, cache friendly)
+- **+0x675**: `cmpl $0x1,0x0(%r13,%rdx,4)` — sequential load of `w_col[i]` for treatment check (stride-1)
+- **+0x67f [78 samples]**: `mov 0xa8(%rsp),%rdi` — load of the `treated_idx` base pointer from the stack, hottest instruction; attributed here because the preceding scatter store at +0x687 stalls on TLB/cache for the scattered `slot = match_id - 1` index
+- **+0x687**: `mov %edx,(%rdi,%rax,4)` — scatter store `treated_idx[slot] = i`; slot = `m_col[i]-1` is not sequential, causing random-order writes
+- **+0x660**: same pattern for `control_idx[slot] = i`
+
+The scatter writes (`treated_idx[slot]`, `control_idx[slot]`) into randomly-ordered slots are the bottleneck for pass 2. Merging all 4 passes eliminates 3 of 4 reads over `m_col`, `w_col`, `y_col` and halves the total scatter work.
+
+---
+
+**NOTE: bai_distr kernel crashes during validation** ⚠️
+Files: `EDI/src/fast_bai_parallel.cpp`, `profile/edi_kernel_profiler.R`
+
+The `bai_distr` kernel added in TODO-98 crashes before producing `ms/call` output (perf record shows no EDI.so samples). The kernel definition at line ~1465 of `edi_kernel_profiler.R` may have an incorrect argument layout (halves_idx structure or w_mat/m_mat dimensions mismatch). Investigate the crash before profiling. Source-inspection finding (TODO-102: in-loop vector allocations) still valid pending a working kernel.
+

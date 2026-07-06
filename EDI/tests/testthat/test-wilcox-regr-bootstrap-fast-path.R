@@ -1,6 +1,7 @@
+library(EDI)
+
 test_that("KK Wilcox rank-regression fast bootstrap matches the generic KK bootstrap", {
 	skip_if_not_installed("Rfit")
-	skip("Known convergence issue: fast and slow KK Wilcox bootstrap paths disagree - pre-existing")
 
 	SlowInferenceAllKKWilcoxIVWC = R6::R6Class(
 		"SlowInferenceAllKKWilcoxIVWC",
@@ -40,34 +41,7 @@ test_that("KK Wilcox rank-regression fast bootstrap matches the generic KK boots
 	expect_equal(fast_boot, slow_boot, tolerance = 1e-6)
 })
 
-test_that("KK Wilcox rank-regression low-level exact solver matches Rfit formula path", {
-	skip_if_not_installed("Rfit")
-	skip("fit_matched_component method not available in current implementation")
-
-	old_fit_matched = function(dy, dX){
-		dat = as.data.frame(as.matrix(dX))
-		colnames(dat) = paste0("x", seq_len(ncol(dat)))
-		dat$dy = dy
-		mod = suppressWarnings(Rfit::rfit(dy ~ ., data = dat))
-		summ = suppressWarnings(summary(mod))
-		list(
-			beta = as.numeric(summ$coefficients["(Intercept)", "Estimate"]),
-			ssq = as.numeric(summ$coefficients["(Intercept)", "Std. Error"])^2
-		)
-	}
-
-	old_fit_reservoir = function(y_r, w_r, X_r){
-		dat = data.frame(y = y_r, w = w_r)
-		X_covs = as.data.frame(as.matrix(X_r))
-		colnames(X_covs) = paste0("x", seq_len(ncol(X_covs)))
-		dat = cbind(dat, X_covs)
-		mod = suppressWarnings(Rfit::rfit(y ~ ., data = dat))
-		summ = suppressWarnings(summary(mod))
-		list(
-			beta = as.numeric(summ$coefficients["w", "Estimate"]),
-			ssq = as.numeric(summ$coefficients["w", "Std. Error"])^2
-		)
-	}
+test_that("KK Wilcox rank-regression low-level components match wilcox.test", {
 
 	set.seed(20260330)
 	n = 12
@@ -81,21 +55,21 @@ test_that("KK Wilcox rank-regression low-level exact solver matches Rfit formula
 	}
 	inf = InferenceAllKKWilcoxIVWC$new(des, verbose = FALSE)
 	priv = inf$.__enclos_env__$private
+	priv$compute_basic_match_data()
 
-	set.seed(20260331)
-	dy = rnorm(40)
-	dX = matrix(rnorm(40 * 6), nrow = 40, ncol = 6)
-	colnames(dX) = paste0("x", seq_len(ncol(dX)))
-	fast_matched = suppressWarnings(priv$fit_matched_component(dy, dX))
-	old_matched = suppressWarnings(old_fit_matched(dy, dX))
-	expect_equal(fast_matched, old_matched, tolerance = 1e-8)
+	# Matched-pairs component: rank_for_matched_pairs() must agree with wilcox.test
+	diffs = priv$cached_values$KKstats$y_matched_diffs
+	priv$rank_for_matched_pairs()
+	beta_m = priv$cached_values$beta_T_matched
+	ref_m = suppressWarnings(wilcox.test(diffs, conf.int = TRUE))
+	expect_equal(beta_m, as.numeric(ref_m$estimate), tolerance = 1e-10)
 
-	set.seed(20260401)
-	y_r = rnorm(80)
-	w_r = rep(0:1, each = 40)
-	X_r = matrix(rnorm(80 * 6), nrow = 80, ncol = 6)
-	colnames(X_r) = paste0("x", seq_len(ncol(X_r)))
-	fast_reservoir = suppressWarnings(priv$fit_reservoir_component(y_r, w_r, X_r))
-	old_reservoir = suppressWarnings(old_fit_reservoir(y_r, w_r, X_r))
-	expect_equal(fast_reservoir, old_reservoir, tolerance = 1e-8)
+	# Reservoir component: rank_for_reservoir() must agree with wilcox.test
+	y_r = priv$cached_values$KKstats$y_reservoir
+	w_r = priv$cached_values$KKstats$w_reservoir
+	priv$rank_for_reservoir()
+	beta_r = priv$cached_values$beta_T_reservoir
+	yT = y_r[w_r == 1]; yC = y_r[w_r == 0]
+	ref_r = suppressWarnings(wilcox.test(yT, yC, conf.int = TRUE))
+	expect_equal(beta_r, as.numeric(ref_r$estimate), tolerance = 1e-10)
 })

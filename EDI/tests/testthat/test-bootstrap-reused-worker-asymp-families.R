@@ -378,12 +378,14 @@ test_that("MLE and proportion families picked up through InferenceAsymp match ge
 	compare_bootstrap_fast_slow_asymp(
 		InferencePropFractionalLogit$new(prop_des, verbose = FALSE),
 		SlowInferencePropFractionalLogit$new(prop_des, verbose = FALSE),
-		seed = 217
+		seed = 217,
+		tolerance = 1e-9
 	)
 	compare_bootstrap_fast_slow_asymp(
 		InferencePropFractionalLogit$new(prop_des, verbose = FALSE),
 		SlowInferencePropFractionalLogit$new(prop_des, verbose = FALSE),
-		seed = 218
+		seed = 218,
+		tolerance = 1e-9
 	)
 	compare_bootstrap_fast_slow_asymp(
 		InferencePropZeroOneInflatedBetaRegr$new(zoib_des, verbose = FALSE),

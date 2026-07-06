@@ -1,11 +1,40 @@
 #include <Rcpp.h>
+#include <random>
+#include <cstdint>
+#include <limits>
 using namespace Rcpp;
+
+namespace {
+
+inline uint64_t bounded_rand(std::mt19937_64& rng, uint64_t s) {
+	uint64_t x = rng();
+	__uint128_t m = static_cast<__uint128_t>(x) * s;
+	uint64_t l = static_cast<uint64_t>(m);
+	if (l < s) {
+		uint64_t t = (-s) % s;
+		while (l < t) {
+			x = rng();
+			m = static_cast<__uint128_t>(x) * s;
+			l = static_cast<uint64_t>(m);
+		}
+	}
+	return static_cast<uint64_t>(m >> 64);
+}
+
+inline std::mt19937_64 make_local_rng() {
+	return std::mt19937_64(static_cast<uint64_t>(
+		R::unif_rand() * static_cast<double>(std::numeric_limits<uint64_t>::max())));
+}
+
+} // namespace
 
 // [[Rcpp::export]]
 IntegerVector sample_int_replace_cpp(int n, int size) {
+	auto rng = make_local_rng();
+	const uint64_t un = static_cast<uint64_t>(n);
 	IntegerVector result(size);
 	for (int i = 0; i < size; ++i) {
-	result[i] = 1 + (int)(R::unif_rand() * n); // 1 to n
+		result[i] = 1 + static_cast<int>(bounded_rand(rng, un));
 	}
 	return result;
 }
@@ -49,10 +78,13 @@ IntegerVector resample_group_rows_cpp(const IntegerVector& group_id, int sample_
 		rows_by_group[group_id[i] - 1].push_back(i + 1);
 	}
 
+	auto rng = make_local_rng();
+	const uint64_t u_mg = static_cast<uint64_t>(max_group);
+
 	IntegerVector sampled_groups(sample_size);
 	int out_size = 0;
 	for (int draw = 0; draw < sample_size; ++draw) {
-		const int sampled_group = 1 + (int)(R::unif_rand() * max_group);
+		const int sampled_group = 1 + static_cast<int>(bounded_rand(rng, u_mg));
 		sampled_groups[draw] = sampled_group;
 		out_size += rows_by_group[sampled_group - 1].size();
 	}

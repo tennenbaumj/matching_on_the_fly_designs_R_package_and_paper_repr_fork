@@ -46,7 +46,7 @@ local({
 	# --- Mock 1: wraps lm() — uses stats::vcov() dispatch ---
 	MockLMInf = R6::R6Class("MockLMInf",
 		lock_objects = FALSE,
-		inherit = InferenceMLEorKMSummaryTable,
+		inherit = EDI:::InferenceMLEorKMSummaryTable,
 		public = list(
 			initialize = function(des_obj, model_formula = NULL, verbose = FALSE){
 				super$initialize(des_obj, verbose = verbose, model_formula = model_formula)
@@ -65,7 +65,7 @@ local({
 	# --- Mock 2: returns a plain list with $coefficients and $vcov ---
 	MockListInf = R6::R6Class("MockListInf",
 		lock_objects = FALSE,
-		inherit = InferenceMLEorKMSummaryTable,
+		inherit = EDI:::InferenceMLEorKMSummaryTable,
 		public = list(
 			initialize = function(des_obj, model_formula = NULL, verbose = FALSE){
 				super$initialize(des_obj, verbose = verbose, model_formula = model_formula)

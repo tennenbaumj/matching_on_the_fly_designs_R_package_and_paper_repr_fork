@@ -285,6 +285,7 @@ InferenceAllKKWilcoxIVWC = R6::R6Class("InferenceAllKKWilcoxIVWC",
 		},
 		rank_for_matched_pairs = function(){
 			diffs = private$cached_values$KKstats$y_matched_diffs
+			m_pairs = length(diffs)
 			# signed-rank test requires at least some non-zero differences
 			if (all(diffs == 0)) return(invisible(NULL))
 			mod = tryCatch({
@@ -292,11 +293,13 @@ InferenceAllKKWilcoxIVWC = R6::R6Class("InferenceAllKKWilcoxIVWC",
 			}, error = function(e) NULL)
 			if (is.null(mod)) return(invisible(NULL))
 			beta = as.numeric(mod$estimate)
-			# Back-calculate SE from 95% CI width; guard against NULL/empty conf.int
-			ci = mod$conf.int
-			se = if (length(ci) == 2L) (ci[2] - ci[1]) / (2 * 1.96) else NA_real_
+			# Variance of Walsh averages / m — matches C++ fast-path estimate_hl_ssq_signed_rank
+			se_sq = if (m_pairs >= 2L) {
+				walsh = unlist(lapply(seq_len(m_pairs), function(i) (diffs[i] + diffs[i:m_pairs]) / 2))
+				var(walsh) / m_pairs
+			} else NA_real_
 			private$cached_values$beta_T_matched     = if (length(beta) == 1L && is.finite(beta)) beta else NA_real_
-			private$cached_values$ssq_beta_T_matched = if (length(se) == 1L && is.finite(se) && se > 0) se^2 else NA_real_
+			private$cached_values$ssq_beta_T_matched = if (is.finite(se_sq) && se_sq > 0) se_sq else NA_real_
 		},
 		rank_for_reservoir = function(){
 			y_r = private$cached_values$KKstats$y_reservoir
@@ -308,11 +311,12 @@ InferenceAllKKWilcoxIVWC = R6::R6Class("InferenceAllKKWilcoxIVWC",
 			}, error = function(e) NULL)
 			if (is.null(mod)) return(invisible(NULL))
 			beta = as.numeric(mod$estimate)
-			# Back-calculate SE from 95% CI width; guard against NULL/empty conf.int
-			ci = mod$conf.int
-			se = if (length(ci) == 2L) (ci[2] - ci[1]) / (2 * 1.96) else NA_real_
+			# Variance of pairwise differences / (n_t + n_c) — matches C++ estimate_hl_ssq_rank_sum
+			se_sq = if (length(yT) >= 2L && length(yC) >= 2L) {
+				var(as.vector(outer(yT, yC, FUN = "-"))) / (length(yT) + length(yC))
+			} else NA_real_
 			private$cached_values$beta_T_reservoir     = if (length(beta) == 1L && is.finite(beta)) beta else NA_real_
-			private$cached_values$ssq_beta_T_reservoir = if (length(se) == 1L && is.finite(se) && se > 0) se^2 else NA_real_
+			private$cached_values$ssq_beta_T_reservoir = if (is.finite(se_sq) && se_sq > 0) se_sq else NA_real_
 		},
 		compute_fast_bootstrap_distr = function(B, i_reservoir, n_reservoir, m, y, w, m_vec){
 			# Generate bootstrap indices for KK design in R first
@@ -328,7 +332,7 @@ InferenceAllKKWilcoxIVWC = R6::R6Class("InferenceAllKKWilcoxIVWC",
 				w_b_matched = integer(0)
 				
 				if (m > 0) {
-					pairs_to_include = sample_int_replace_cpp(m, m)
+					pairs_to_include = sample(seq_len(m), m, replace = TRUE)
 					for (new_pair_id in 1:m) {
 						original_pair_id = pairs_to_include[new_pair_id]
 						pair_indices = which(m_vec == original_pair_id)

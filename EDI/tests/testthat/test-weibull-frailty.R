@@ -57,9 +57,9 @@ test_that("weibull frailty analytic score matches numerical gradient of its neg-
 	dead <- rbinom(n, 1, 0.8)
 	params <- c(0.5, -0.3, 0.1, -0.5) # [beta_w, beta_x1, log_sigma_eps, log_sigma_u]
 
-	score <- as.numeric(get_weibull_frailty_score_cpp(X, y, dead, group_id, params))
+	score <- as.numeric(EDI:::get_weibull_frailty_score_cpp(X, y, dead, group_id, params))
 	num_grad_negll <- numDeriv::grad(
-		function(p) get_weibull_frailty_neg_loglik_cpp(X, y, dead, group_id, p),
+		function(p) EDI:::get_weibull_frailty_neg_loglik_cpp(X, y, dead, group_id, p),
 		params
 	)
 	# score is d(+loglik)/d params, the numerical gradient is of the NEGATIVE loglik
@@ -82,6 +82,6 @@ test_that("weibull frailty loglik collapses to survreg's weibull loglik as sigma
 	X <- cbind(`(Intercept)` = 1, w = w, x1 = x1)
 	params <- c(as.numeric(stats::coef(fit_r)), log(fit_r$scale), -8) # log_sigma_u at clamp floor
 
-	neg_ll_frailty <- get_weibull_frailty_neg_loglik_cpp(X, y, dead, group_id, params)
+	neg_ll_frailty <- EDI:::get_weibull_frailty_neg_loglik_cpp(X, y, dead, group_id, params)
 	expect_equal(neg_ll_frailty, -as.numeric(stats::logLik(fit_r)), tolerance = 1e-4)
 })

@@ -118,9 +118,13 @@ template <typename Model>
 class GLMMObjective {
     const GLMMData& dat;
     Model model;
+    // Preallocated once at construction — written by fill_alpha before each loop,
+    // only read inside the GH quadrature loop (no LICM concern; inner loop never writes it).
+    mutable std::vector<double> m_alpha_buf;
 
 public:
-    GLMMObjective(const GLMMData& d, const Model& m) : dat(d), model(m) {}
+    GLMMObjective(const GLMMData& d, const Model& m)
+        : dat(d), model(m), m_alpha_buf(m.n_model_params()) {}
 
     double value(const Eigen::VectorXd& par) const {
         const int nm = model.n_model_params();
@@ -129,8 +133,7 @@ public:
         const double sigma = std::exp(log_sigma);
         const double pen = sigma_penalty(log_sigma);
 
-        std::vector<double> alpha_buf(nm);
-        model.fill_alpha(par, alpha_buf.data());
+        model.fill_alpha(par, m_alpha_buf.data());
 
         const Eigen::VectorXd beta = par.segment(nm, dat.p);
         const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * dat.gh.nodes;
@@ -146,7 +149,7 @@ public:
             for (int k = 0; k < nn; ++k) {
                 double ll = dat.gh.log_norm_weights[k];
                 for (int r = 0; r < sz; ++r) {
-                    ll += model.log_prob(dat.y_s[start + r], eta0[r] + b_vals[k], alpha_buf.data());
+                    ll += model.log_prob(dat.y_s[start + r], eta0[r] + b_vals[k], m_alpha_buf.data());
                 }
                 log_terms[k] = ll;
             }
@@ -163,8 +166,7 @@ public:
         const double sigma = std::exp(log_sigma);
         const double pen = sigma_penalty(log_sigma);
 
-        std::vector<double> alpha_buf(nm);
-        model.fill_alpha(par, alpha_buf.data());
+        model.fill_alpha(par, m_alpha_buf.data());
 
         const Eigen::VectorXd beta = par.segment(nm, dat.p);
         const Eigen::VectorXd b_vals = std::sqrt(2.0) * sigma * dat.gh.nodes;
@@ -189,7 +191,7 @@ public:
                 double ll = dat.gh.log_norm_weights[k];
                 for (int r = 0; r < sz; ++r) {
                     double de;
-                    double lp = model.log_prob_derivs(dat.y_s[start + r], eta0[r] + b_vals[k], alpha_buf.data(), de, dp);
+                    double lp = model.log_prob_derivs(dat.y_s[start + r], eta0[r] + b_vals[k], m_alpha_buf.data(), de, dp);
                     ll += lp;
                     dL_dp_sum_nodes.col(k).noalias() += dp;
                     dL_de_nodes(r, k) = de;

@@ -327,7 +327,7 @@ public:
 				const int slot = (int)m_distinct_y.size();
 				seen[yi] = slot;
 				m_distinct_y.push_back((double)yi);
-				m_lgamma_y1.push_back(R::lgammafn((double)yi + 1.0));
+				m_lgamma_y1.push_back(std::lgamma((double)yi + 1.0));
 				m_y_slot[i] = slot;
 			} else {
 				m_y_slot[i] = it->second;
@@ -343,7 +343,7 @@ public:
 		const VectorXd beta = params.head(m_p);
 		const double theta = std::exp(params[m_p]);
 		const double log_r = std::log(theta);
-		const double lgamma_r = R::lgammafn(theta);
+		const double lgamma_r = std::lgamma(theta);
 		const double digamma_r = fast_digamma(theta);
 
 		VectorXd eta = (m_X * beta).array().min(700.0).matrix();
@@ -353,7 +353,7 @@ public:
 		const int nd = (int)m_distinct_y.size();
 		for (int k = 0; k < nd; ++k) {
 			const double ypt = m_distinct_y[k] + theta;
-			m_lgamma_yptheta[k]  = R::lgammafn(ypt);
+			m_lgamma_yptheta[k]  = std::lgamma(ypt);
 			m_digamma_yptheta[k] = fast_digamma(ypt);
 		}
 

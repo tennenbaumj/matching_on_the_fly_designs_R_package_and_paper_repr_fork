@@ -2,6 +2,9 @@
 #include <vector>
 #include <array>
 #include <algorithm>
+#include <random>
+#include <cstdint>
+#include <limits>
 
 // [[Rcpp::depends(RcppEigen)]]
 
@@ -11,6 +14,26 @@ namespace {
 
 inline bool kk_is_success(double y_i) {
 	return R_finite(y_i) && y_i != 0.0;
+}
+
+inline uint64_t bounded_rand(std::mt19937_64& rng, uint64_t s) {
+	uint64_t x = rng();
+	__uint128_t m = static_cast<__uint128_t>(x) * s;
+	uint64_t l = static_cast<uint64_t>(m);
+	if (l < s) {
+		uint64_t t = (-s) % s;
+		while (l < t) {
+			x = rng();
+			m = static_cast<__uint128_t>(x) * s;
+			l = static_cast<uint64_t>(m);
+		}
+	}
+	return static_cast<uint64_t>(m >> 64);
+}
+
+inline std::mt19937_64 make_local_rng() {
+	return std::mt19937_64(static_cast<uint64_t>(
+		R::unif_rand() * static_cast<double>(std::numeric_limits<uint64_t>::max())));
 }
 
 } // namespace
@@ -23,6 +46,7 @@ IntegerMatrix bootstrap_m_indices_cpp(
 	int m,
 	int B
 ) {
+	auto rng = make_local_rng();
 	int row_length = n_reservoir + 2 * m;
 	IntegerMatrix result(B, row_length);
 
@@ -38,18 +62,17 @@ IntegerMatrix bootstrap_m_indices_cpp(
 	}
 	}
 
+	const uint64_t u_res = static_cast<uint64_t>(n_reservoir);
+	const uint64_t u_m   = static_cast<uint64_t>(m);
 	for (int row = 0; row < B; ++row) {
 	if (n_reservoir > 0) {
 		for (int j = 0; j < n_reservoir; ++j) {
-		int idx = static_cast<int>(R::runif(0.0, 1.0) * n_reservoir);
-		if (idx == n_reservoir) idx = n_reservoir - 1;
-		result(row, j) = i_reservoir[idx];
+		result(row, j) = i_reservoir[static_cast<int>(bounded_rand(rng, u_res))];
 		}
 	}
 
 	for (int k = 0; k < m; ++k) {
-		int match_id = static_cast<int>(R::runif(0.0, 1.0) * m);
-		if (match_id == m) match_id = m - 1;
+		int match_id = static_cast<int>(bounded_rand(rng, u_m));
 		auto pair = match_pairs[match_id];
 		result(row, n_reservoir + 2 * k) = pair[0];
 		result(row, n_reservoir + 2 * k + 1) = pair[1];

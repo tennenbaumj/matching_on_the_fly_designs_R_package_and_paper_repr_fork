@@ -1785,6 +1785,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// get_negbin_regression_expected_hessian_cpp
+Eigen::MatrixXd get_negbin_regression_expected_hessian_cpp(SEXP X_sexp, SEXP y_sexp, SEXP params_sexp);
+RcppExport SEXP _EDI_get_negbin_regression_expected_hessian_cpp(SEXP X_sexpSEXP, SEXP y_sexpSEXP, SEXP params_sexpSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_sexp(X_sexpSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type y_sexp(y_sexpSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type params_sexp(params_sexpSEXP);
+    rcpp_result_gen = Rcpp::wrap(get_negbin_regression_expected_hessian_cpp(X_sexp, y_sexp, params_sexp));
+    return rcpp_result_gen;
+END_RCPP
+}
 // fast_neg_bin_with_var_cpp
 List fast_neg_bin_with_var_cpp(SEXP X_sexp, SEXP y_sexp, Nullable<NumericVector> warm_start_params, bool smart_cold_start, int maxit, double eps_f, double eps_g, Rcpp::Nullable<Rcpp::IntegerVector> fixed_idx, Rcpp::Nullable<Rcpp::NumericVector> fixed_values, std::string optimization_alg, Rcpp::Nullable<Rcpp::NumericMatrix> warm_start_fisher_info, bool estimate_only);
 RcppExport SEXP _EDI_fast_neg_bin_with_var_cpp(SEXP X_sexpSEXP, SEXP y_sexpSEXP, SEXP warm_start_paramsSEXP, SEXP smart_cold_startSEXP, SEXP maxitSEXP, SEXP eps_fSEXP, SEXP eps_gSEXP, SEXP fixed_idxSEXP, SEXP fixed_valuesSEXP, SEXP optimization_algSEXP, SEXP warm_start_fisher_infoSEXP, SEXP estimate_onlySEXP) {
@@ -4787,6 +4800,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_matrix_rank_cpp", (DL_FUNC) &_EDI_matrix_rank_cpp, 2},
     {"_EDI_get_negbin_regression_score_cpp", (DL_FUNC) &_EDI_get_negbin_regression_score_cpp, 3},
     {"_EDI_get_negbin_regression_hessian_cpp", (DL_FUNC) &_EDI_get_negbin_regression_hessian_cpp, 3},
+    {"_EDI_get_negbin_regression_expected_hessian_cpp", (DL_FUNC) &_EDI_get_negbin_regression_expected_hessian_cpp, 3},
     {"_EDI_fast_neg_bin_with_var_cpp", (DL_FUNC) &_EDI_fast_neg_bin_with_var_cpp, 12},
     {"_EDI_fast_neg_bin_cpp", (DL_FUNC) &_EDI_fast_neg_bin_cpp, 12},
     {"_EDI_fast_ols_cpp", (DL_FUNC) &_EDI_fast_ols_cpp, 4},

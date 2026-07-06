@@ -223,8 +223,8 @@ test_that("fast_quasipoisson_regression_with_var_cpp is equivalent to stats::glm
 	res_r <- stats::glm(y ~ X, family = quasipoisson)
 	
 	expect_equal(as.numeric(res_cpp$b), as.numeric(stats::coef(res_r)), tolerance = 1e-5)
-	# quasipoisson vcov: not directly available; skip vcov check
-	expect_true(is.numeric(res_cpp$b))
+	expect_equal(res_cpp$dispersion, summary(res_r)$dispersion, tolerance = 1e-4)
+	expect_equal(res_cpp$ssq_b_j, stats::vcov(res_r)[2, 2], tolerance = 1e-4)
 })
 
 test_that("fast_ordinal_probit_regression_with_var_cpp is equivalent to ordinal::clm(link='probit')", {
@@ -376,15 +376,135 @@ test_that("fast_zero_augmented_poisson_cpp is equivalent to glmmTMB", {
 	expect_equal(as.numeric(diag(res_cpp$vcov)[zi_idx]), as.numeric(diag(vcov_r$zi)), tolerance = 1e-3)
 })
 
-test_that("fast_stereotype_logit_with_var_cpp runs without error", {
+test_that("fast_stereotype_logit_with_var_cpp K=2 is equivalent to stats::glm(binomial)", {
+	# For K=2 the stereotype model reduces to plain logistic regression:
+	# log(P(Y=2)/P(Y=1)) = alpha_1 + beta'x, which is exactly binomial GLM.
 	set.seed(20)
-	n <- 1000
-	p <- 1
+	n <- 600; p <- 2
 	X <- matrix(rnorm(n * p), n, p)
-	y <- sample(1:3, n, replace = TRUE)
-	
-	res_cpp <- fast_stereotype_logit_with_var_cpp(X, y, maxit = 200)
-	
-	expect_true(is.numeric(res_cpp$b))
-	expect_length(res_cpp$b, p)
+	eta <- 0.8 * X[, 1] - 0.5 * X[, 2]
+	y_bin <- rbinom(n, 1, plogis(eta))   # 0/1 for GLM
+	y_cat <- y_bin + 1L                  # 1/2 for stereotype
+
+	res_cpp <- fast_stereotype_logit_with_var_cpp(X, y_cat, maxit = 200)
+	res_glm <- glm(y_bin ~ X, family = binomial())
+	glm_coef <- as.numeric(coef(res_glm))
+
+	# alpha_1 matches GLM intercept; betas match GLM slopes
+	expect_equal(as.numeric(res_cpp$alpha[1]), glm_coef[1], tolerance = 1e-3)
+	expect_equal(as.numeric(res_cpp$b),        glm_coef[-1], tolerance = 1e-3)
+})
+
+test_that("fast_stereotype_logit_with_var_cpp K=3 score at MLE is near zero", {
+	set.seed(21)
+	n <- 800; p <- 2
+	X <- matrix(rnorm(n * p), n, p)
+	eta <- 0.5 * X[, 1] - 0.3 * X[, 2]
+	breaks <- quantile(eta, c(0, 1/3, 2/3, 1))
+	breaks[1] <- -Inf; breaks[4] <- Inf
+	y <- as.integer(cut(eta + rlogis(n, scale = 0.5), breaks))
+
+	fit <- fast_stereotype_logit_with_var_cpp(X, y, maxit = 200)
+	expect_true(fit$converged)
+	sc <- EDI:::get_stereotype_logit_score_cpp(X, y, fit$params)
+	expect_lt(sqrt(sum(sc^2)), 0.1)
+})
+
+test_that("fast_stereotype_logit_with_var_cpp K=3 Hessian matches finite differences", {
+	set.seed(22)
+	n <- 600; p <- 2
+	X <- matrix(rnorm(n * p), n, p)
+	eta <- 0.4 * X[, 1] - 0.2 * X[, 2]
+	latent <- eta + rlogis(n)
+	breaks <- quantile(latent, c(0, 1/3, 2/3, 1)); breaks[1] <- -Inf; breaks[4] <- Inf
+	y <- as.integer(cut(latent, breaks, include.lowest = TRUE))
+
+	fit <- fast_stereotype_logit_with_var_cpp(X, y, maxit = 200)
+	p0  <- fit$params
+	np  <- length(p0)
+	H   <- EDI:::get_stereotype_logit_hessian_cpp(X, y, p0)
+
+	h <- 1e-4
+	H_fd <- matrix(0, np, np)
+	for (j in seq_len(np)) {
+		pp <- pm <- p0; pp[j] <- pp[j] + h; pm[j] <- pm[j] - h
+		sc_p <- EDI:::get_stereotype_logit_score_cpp(X, y, pp)
+		sc_m <- EDI:::get_stereotype_logit_score_cpp(X, y, pm)
+		H_fd[, j] <- (sc_p - sc_m) / (2 * h)
+	}
+	expect_equal(H, H_fd, tolerance = 1e-4)
+})
+
+test_that("fast_probit_regression_with_var_cpp is equivalent to stats::glm(link='probit')", {
+	set.seed(23)
+	n <- 300
+	p <- 2
+	X <- matrix(rnorm(n * p), n, p)
+	y <- rbinom(n, 1, pnorm(0.5 * X[, 1] - 0.3 * X[, 2]))
+
+	X_fit <- cbind(`(Intercept)` = 1, X)
+
+	res_cpp <- EDI:::fast_probit_regression_with_var_cpp(X_fit, y, j = 2L)
+	res_r <- stats::glm(y ~ X, family = binomial(link = "probit"))
+
+	expect_equal(as.numeric(res_cpp$b), as.numeric(stats::coef(res_r)), tolerance = 1e-5)
+	vcov_cpp <- solve(res_cpp$fisher_information)
+	expect_equal(as.numeric(diag(vcov_cpp)), as.numeric(diag(stats::vcov(res_r))), tolerance = 1e-5)
+})
+
+test_that("fast_stratified_coxph_regression_cpp is equivalent to survival::coxph with strata", {
+	skip_if_not_installed("survival")
+	set.seed(24)
+	n <- 200
+	p <- 2
+	grp <- rep(1:4, each = 50)  # renamed to avoid collision with survival::strata()
+	X <- matrix(rnorm(n * p), n, p)
+	y <- rexp(n, 0.1 * exp(X %*% c(0.5, -0.3)))
+	dead <- rbinom(n, 1, 0.8)
+
+	res_cpp <- EDI:::fast_stratified_coxph_regression_cpp(X, y, dead, as.integer(grp))
+	res_r <- survival::coxph(survival::Surv(y, dead) ~ X + survival::strata(grp))
+
+	expect_equal(as.numeric(res_cpp$coefficients), as.numeric(stats::coef(res_r)), tolerance = 1e-7)
+	expect_equal(as.numeric(res_cpp$vcov), as.numeric(stats::vcov(res_r)), tolerance = 1e-7)
+})
+
+test_that("fast_hurdle_negbin_with_var_cpp is equivalent to pscl::hurdle(dist='negbin')", {
+	skip_if_not_installed("pscl")
+	set.seed(25)
+	n <- 300
+	p <- 2
+	X <- matrix(rnorm(n * p), n, p)
+	mu <- exp(1 + X %*% c(0.5, -0.3))
+	y <- ifelse(rbinom(n, 1, 0.3) == 0, 0, rnbinom(n, size = 2.5, mu = mu))
+
+	X_fit <- cbind(`(Intercept)` = 1, X)
+
+	res_cpp <- EDI:::fast_hurdle_negbin_with_var_cpp(X_fit, y, X_fit, j = 2L)
+	res_r <- pscl::hurdle(y ~ X, dist = "negbin", zero.dist = "binomial")
+
+	expect_equal(as.numeric(res_cpp$b), as.numeric(stats::coef(res_r, "count")), tolerance = 1e-4)
+	expect_equal(as.numeric(res_cpp$hurdle_b), as.numeric(stats::coef(res_r, "zero")), tolerance = 1e-4)
+	expect_equal(as.numeric(res_cpp$theta_hat), as.numeric(res_r$theta), tolerance = 1e-3)
+})
+
+test_that("fast_gaussian_lmm_cpp is equivalent to lme4::lmer fixed effects and variance components", {
+	skip_if_not_installed("lme4")
+	set.seed(26)
+	n <- 200
+	g <- 20
+	group <- rep(1:g, each = n / g)
+	X <- cbind(1, rnorm(n))
+	u <- rnorm(g, sd = 0.7)[group]
+	y <- X %*% c(-0.3, 0.8) + u + rnorm(n, sd = 0.4)
+
+	res_cpp <- EDI:::fast_gaussian_lmm_cpp(X, y, as.integer(group))
+	df <- data.frame(y = as.numeric(y), x = X[, 2], group = factor(group))
+	res_r <- lme4::lmer(y ~ x + (1 | group), data = df, REML = FALSE)
+
+	expect_equal(as.numeric(res_cpp$b[1:2]), as.numeric(lme4::fixef(res_r)), tolerance = 1e-4)
+	sigma_eps_r <- as.numeric(sigma(res_r))
+	sigma_u_r   <- as.numeric(sqrt(as.numeric(lme4::VarCorr(res_r)$group)))
+	expect_equal(as.numeric(exp(res_cpp$b[3])), sigma_eps_r, tolerance = 1e-4)
+	expect_equal(as.numeric(exp(res_cpp$b[4])), sigma_u_r,   tolerance = 1e-4)
 })

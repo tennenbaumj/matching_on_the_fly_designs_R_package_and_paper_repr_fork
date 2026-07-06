@@ -410,6 +410,33 @@ inline Eigen::ArrayXd log1pexp_array_safe(const Eigen::ArrayXd& x) {
     return x.max(0.0) + fast_log1p_arr(z);
 }
 
+// Scalar log(1+exp(x)) avoiding glibc log1p dispatch entirely.
+// atanh identity: log1p(z) = 2*s*(1 + s²/3 + … + s^18/19) where s = z/(2+z).
+// For |x| ≤ 37, s = exp(-|x|)/(2+exp(-|x|)) ≤ 1/3 → 10-term Horner error < 5e-12.
+inline double fast_log1pexp(double x) {
+    if (x > 37.0) return x;
+    if (x < -37.0) return std::exp(x);
+    const double z  = std::exp(-std::abs(x));
+    const double s  = z / (2.0 + z);
+    const double s2 = s * s;
+    const double p  = 1.0 + s2 * (1.0/3.0 + s2 * (1.0/5.0 + s2 * (1.0/7.0 +
+                      s2 * (1.0/9.0 + s2 * (1.0/11.0 + s2 * (1.0/13.0 +
+                      s2 * (1.0/15.0 + s2 * (1.0/17.0 + s2/19.0))))))));
+    return (x >= 0.0 ? x : 0.0) + 2.0 * s * p;
+}
+
+// Vectorized log1pexp — branch-free, fully SIMD-vectorizable (no .log() or .select()).
+// Same 10-term atanh Horner as fast_log1pexp; each Eigen operation compiles to one AVX2 instruction.
+inline Eigen::ArrayXd log1pexp_array_fast(const Eigen::ArrayXd& x) {
+    const Eigen::ArrayXd z  = (-x.abs()).exp();
+    const Eigen::ArrayXd s  = z / (2.0 + z);
+    const Eigen::ArrayXd s2 = s * s;
+    const Eigen::ArrayXd p  = 1.0 + s2 * (1.0/3.0 + s2 * (1.0/5.0 + s2 * (1.0/7.0 +
+                               s2 * (1.0/9.0 + s2 * (1.0/11.0 + s2 * (1.0/13.0 +
+                               s2 * (1.0/15.0 + s2 * (1.0/17.0 + s2/19.0))))))));
+    return x.max(0.0) + 2.0 * s * p;
+}
+
 inline bool try_safe_ols_solve(const Eigen::MatrixXd& X,
                                const Eigen::VectorXd& y,
                                Eigen::VectorXd& beta_out) {

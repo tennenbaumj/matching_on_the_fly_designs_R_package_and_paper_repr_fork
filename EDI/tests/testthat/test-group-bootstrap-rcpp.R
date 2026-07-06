@@ -1,11 +1,14 @@
+library(testthat)
+library(EDI)
+
 test_that("resample_group_rows_cpp matches explicit group expansion", {
 	group_id = c(1L, 1L, 2L, 3L, 3L, 3L)
 
 	set.seed(20260510)
-	actual = resample_group_rows_cpp(group_id, 3L)
+	actual = EDI:::resample_group_rows_cpp(group_id, 3L)
 
 	set.seed(20260510)
-	sampled_groups = sample_int_replace_cpp(3L, 3L)
+	sampled_groups = EDI:::sample_int_replace_cpp(3L, 3L)
 	expected = unlist(lapply(sampled_groups, function(g) which(group_id == g)), use.names = FALSE)
 
 	expect_identical(actual, as.integer(expected))
@@ -13,11 +16,11 @@ test_that("resample_group_rows_cpp matches explicit group expansion", {
 
 test_that("resample_group_rows_cpp validates group ids", {
 	expect_error(
-		resample_group_rows_cpp(c(1L, 3L, 3L), 2L),
+		EDI:::resample_group_rows_cpp(c(1L, 3L, 3L), 2L),
 		"consecutive positive integers"
 	)
 	expect_error(
-		resample_group_rows_cpp(c(1L, 0L, 1L), 2L),
+		EDI:::resample_group_rows_cpp(c(1L, 0L, 1L), 2L),
 		"positive integers"
 	)
 })
@@ -41,7 +44,7 @@ test_that("DesignFixedBlocking block bootstrap uses group resampling helper sema
 	strata_keys = des$.__enclos_env__$private$get_strata_keys()
 	group_id = match(strata_keys, unique(strata_keys))
 	set.seed(17)
-	expected = resample_group_rows_cpp(as.integer(group_id), length(unique(group_id)))
+	expected = EDI:::resample_group_rows_cpp(as.integer(group_id), length(unique(group_id)))
 
 	expect_identical(actual, expected)
 })

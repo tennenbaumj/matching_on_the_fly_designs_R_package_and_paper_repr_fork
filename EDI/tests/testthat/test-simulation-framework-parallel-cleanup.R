@@ -4,7 +4,7 @@ library(EDI)
 test_that("SimulationFramework restores parallelism settings", {
 	# Setup initial state
 	set_num_cores(2L)
-	initial_cores = get_num_cores()
+	initial_cores = EDI:::get_num_cores()
 	initial_threads = getOption(".edi_last_set_threads")
 	
 	sim <- SimulationFramework$new(
@@ -20,7 +20,7 @@ test_that("SimulationFramework restores parallelism settings", {
 	
 	sim$run()
 	
-	expect_equal(get_num_cores(), initial_cores)
+	expect_equal(EDI:::get_num_cores(), initial_cores)
 	expect_equal(getOption(".edi_last_set_threads"), initial_threads)
 	
 	# Cleanup

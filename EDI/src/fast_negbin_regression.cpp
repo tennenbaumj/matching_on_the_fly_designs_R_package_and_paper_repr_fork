@@ -46,11 +46,14 @@ private:
     std::vector<double> m_distinct_y;
     std::vector<double> m_lgamma_y1;        // lgamma(y+1) = log(y!) per distinct y
     std::vector<double> m_lgamma_yptheta;   // preallocated; filled per operator() call
-    std::vector<double> m_digamma_yptheta;  // preallocated; filled per operator() call
+    std::vector<double> m_digamma_yptheta;  // preallocated; filled per operator() and hessian() call
+    std::vector<double> m_trigamma_yptheta; // preallocated; filled per hessian() call
+    Eigen::VectorXd     m_coef_vec;         // per-obs gradient scalar; GEMV after obs loop
 
 public:
     NBLogLik(const Eigen::Ref<const Eigen::MatrixXd>& X, const Eigen::Ref<const Eigen::VectorXi>& y) :
-        m_X(X), m_y(y), m_n(X.rows()), m_p(X.cols()), m_y_slot(X.rows(), -1)
+        m_X(X), m_y(y), m_n(X.rows()), m_p(X.cols()), m_y_slot(X.rows(), -1),
+        m_coef_vec(X.rows())
     {
         std::unordered_map<int, int> seen;
         for (int i = 0; i < m_n; ++i) {
@@ -60,7 +63,7 @@ public:
                 const int slot = static_cast<int>(m_distinct_y.size());
                 seen[yi] = slot;
                 m_distinct_y.push_back(static_cast<double>(yi));
-                m_lgamma_y1.push_back(R::lgammafn(static_cast<double>(yi) + 1.0));
+                m_lgamma_y1.push_back(std::lgamma(static_cast<double>(yi) + 1.0));
                 m_y_slot[i] = slot;
             } else {
                 m_y_slot[i] = it->second;
@@ -69,6 +72,7 @@ public:
         const int nd = static_cast<int>(m_distinct_y.size());
         m_lgamma_yptheta.resize(nd);
         m_digamma_yptheta.resize(nd);
+        m_trigamma_yptheta.resize(nd);
     }
 
     double operator()(const Eigen::VectorXd& params, Eigen::VectorXd& grad) {
@@ -80,19 +84,18 @@ public:
 
         // Hoist theta-only constants out of the observation loop.
         const double digamma_theta = fast_digamma(theta);
-        const double lgamma_theta  = R::lgammafn(theta);
+        const double lgamma_theta  = std::lgamma(theta);
         const double log_theta_val = std::log(theta);
 
         // Fill preallocated per-distinct-y tables for lgamma(y+theta) and digamma(y+theta).
         const int nd = static_cast<int>(m_distinct_y.size());
         for (int k = 0; k < nd; ++k) {
             const double ypt = m_distinct_y[k] + theta;
-            m_lgamma_yptheta[k]  = R::lgammafn(ypt);
+            m_lgamma_yptheta[k]  = std::lgamma(ypt);
             m_digamma_yptheta[k] = fast_digamma(ypt);
         }
 
         double neg_ll = 0.0;
-        Eigen::VectorXd score_beta = Eigen::VectorXd::Zero(m_p);
         double score_log_theta = 0.0;
 
         for (int i = 0; i < m_n; ++i) {
@@ -108,14 +111,13 @@ public:
                     + theta * (log_theta_val - log_denom)
                     + yi * (eta_i - log_denom);
 
-            const double coef = yi - mu_i * (yi + theta) / denom;
-            score_beta.noalias() += coef * m_X.row(i).transpose();
+            m_coef_vec[i] = yi - mu_i * (yi + theta) / denom;
 
             const double dlogf = m_digamma_yptheta[slot] - digamma_theta
                                + log_theta_val - log_denom + 1.0 - (yi + theta) / denom;
             score_log_theta += theta * dlogf;
         }
-        grad.head(m_p) = -score_beta;
+        grad.head(m_p).noalias() = -(m_X.transpose() * m_coef_vec);
         grad[m_p] = -score_log_theta;
         return neg_ll;
     }
@@ -127,10 +129,21 @@ public:
         double theta = std::exp(params[m_p]);
         Eigen::VectorXd eta = m_X * beta;
 
+        const double digamma_theta = fast_digamma(theta);
+        const double trigamma_theta = R::trigamma(theta);
+        const double log_theta = std::log(theta);
+        const int nd = static_cast<int>(m_distinct_y.size());
+        for (int k = 0; k < nd; ++k) {
+            const double ypt = m_distinct_y[k] + theta;
+            m_digamma_yptheta[k] = fast_digamma(ypt);
+            m_trigamma_yptheta[k] = R::trigamma(ypt);
+        }
+
         double* H_data = H.data();
         for (int i = 0; i < m_n; ++i) {
             double mu_i = std::exp(eta[i]);
-            double yi = m_y[i];
+            const int slot = m_y_slot[i];
+            double yi = m_distinct_y[slot];
             double denom = theta + mu_i;
             const double* xi = m_X.data() + i;  // xi[j * m_n] == X(i,j)
 
@@ -145,9 +158,9 @@ public:
             for (int r = 0; r < m_p; ++r)
                 H_data[r + m_p * total_p] -= d_score_beta_d_log_theta * xi[r * m_n];
 
-            double A = R::digamma(yi + theta) - R::digamma(theta) +
-                std::log(theta) - std::log(denom) + 1.0 - (yi + theta) / denom;
-            double dA_dtheta = R::trigamma(yi + theta) - R::trigamma(theta) +
+            double A = m_digamma_yptheta[slot] - digamma_theta +
+                log_theta - std::log(denom) + 1.0 - (yi + theta) / denom;
+            double dA_dtheta = m_trigamma_yptheta[slot] - trigamma_theta +
                 1.0 / theta - 1.0 / denom + (yi - mu_i) / (denom * denom);
             H(m_p, m_p) -= theta * A + theta * theta * dA_dtheta;
         }
@@ -163,6 +176,7 @@ public:
         Eigen::VectorXd beta = params.head(m_p);
         double theta = std::exp(params[m_p]);
         Eigen::VectorXd eta = m_X * beta;
+        const double trigamma_theta = R::trigamma(theta);
 
         double* H_data = H.data();
         for (int i = 0; i < m_n; ++i) {
@@ -177,9 +191,9 @@ public:
                     H_data[r + c * total_p] += wxi_c * xi[r * m_n];
             }
 
-            const double e_trigamma = expected_trigamma_y_plus_theta(mu_i, theta);
+            const double e_trigamma = expected_trigamma_y_plus_theta(mu_i, theta, trigamma_theta);
             H(m_p, m_p) += -theta * theta * (
-                e_trigamma - R::trigamma(theta) + 1.0 / theta - 1.0 / denom
+                e_trigamma - trigamma_theta + 1.0 / theta - 1.0 / denom
             );
         }
 
@@ -190,10 +204,13 @@ public:
     }
 
 private:
-    static double expected_trigamma_y_plus_theta(double mu, double theta) {
+    static double expected_trigamma_y_plus_theta(double mu,
+                                                  double theta,
+                                                  double trigamma_theta) {
         const double prob_success = theta / (theta + mu);
         double pk = std::exp(theta * std::log(prob_success));
-        double sum = pk * R::trigamma(theta);
+        double trigamma_yptheta = trigamma_theta;
+        double sum = pk * trigamma_yptheta;
         double cdf = pk;
         const double ratio_base = mu / (theta + mu);
         const double mean = mu;
@@ -204,7 +221,9 @@ private:
         for (int k = 0; k < max_iter; ++k) {
             pk *= (static_cast<double>(k) + theta) / static_cast<double>(k + 1) * ratio_base;
             const int y = k + 1;
-            sum += pk * R::trigamma(static_cast<double>(y) + theta);
+            const double x = static_cast<double>(k) + theta;
+            trigamma_yptheta -= 1.0 / (x * x);
+            sum += pk * trigamma_yptheta;
             cdf += pk;
             if (y > min_iter && pk < 1e-14 && 1.0 - cdf < 1e-12) break;
         }
@@ -325,6 +344,21 @@ Eigen::MatrixXd get_negbin_regression_hessian_cpp(SEXP X_sexp,
     return -fun.hessian(params);
 }
 
+// [[Rcpp::export]]
+Eigen::MatrixXd get_negbin_regression_expected_hessian_cpp(SEXP X_sexp,
+                                                           SEXP y_sexp,
+                                                           SEXP params_sexp) {
+    NumericMatrix X_r(X_sexp);
+    IntegerVector y_r(y_sexp);
+    NumericVector params_r(params_sexp);
+    Eigen::Map<const Eigen::MatrixXd> X(X_r.begin(), X_r.nrow(), X_r.ncol());
+    Eigen::Map<const Eigen::VectorXi> y(y_r.begin(), y_r.size());
+    Eigen::Map<const Eigen::VectorXd> params(params_r.begin(), params_r.size());
+
+    NBLogLik fun(X, y);
+    return fun.expected_hessian(params);
+}
+
 //' @title Fast Negative Binomial Regression with Variance (C++)
 //' @description Negative binomial regression fitting with full variance-covariance matrix.
 //' @param X A numeric matrix of predictors.
@@ -427,4 +461,3 @@ List fast_neg_bin_cpp(SEXP X_sexp,
         Named("fisher_information") = res.XtWX
     );
 }
-

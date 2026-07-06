@@ -3,7 +3,9 @@
 #include <vector>
 #include <cmath>
 #include <random>
-#include <map>
+#include <unordered_map>
+#include <cstdint>
+#include <limits>
 
 // [[Rcpp::depends(RcppEigen)]]
 
@@ -86,10 +88,21 @@ double compute_atkinson_weight_internal(const VectorXd& w_prev, const MatrixXd& 
 	return std::max(0.0, std::min(1.0, prob));
 }
 
+// Local RNG helpers — seed from R once per call, then run independently
+inline double u01(std::mt19937_64& rng) {
+	return (rng() >> 11) * 0x1.0p-53;
+}
+
+inline std::mt19937_64 make_local_rng() {
+	return std::mt19937_64(static_cast<uint64_t>(
+		R::unif_rand() * static_cast<double>(std::numeric_limits<uint64_t>::max())));
+}
+
 } // namespace
 
 // [[Rcpp::export]]
 List generate_permutations_matching_cpp(const IntegerVector& m_vec, int nsim, double prob_T) {
+  auto rng = make_local_rng();
   int n = m_vec.size();
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
@@ -97,7 +110,7 @@ List generate_permutations_matching_cpp(const IntegerVector& m_vec, int nsim, do
 
   int max_m = 0;
   for (int i = 0; i < n; ++i) if (m_orig_ptr[i] > max_m) max_m = m_orig_ptr[i];
-  
+
   std::vector<std::vector<int>> pairs(max_m);
   std::vector<int> reservoir;
   for (int i = 0; i < n; ++i) {
@@ -108,14 +121,14 @@ List generate_permutations_matching_cpp(const IntegerVector& m_vec, int nsim, do
 
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
-    for (int i : reservoir) w_col[i] = (R::unif_rand() < prob_T) ? 1 : 0;
+    for (int i : reservoir) w_col[i] = (u01(rng) < prob_T) ? 1 : 0;
     for (int m = 0; m < max_m; ++m) {
       if (pairs[m].size() == 2) {
-        int first_is_T = (R::unif_rand() < prob_T) ? 1 : 0;
+        int first_is_T = (u01(rng) < prob_T) ? 1 : 0;
         w_col[pairs[m][0]] = first_is_T;
         w_col[pairs[m][1]] = 1 - first_is_T;
       } else if (pairs[m].size() == 1) {
-        w_col[pairs[m][0]] = (R::unif_rand() < prob_T) ? 1 : 0;
+        w_col[pairs[m][0]] = (u01(rng) < prob_T) ? 1 : 0;
       }
     }
   }
@@ -124,17 +137,19 @@ List generate_permutations_matching_cpp(const IntegerVector& m_vec, int nsim, do
 
 // [[Rcpp::export]]
 List generate_permutations_bernoulli_cpp(int n, int nsim, double prob_T) {
+  auto rng = make_local_rng();
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
-    for (int i = 0; i < n; ++i) w_col[i] = (R::unif_rand() < prob_T) ? 1 : 0;
+    for (int i = 0; i < n; ++i) w_col[i] = (u01(rng) < prob_T) ? 1 : 0;
   }
   return List::create(_["w_mat"] = w_mat, _["m_mat"] = R_NilValue);
 }
 
 // [[Rcpp::export]]
 List generate_permutations_ibcrd_cpp(int n, int nsim, double prob_T) {
+  auto rng = make_local_rng();
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
   int n_T = std::round(n * prob_T);
@@ -143,7 +158,7 @@ List generate_permutations_ibcrd_cpp(int n, int nsim, double prob_T) {
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
     std::vector<int> w_shuffled = w_base;
-    std::shuffle(w_shuffled.begin(), w_shuffled.end(), std::default_random_engine(R::unif_rand() * 1000000));
+    std::shuffle(w_shuffled.begin(), w_shuffled.end(), rng);
     for (int i = 0; i < n; ++i) w_col[i] = w_shuffled[i];
   }
   return List::create(_["w_mat"] = w_mat, _["m_mat"] = R_NilValue);
@@ -151,6 +166,7 @@ List generate_permutations_ibcrd_cpp(int n, int nsim, double prob_T) {
 
 // [[Rcpp::export]]
 List generate_permutations_blocking_cpp(int n, int nsim, double prob_T, List strata_indices) {
+  auto rng = make_local_rng();
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
   int num_strata = strata_indices.size();
@@ -162,7 +178,7 @@ List generate_permutations_blocking_cpp(int n, int nsim, double prob_T, List str
       int n_T = std::round(m * prob_T);
       std::vector<int> w_stratum(m);
       for (int i = 0; i < m; ++i) w_stratum[i] = (i < n_T) ? 1 : 0;
-      std::shuffle(w_stratum.begin(), w_stratum.end(), std::default_random_engine(R::unif_rand() * 1000000));
+      std::shuffle(w_stratum.begin(), w_stratum.end(), rng);
       for (int i = 0; i < m; ++i) w_col[idxs[i] - 1] = w_stratum[i];
     }
   }
@@ -171,6 +187,7 @@ List generate_permutations_blocking_cpp(int n, int nsim, double prob_T, List str
 
 // [[Rcpp::export]]
 List generate_permutations_efron_cpp(int n, int nsim, double prob_T, double weighted_coin_prob) {
+  auto rng = make_local_rng();
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
   for (int b = 0; b < nsim; ++b) {
@@ -182,7 +199,7 @@ List generate_permutations_efron_cpp(int n, int nsim, double prob_T, double weig
       if (sT > sC) p = 1.0 - weighted_coin_prob;
       else if (sT < sC) p = weighted_coin_prob;
       else p = prob_T;
-      if (R::unif_rand() < p) { w_col[i] = 1; n_T++; }
+      if (u01(rng) < p) { w_col[i] = 1; n_T++; }
       else { w_col[i] = 0; n_C++; }
     }
   }
@@ -191,6 +208,7 @@ List generate_permutations_efron_cpp(int n, int nsim, double prob_T, double weig
 
 // [[Rcpp::export]]
 List generate_permutations_atkinson_cpp(SEXP X_sexp, int n, int p_raw, double prob_T, int nsim) {
+  auto rng = make_local_rng();
   Rcpp::NumericMatrix X_r(X_sexp);
   Eigen::Map<const Eigen::MatrixXd> X(X_r.begin(), X_r.nrow(), X_r.ncol());
 
@@ -201,14 +219,14 @@ List generate_permutations_atkinson_cpp(SEXP X_sexp, int n, int p_raw, double pr
     int* w_col = w_ptr + (size_t)b * n;
     for (int t = 1; t <= n; ++t) {
       if (t <= bernoulli_threshold) {
-        w_col[t - 1] = (R::unif_rand() < prob_T) ? 1 : 0;
+        w_col[t - 1] = (u01(rng) < prob_T) ? 1 : 0;
         continue;
       }
       std::vector<int> var_cols = which_cols_vary_subset_int(X, t);
-      if (var_cols.empty()) { w_col[t - 1] = (R::unif_rand() < prob_T) ? 1 : 0; continue; }
+      if (var_cols.empty()) { w_col[t - 1] = (u01(rng) < prob_T) ? 1 : 0; continue; }
       MatrixXd X_var = extract_submatrix_int(X, t - 1, var_cols);
       std::vector<int> indep_cols = find_independent_cols_int(X_var);
-      if (indep_cols.empty()) { w_col[t - 1] = (R::unif_rand() < prob_T) ? 1 : 0; continue; }
+      if (indep_cols.empty()) { w_col[t - 1] = (u01(rng) < prob_T) ? 1 : 0; continue; }
       MatrixXd X_prev(t - 1, indep_cols.size());
       for (int i = 0; i < t - 1; ++i) {
         for (size_t j = 0; j < indep_cols.size(); ++j) X_prev(i, j) = X_var(i, indep_cols[j]);
@@ -218,7 +236,7 @@ List generate_permutations_atkinson_cpp(SEXP X_sexp, int n, int p_raw, double pr
       VectorXd w_prev_e(t - 1);
       for (int i = 0; i < t - 1; ++i) w_prev_e(i) = static_cast<double>(w_col[i]);
       double p = compute_atkinson_weight_internal(w_prev_e, X_prev, xt_prev, t);
-      w_col[t - 1] = (R::unif_rand() < p) ? 1 : 0;
+      w_col[t - 1] = (u01(rng) < p) ? 1 : 0;
     }
   }
   return List::create(_["w_mat"] = w_mat, _["m_mat"] = R_NilValue);
@@ -226,6 +244,7 @@ List generate_permutations_atkinson_cpp(SEXP X_sexp, int n, int p_raw, double pr
 
 // [[Rcpp::export]]
 List generate_permutations_pocock_simon_cpp(const IntegerMatrix& x_levels_matrix, int num_levels_total, const NumericVector& weights, double p_best, double prob_T, int nsim) {
+  auto rng = make_local_rng();
   int n = x_levels_matrix.nrow();
   int num_covs = x_levels_matrix.ncol();
   IntegerMatrix w_mat(n, nsim);
@@ -234,10 +253,10 @@ List generate_permutations_pocock_simon_cpp(const IntegerMatrix& x_levels_matrix
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
     NumericMatrix counts(num_levels_total, 2); // 2 treatments
-    
+
     for (int i = 0; i < n; ++i) {
       IntegerVector subject_levels = x_levels_matrix.row(i);
-      
+
       // Inline the assign logic to avoid R API contention from IntegerVector
       std::vector<double> G(2, 0.0);
       for (int k = 0; k < 2; ++k) {
@@ -252,10 +271,10 @@ List generate_permutations_pocock_simon_cpp(const IntegerMatrix& x_levels_matrix
         }
         G[k] = G_k;
       }
-      
-      int best_trt = (G[1] < G[0]) ? 1 : (G[0] < G[1] ? 0 : ((R::unif_rand() < prob_T) ? 1 : 0));
-      int assigned_w = (R::unif_rand() < p_best) ? best_trt : (1 - best_trt);
-      
+
+      int best_trt = (G[1] < G[0]) ? 1 : (G[0] < G[1] ? 0 : ((u01(rng) < prob_T) ? 1 : 0));
+      int assigned_w = (u01(rng) < p_best) ? best_trt : (1 - best_trt);
+
       w_col[i] = assigned_w;
       for (int j = 0; j < num_covs; ++j) {
         counts(subject_levels[j] - 1, assigned_w)++;
@@ -267,6 +286,7 @@ List generate_permutations_pocock_simon_cpp(const IntegerMatrix& x_levels_matrix
 
 // [[Rcpp::export]]
 List generate_permutations_cluster_cpp(int n, int nsim, double prob_T, List cluster_indices) {
+  auto rng = make_local_rng();
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
   int num_clusters = cluster_indices.size();
@@ -274,7 +294,7 @@ List generate_permutations_cluster_cpp(int n, int nsim, double prob_T, List clus
     int* w_col = w_ptr + (size_t)b * n;
     for (int c = 0; c < num_clusters; ++c) {
       IntegerVector idxs = cluster_indices[c];
-      int w_cluster = (R::unif_rand() < prob_T) ? 1 : 0;
+      int w_cluster = (u01(rng) < prob_T) ? 1 : 0;
       int m = idxs.size();
       for (int i = 0; i < m; ++i) w_col[idxs[i] - 1] = w_cluster;
     }
@@ -284,27 +304,44 @@ List generate_permutations_cluster_cpp(int n, int nsim, double prob_T, List clus
 
 // [[Rcpp::export]]
 List generate_permutations_spbr_cpp(const CharacterVector& strata_keys, int block_size, double prob_T, int nsim) {
+  auto rng = make_local_rng();
   int n = strata_keys.size();
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
 
   int n_T_block = std::round(block_size * prob_T);
 
+  // Pre-convert string keys to dense integer IDs once — eliminates per-sim string map lookups
+  std::unordered_map<std::string, int> key_to_id;
+  key_to_id.reserve(64);
+  std::vector<int> strata_ids(n);
+  int num_strata = 0;
+  for (int i = 0; i < n; ++i) {
+    std::string key = as<std::string>(strata_keys[i]);
+    auto result = key_to_id.emplace(key, num_strata);
+    if (result.second) ++num_strata;
+    strata_ids[i] = result.first->second;
+  }
+
+  // Base block shuffled per new block; reuse allocation across simulations
+  std::vector<int> base_block(block_size);
+  for (int k = 0; k < block_size; ++k) base_block[k] = (k < n_T_block) ? 1 : 0;
+
+  // Persistent strata state — clear() at top of each simulation keeps capacity
+  std::vector<std::vector<int>> strata_states(num_strata);
+
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
-    std::map<std::string, std::vector<int>> strata_states;
+    for (auto& v : strata_states) v.clear();
 
     for (int i = 0; i < n; ++i) {
-      std::string key = as<std::string>(strata_keys[i]);
-      if (strata_states[key].empty()) {
-        std::vector<int> new_block(block_size);
-        for (int k = 0; k < block_size; ++k) new_block[k] = (k < n_T_block) ? 1 : 0;
-        // Shuffle using std::shuffle
-        std::shuffle(new_block.begin(), new_block.end(), std::default_random_engine(R::unif_rand() * 1000000));
-        strata_states[key] = new_block;
+      int sid = strata_ids[i];
+      if (strata_states[sid].empty()) {
+        strata_states[sid] = base_block;
+        std::shuffle(strata_states[sid].begin(), strata_states[sid].end(), rng);
       }
-      w_col[i] = strata_states[key].back();
-      strata_states[key].pop_back();
+      w_col[i] = strata_states[sid].back();
+      strata_states[sid].pop_back();
     }
   }
   return List::create(_["w_mat"] = w_mat, _["m_mat"] = R_NilValue);

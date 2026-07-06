@@ -158,7 +158,7 @@ public:
 			for (int k = 0; k < n_nodes; ++k) {
 				// vectorized softplus over the group's eta (was a scalar r-loop with log1pexp_s)
 				log_terms[k] = dat.gh.log_norm_weights[k] + y_eta0 + b_vals[k] * y_sum
-				             - log1pexp_array_safe(eta0 + b_vals[k]).sum();
+				             - log1pexp_array_fast(eta0 + b_vals[k]).sum();
 			}
 			const double ll_g = log_sum_exp_v(log_terms);
 			if (!std::isfinite(ll_g)) return 1e50;
@@ -192,7 +192,7 @@ public:
 				m_log_terms_mat(gi, k) = dat.gh.log_norm_weights[k]
 					+ m_group_y_eta0[gi]
 					+ b_vals[k] * dat.grp_y_sum[gi]
-					- log1pexp_array_safe(eta_g_k).sum();
+					- log1pexp_array_fast(eta_g_k).sum();
 			}
 		}
 
@@ -275,7 +275,7 @@ public:
 				log_terms_mat(gi, k) = dat.gh.log_norm_weights[k] +
 				                       group_y_eta0[gi] +
 				                       b_vals[k] * dat.grp_y_sum[gi] -
-				                       log1pexp_array_safe(eta_g_k).sum();
+				                       log1pexp_array_fast(eta_g_k).sum();
 			}
 		}
 

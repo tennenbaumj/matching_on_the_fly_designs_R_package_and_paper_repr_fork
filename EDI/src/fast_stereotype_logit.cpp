@@ -674,7 +674,7 @@ struct StereotypeObjective {
     double operator()(const Eigen::Ref<const VectorXd>& params, Eigen::Ref<VectorXd> grad) const {
         VectorXd g = VectorXd::Zero(params.size());
         double val = -model.loglik_grad(params, &g);
-        grad = g;
+        grad = -g;
         return val;
     }
 
