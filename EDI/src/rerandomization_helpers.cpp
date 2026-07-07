@@ -82,6 +82,15 @@ Rcpp::NumericVector compute_objective_vals_cpp(
     int n = X.nrow();
     int p = X.ncol();
     int r = indicTs.nrow();
+    const bool abs_mode = (objective == "abs_sum_diff");
+    const bool mahal_mode = (objective == "mahal_dist");
+
+    if (indicTs.ncol() != n) {
+        Rcpp::stop("indicTs must have ncol(indicTs) == nrow(X)");
+    }
+    if (!abs_mode && !mahal_mode) {
+        Rcpp::stop("objective must be 'abs_sum_diff' or 'mahal_dist'");
+    }
 
     std::vector<double> sum_all(p, 0.0), sumsq_all(p, 0.0);
     for (int i = 0; i < n; i++)
@@ -92,35 +101,49 @@ Rcpp::NumericVector compute_objective_vals_cpp(
         }
 
     std::vector<double> sd_all;
-    if (objective == "abs_sum_diff") {
+    if (abs_mode) {
         sd_all.resize(p);
         for (int j = 0; j < p; j++) {
             double var = (sumsq_all[j] - sum_all[j] * sum_all[j] / n) / (n - 1);
             sd_all[j] = std::sqrt(std::max(var, 0.0));
         }
-    } else if (objective != "mahal_dist") {
-        Rcpp::stop("objective must be 'abs_sum_diff' or 'mahal_dist'");
     }
 
     Rcpp::NumericMatrix Sinv;
-    if (objective == "mahal_dist") {
+    if (mahal_mode) {
         if (inv_cov_X.isNull()) Rcpp::stop("inv_cov_X required for mahal_dist");
         Sinv = Rcpp::NumericMatrix(inv_cov_X);
     }
 
     Rcpp::NumericVector vals(r);
-    std::vector<double> sum_T(p), diff(p);
+    std::vector<double> sum_T(static_cast<std::size_t>(r) * p, 0.0);
+    std::vector<int> nT_by_row(r, 0);
+    std::vector<double> x_row(p), diff(p);
+    const int* indic_ptr = indicTs.begin();
+    const double* x_ptr = X.begin();
+
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < p; j++) {
+            x_row[j] = x_ptr[i + static_cast<std::size_t>(j) * n];
+        }
+        const int* indic_col = indic_ptr + static_cast<std::size_t>(i) * r;
+        for (int row = 0; row < r; row++) {
+            if (indic_col[row] == 1) {
+                ++nT_by_row[row];
+                double* row_sum_T = sum_T.data() + static_cast<std::size_t>(row) * p;
+                for (int j = 0; j < p; j++) row_sum_T[j] += x_row[j];
+            }
+        }
+    }
 
     for (int row = 0; row < r; row++) {
-        std::fill(sum_T.begin(), sum_T.end(), 0.0);
-        int nT = 0;
-        for (int i = 0; i < n; i++)
-            if (indicTs(row, i) == 1) { nT++; for (int j = 0; j < p; j++) sum_T[j] += X(i, j); }
+        const int nT = nT_by_row[row];
         int nC = n - nT;
+        const double* row_sum_T = sum_T.data() + static_cast<std::size_t>(row) * p;
         for (int j = 0; j < p; j++)
-            diff[j] = sum_T[j] / nT - (sum_all[j] - sum_T[j]) / nC;
+            diff[j] = row_sum_T[j] / nT - (sum_all[j] - row_sum_T[j]) / nC;
 
-        if (objective == "abs_sum_diff") {
+        if (abs_mode) {
             double v = 0.0;
             for (int j = 0; j < p; j++) v += std::fabs(diff[j] / sd_all[j]);
             vals[row] = v;
@@ -196,7 +219,43 @@ Rcpp::IntegerMatrix rerandomization_search_cpp(
     // ── Shared result storage ────────────────────────────────────────────────
     // Pre-allocate n×r; only the first `found` columns are valid on return.
     Rcpp::IntegerMatrix result(n, r);
+    const bool use_sequential = (nthreads <= 1);
+
+    if (use_sequential) {
+        std::mt19937 rng(seeds[0]);
+        std::vector<int> w(n), order(n);
+        VectorXd dbl_w(n), d(p);
+        int found = 0;
+
+        for (int draw = 0; draw < max_draws && found < r; draw++) {
+            std::iota(order.begin(), order.end(), 0);
+            for (int i = n - 1; i > 0; i--)
+                std::swap(order[static_cast<std::size_t>(i)],
+                          order[static_cast<std::size_t>(
+                              std::uniform_int_distribution<int>(0, i)(rng))]);
+            std::fill(w.begin(), w.end(), 0);
+            for (int i = 0; i < nt; i++) w[static_cast<std::size_t>(order[static_cast<std::size_t>(i)])] = 1;
+
+            for (int i = 0; i < n; i++) dbl_w[i] = 2.0 * static_cast<double>(w[static_cast<std::size_t>(i)]) - 1.0;
+            d.noalias() = M * dbl_w;
+            double f = abs_mode ? d.lpNorm<1>() : d.squaredNorm();
+
+            if (f <= cutoff) {
+                for (int i = 0; i < n; i++) result(i, found) = w[static_cast<std::size_t>(i)];
+                ++found;
+            }
+        }
+
+        if (found == r) return result;
+        Rcpp::IntegerMatrix trimmed(n, found);
+        for (int j = 0; j < found; j++)
+            for (int i = 0; i < n; i++) trimmed(i, j) = result(i, j);
+        return trimmed;
+    }
+
     std::atomic<int> found(0);
+    std::atomic<int> next_draw(0);
+    const int chunk_size = 64;
 
     // ── Parallel rejection loop ──────────────────────────────────────────────
 #pragma omp parallel
@@ -211,27 +270,30 @@ Rcpp::IntegerMatrix rerandomization_search_cpp(
         std::vector<int> w(n), order(n);
         VectorXd dbl_w(n), d(p);
 
-#pragma omp for schedule(static)
-        for (int draw = 0; draw < max_draws; draw++) {
-            if (found.load(std::memory_order_relaxed) >= r) continue;
+        while (found.load(std::memory_order_relaxed) < r) {
+            const int start = next_draw.fetch_add(chunk_size, std::memory_order_relaxed);
+            if (start >= max_draws) break;
+            const int end = std::min(max_draws, start + chunk_size);
 
-            // Fisher-Yates balanced init
-            std::iota(order.begin(), order.end(), 0);
-            for (int i = n - 1; i > 0; i--)
-                std::swap(order[static_cast<std::size_t>(i)],
-                          order[static_cast<std::size_t>(
-                              std::uniform_int_distribution<int>(0, i)(rng))]);
-            std::fill(w.begin(), w.end(), 0);
-            for (int i = 0; i < nt; i++) w[static_cast<std::size_t>(order[static_cast<std::size_t>(i)])] = 1;
+            for (int draw = start; draw < end && found.load(std::memory_order_relaxed) < r; draw++) {
+                // Fisher-Yates balanced init
+                std::iota(order.begin(), order.end(), 0);
+                for (int i = n - 1; i > 0; i--)
+                    std::swap(order[static_cast<std::size_t>(i)],
+                              order[static_cast<std::size_t>(
+                                  std::uniform_int_distribution<int>(0, i)(rng))]);
+                std::fill(w.begin(), w.end(), 0);
+                for (int i = 0; i < nt; i++) w[static_cast<std::size_t>(order[static_cast<std::size_t>(i)])] = 1;
 
-            for (int i = 0; i < n; i++) dbl_w[i] = 2.0 * static_cast<double>(w[static_cast<std::size_t>(i)]) - 1.0;
-            d.noalias() = M * dbl_w;
-            double f = abs_mode ? d.lpNorm<1>() : d.squaredNorm();
+                for (int i = 0; i < n; i++) dbl_w[i] = 2.0 * static_cast<double>(w[static_cast<std::size_t>(i)]) - 1.0;
+                d.noalias() = M * dbl_w;
+                double f = abs_mode ? d.lpNorm<1>() : d.squaredNorm();
 
-            if (f <= cutoff) {
-                int slot = found.fetch_add(1, std::memory_order_relaxed);
-                if (slot < r) {
-                    for (int i = 0; i < n; i++) result(i, slot) = w[static_cast<std::size_t>(i)];
+                if (f <= cutoff) {
+                    int slot = found.fetch_add(1, std::memory_order_relaxed);
+                    if (slot < r) {
+                        for (int i = 0; i < n; i++) result(i, slot) = w[static_cast<std::size_t>(i)];
+                    }
                 }
             }
         }

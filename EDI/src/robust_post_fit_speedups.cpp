@@ -116,11 +116,7 @@ List ols_hc2_setup_cpp(SEXP X_fit_sexp) {
     stop("failed to invert X'X");
   }
 
-  const Eigen::MatrixXd XB = X_fit * bread;
-  Eigen::VectorXd hat(n);
-  for (int i = 0; i < n; ++i) {
-    hat[i] = XB.row(i).dot(X_fit.row(i));
-  }
+  const Eigen::VectorXd hat = (X_fit * bread).cwiseProduct(X_fit).rowwise().sum();
 
   return List::create(
     _["bread"] = bread,

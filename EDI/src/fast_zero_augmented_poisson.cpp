@@ -95,10 +95,10 @@ public:
     Eigen::MatrixXd hessian(const Eigen::VectorXd& params) {
         int total_p = m_p_cond + m_p_zi;
         Eigen::MatrixXd H = Eigen::MatrixXd::Zero(total_p, total_p);
-        Eigen::VectorXd beta_cond = params.head(m_p_cond);
-        Eigen::VectorXd beta_zi = params.tail(m_p_zi);
-        Eigen::VectorXd eta_cond = m_X * beta_cond;
-        Eigen::VectorXd eta_zi = m_Xzi * beta_zi;
+        m_eta_cond.noalias() = m_X   * params.head(m_p_cond);
+        m_eta_zi.noalias()   = m_Xzi * params.tail(m_p_zi);
+        const double* eta_cond = m_eta_cond.data();
+        const double* eta_zi = m_eta_zi.data();
 
         double* H_data = H.data();
         for (int i = 0; i < m_n; ++i) {
@@ -185,10 +185,10 @@ public:
     Eigen::MatrixXd expected_hessian(const Eigen::VectorXd& params) {
         int total_p = m_p_cond + m_p_zi;
         Eigen::MatrixXd H = Eigen::MatrixXd::Zero(total_p, total_p);
-        Eigen::VectorXd beta_cond = params.head(m_p_cond);
-        Eigen::VectorXd beta_zi = params.tail(m_p_zi);
-        Eigen::VectorXd eta_cond = m_X * beta_cond;
-        Eigen::VectorXd eta_zi = m_Xzi * beta_zi;
+        m_eta_cond.noalias() = m_X   * params.head(m_p_cond);
+        m_eta_zi.noalias()   = m_Xzi * params.tail(m_p_zi);
+        const double* eta_cond = m_eta_cond.data();
+        const double* eta_zi = m_eta_zi.data();
 
         double* H_data = H.data();
         for (int i = 0; i < m_n; ++i) {

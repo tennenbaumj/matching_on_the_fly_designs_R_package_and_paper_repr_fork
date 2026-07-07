@@ -203,13 +203,18 @@ double compute_cox_ll_grad_hess_fast(
             workspace.e_z.noalias() = workspace.S1 * inv_r;
             grad.noalias() -= (workspace.sum_x_dk - dk * workspace.e_z);
             if (!estimate_only) {
-                hess.triangularView<Eigen::Lower>() += dk * (workspace.S2 * inv_r - workspace.e_z * workspace.e_z.transpose());
+                for (int q1 = 0; q1 < p; ++q1) {
+                    const double ez_q1 = workspace.e_z[q1];
+                    for (int q2 = q1; q2 < p; ++q2) {
+                        const double contribution = dk * (
+                            workspace.S2(q2, q1) * inv_r - workspace.e_z[q2] * ez_q1
+                        );
+                        hess(q2, q1) += contribution;
+                        if (q2 != q1) hess(q1, q2) += contribution;
+                    }
+                }
             }
         }
-    }
-    
-    if (!estimate_only) {
-        hess.triangularView<Eigen::Upper>() = hess.transpose();
     }
 
     return neg_ll;

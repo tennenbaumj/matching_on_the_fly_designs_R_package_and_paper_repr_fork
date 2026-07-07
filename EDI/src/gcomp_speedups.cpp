@@ -1,6 +1,7 @@
 // [[Rcpp::depends(RcppEigen)]]
 #include "_helper_functions.h"
 #include <unordered_map>
+#include <utility>
 
 using namespace Rcpp;
 
@@ -111,12 +112,26 @@ List gcomp_logistic_point_estimate_cpp(SEXP X_fit_sexp,
   return gcomp_fractional_logit_point_estimate_cpp(X_fit_sexp, coef_hat_sexp, j_treat);
 }
 
-// [[Rcpp::export]]
-List gcomp_logistic_post_fit_cpp(SEXP X_fit_sexp,
-                                 SEXP y_sexp,
-                                 SEXP coef_hat_sexp,
-                                 SEXP mu_hat_sexp,
-                                 int j_treat) {
+namespace {
+
+struct LogisticPostFitResult {
+  Eigen::MatrixXd vcov;
+  Eigen::VectorXd std_err;
+  Eigen::VectorXd z_vals;
+  double risk1;
+  double risk0;
+  double rd;
+  double se_rd;
+  double log_rr;
+  double rr;
+  double se_log_rr;
+};
+
+LogisticPostFitResult compute_gcomp_logistic_post_fit(SEXP X_fit_sexp,
+                                                       SEXP y_sexp,
+                                                       SEXP coef_hat_sexp,
+                                                       SEXP mu_hat_sexp,
+                                                       int j_treat) {
   Rcpp::NumericMatrix X_fit_r(X_fit_sexp);
   Rcpp::NumericVector y_r(y_sexp);
   Rcpp::NumericVector coef_hat_r(coef_hat_sexp);
@@ -221,17 +236,42 @@ List gcomp_logistic_post_fit_cpp(SEXP X_fit_sexp,
     z_vals[j] = (R_finite(std_err[j]) && std_err[j] > 0.0) ? coef_hat[j] / std_err[j] : NA_REAL;
   }
 
+  return {
+    std::move(vcov_robust),
+    std::move(std_err),
+    std::move(z_vals),
+    risk1,
+    risk0,
+    rd,
+    se_rd,
+    log_rr,
+    rr,
+    se_log_rr
+  };
+}
+
+}  // namespace
+
+// [[Rcpp::export]]
+List gcomp_logistic_post_fit_cpp(SEXP X_fit_sexp,
+                                 SEXP y_sexp,
+                                 SEXP coef_hat_sexp,
+                                 SEXP mu_hat_sexp,
+                                 int j_treat) {
+  LogisticPostFitResult result = compute_gcomp_logistic_post_fit(
+    X_fit_sexp, y_sexp, coef_hat_sexp, mu_hat_sexp, j_treat
+  );
   return List::create(
-    _["vcov"] = vcov_robust,
-    _["std_err"] = std_err,
-    _["z_vals"] = z_vals,
-    _["risk1"] = risk1,
-    _["risk0"] = risk0,
-    _["rd"] = rd,
-    _["se_rd"] = se_rd,
-    _["log_rr"] = log_rr,
-    _["rr"] = rr,
-    _["se_log_rr"] = se_log_rr
+    _["vcov"] = result.vcov,
+    _["std_err"] = result.std_err,
+    _["z_vals"] = result.z_vals,
+    _["risk1"] = result.risk1,
+    _["risk0"] = result.risk0,
+    _["rd"] = result.rd,
+    _["se_rd"] = result.se_rd,
+    _["log_rr"] = result.log_rr,
+    _["rr"] = result.rr,
+    _["se_log_rr"] = result.se_log_rr
   );
 }
 
@@ -241,15 +281,17 @@ List gcomp_fractional_logit_post_fit_cpp(SEXP X_fit_sexp,
                                          SEXP coef_hat_sexp,
                                          SEXP mu_hat_sexp,
                                          int j_treat) {
-  List base = gcomp_logistic_post_fit_cpp(X_fit_sexp, y_sexp, coef_hat_sexp, mu_hat_sexp, j_treat);
+  LogisticPostFitResult result = compute_gcomp_logistic_post_fit(
+    X_fit_sexp, y_sexp, coef_hat_sexp, mu_hat_sexp, j_treat
+  );
   return List::create(
-    _["vcov"] = base["vcov"],
-    _["std_err"] = base["std_err"],
-    _["z_vals"] = base["z_vals"],
-    _["mean1"] = base["risk1"],
-    _["mean0"] = base["risk0"],
-    _["md"] = base["rd"],
-    _["se_md"] = base["se_rd"]
+    _["vcov"] = result.vcov,
+    _["std_err"] = result.std_err,
+    _["z_vals"] = result.z_vals,
+    _["mean1"] = result.risk1,
+    _["mean0"] = result.risk0,
+    _["md"] = result.rd,
+    _["se_md"] = result.se_rd
   );
 }
 

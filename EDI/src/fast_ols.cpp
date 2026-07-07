@@ -29,7 +29,7 @@ ModelResult fast_ols_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
         Eigen::VectorXd beta_free;
 
         if (p_free == p) {
-            XtX_free.noalias() = X.transpose() * X;
+            XtX_free = symmetric_crossprod(X);
             Xty_free.noalias() = X.transpose() * y_adj;
             Eigen::LDLT<Eigen::MatrixXd> ldlt(XtX_free);
             if (ldlt.info() == Eigen::Success) {
@@ -41,7 +41,7 @@ ModelResult fast_ols_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
         } else {
             Eigen::MatrixXd X_free(n, p_free);
             for (int j = 0; j < p_free; ++j) X_free.col(j) = X.col(fixed_spec.free_idx[j]);
-            XtX_free.noalias() = X_free.transpose() * X_free;
+            XtX_free = symmetric_crossprod(X_free);
             Xty_free.noalias() = X_free.transpose() * y_adj;
             Eigen::LDLT<Eigen::MatrixXd> ldlt(XtX_free);
             if (ldlt.info() == Eigen::Success) {
@@ -51,7 +51,7 @@ ModelResult fast_ols_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
                 beta_free = qr.solve(y_adj);
             }
         }
-        
+
         for (int j = 0; j < p_free; ++j) res.b[fixed_spec.free_idx[j]] = beta_free[j];
         if (!estimate_only) res.XtWX = expand_free_covariance(p, fixed_spec, XtX_free, false);
     } else {
@@ -105,7 +105,7 @@ List fast_ols_with_var_cpp(SEXP X_sexp, SEXP y_sexp,
     bool converged = false;
 
     if (p_free == p) {
-        XtX_free.noalias() = X.transpose() * X;
+        XtX_free = symmetric_crossprod(X);
         Xty_free.noalias() = X.transpose() * y_to_use;
         
         Eigen::LDLT<Eigen::MatrixXd> ldlt(XtX_free);
@@ -141,7 +141,7 @@ List fast_ols_with_var_cpp(SEXP X_sexp, SEXP y_sexp,
     } else {
         Eigen::MatrixXd X_free(n, p_free);
         for (int k = 0; k < p_free; ++k) X_free.col(k) = X.col(fixed_spec.free_idx[k]);
-        XtX_free.noalias() = X_free.transpose() * X_free;
+        XtX_free = symmetric_crossprod(X_free);
         Xty_free.noalias() = X_free.transpose() * y_to_use;
 
         Eigen::LDLT<Eigen::MatrixXd> ldlt(XtX_free);

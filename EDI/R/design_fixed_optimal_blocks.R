@@ -117,9 +117,10 @@ DesignFixedOptimalBlocks = R6::R6Class("DesignFixedOptimalBlocks",
 			w_mat
 		},
 		draw_bootstrap_indices = function(bootstrap_type = NULL){
-			block_ids = as.character(private$get_or_compute_block_ids())
+			block_ids = private$get_or_compute_block_ids()
 			if (is.null(bootstrap_type) || bootstrap_type == "within_blocks") {
-				list(i_b = stratified_bootstrap_indices_cpp(block_ids), m_vec_b = NULL)
+				group_id = match(block_ids, unique(block_ids))
+				list(i_b = stratified_bootstrap_indices_cpp(as.integer(group_id)), m_vec_b = NULL)
 			} else {
 				group_id = match(block_ids, unique(block_ids))
 				i_b = resample_group_rows_cpp(as.integer(group_id), length(unique(group_id)))

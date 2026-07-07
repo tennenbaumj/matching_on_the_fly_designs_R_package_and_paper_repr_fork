@@ -109,19 +109,54 @@ int pocock_simon_assign_and_update_cpp(NumericMatrix counts, IntegerVector subje
 // [[Rcpp::export]]
 IntegerVector pocock_simon_redraw_w_cpp(IntegerMatrix x_levels_matrix, int num_levels_total, NumericVector weights, double p_best, double prob_T) {
   int n = x_levels_matrix.nrow();
-  IntegerVector w(n);
-  NumericMatrix counts(num_levels_total, 2); // Assume 2 treatments
+  int num_covs = x_levels_matrix.ncol();
+  if (num_levels_total <= 0) stop("num_levels_total must be positive");
+  if (weights.size() != num_covs) stop("weights length must match the number of covariates");
 
+  std::vector<int> level_rows(static_cast<std::size_t>(n) * num_covs);
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < num_covs; ++j) {
+      const int row_idx = x_levels_matrix(i, j) - 1;
+      if (row_idx < 0 || row_idx >= num_levels_total) {
+        stop("x_levels_matrix contains a level index outside 1..num_levels_total");
+      }
+      level_rows[static_cast<std::size_t>(i) * num_covs + j] = row_idx;
+    }
+  }
+
+  IntegerVector w(n);
+  int* w_ptr = w.begin();
+  const double* weights_ptr = weights.begin();
+  std::vector<int> counts(static_cast<std::size_t>(num_levels_total) * 2, 0);
   
   for (int i = 0; i < n; ++i) {
-    IntegerVector subject_levels = x_levels_matrix.row(i);
-    int assigned_w = pocock_simon_assign_cpp(counts, subject_levels, weights, p_best, prob_T);
-    w[i] = assigned_w;
+    const int* subject_levels = level_rows.data() + static_cast<std::size_t>(i) * num_covs;
+    double G[2] = {0.0, 0.0};
+    for (int k = 0; k < 2; ++k) {
+      double G_k = 0.0;
+      for (int j = 0; j < num_covs; ++j) {
+        const int row_idx = subject_levels[j];
+        const double c0 = counts[static_cast<std::size_t>(row_idx) * 2] + (k == 0 ? 1 : 0);
+        const double c1 = counts[static_cast<std::size_t>(row_idx) * 2 + 1] + (k == 1 ? 1 : 0);
+        const double mean = (c0 + c1) / 2.0;
+        const double variance = (c0 - mean) * (c0 - mean) + (c1 - mean) * (c1 - mean);
+        G_k += weights_ptr[j] * variance;
+      }
+      G[k] = G_k;
+    }
+
+    int assigned_w;
+    if (G[0] == G[1]) {
+      assigned_w = (R::unif_rand() < prob_T) ? 1 : 0;
+    } else {
+      const int best_treatment = (G[1] < G[0]) ? 1 : 0;
+      assigned_w = (R::unif_rand() < p_best) ? best_treatment : 1 - best_treatment;
+    }
+    w_ptr[i] = assigned_w;
     
     // Update counts
-    for (int j = 0; j < subject_levels.size(); ++j) {
-      int row_idx = subject_levels[j] - 1;
-      counts(row_idx, assigned_w)++;
+    for (int j = 0; j < num_covs; ++j) {
+      counts[static_cast<std::size_t>(subject_levels[j]) * 2 + assigned_w]++;
     }
   }
   

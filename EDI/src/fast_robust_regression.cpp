@@ -31,12 +31,13 @@ struct RobustModelResult {
     Eigen::VectorXd w;
     Eigen::MatrixXd XtWX;
     Eigen::MatrixXd X_free;
+    double XtX_inv_diag_j;
     double scale;
     int iterations;
     bool converged;
     double ssq_b_j;
 
-    RobustModelResult() : scale(NA_REAL), iterations(0), converged(false), ssq_b_j(NA_REAL) {}
+    RobustModelResult() : XtX_inv_diag_j(NA_REAL), scale(NA_REAL), iterations(0), converged(false), ssq_b_j(NA_REAL) {}
 };
 
 RobustModelResult fast_robust_regression_internal(
@@ -54,7 +55,8 @@ RobustModelResult fast_robust_regression_internal(
     Rcpp::Nullable<Rcpp::NumericVector> fixed_values = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> warm_start_weights = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericMatrix> warm_start_fisher_info = R_NilValue,
-    bool estimate_only = false
+    bool estimate_only = false,
+    int variance_j = 0
 ) {
     int n = X.rows();
     int p = X.cols();
@@ -68,6 +70,16 @@ RobustModelResult fast_robust_regression_internal(
     }
     RobustModelResult res;
     res.X_free = X_free;
+    int free_variance_j = -1;
+    if (variance_j > 0) {
+        const int variance_j0 = variance_j - 1;
+        for (int jj = 0; jj < fixed_spec.free_idx.size(); ++jj) {
+            if (fixed_spec.free_idx[jj] == variance_j0) {
+                free_variance_j = jj;
+                break;
+            }
+        }
+    }
 
     // 1. Initial estimate
     Eigen::VectorXd b_free;
@@ -78,6 +90,21 @@ RobustModelResult fast_robust_regression_internal(
     } else if (smart_cold_start) {
         Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr(X_free);
         b_free = qr.solve(y_adj);
+        if (!estimate_only && free_variance_j >= 0) {
+            Eigen::MatrixXd R = Eigen::MatrixXd::Zero(p_free, p_free);
+            R.triangularView<Eigen::Upper>() =
+                qr.matrixR().topLeftCorner(p_free, p_free).template triangularView<Eigen::Upper>();
+            Eigen::MatrixXd RtR = R.transpose() * R;
+            Eigen::VectorXd e_orig = Eigen::VectorXd::Unit(p_free, free_variance_j);
+            Eigen::VectorXd e_piv = qr.colsPermutation().transpose() * e_orig;
+            Eigen::LDLT<Eigen::MatrixXd> ldlt(RtR);
+            if (ldlt.info() == Eigen::Success) {
+                Eigen::VectorXd z = ldlt.solve(e_piv);
+                if (z.allFinite()) {
+                    res.XtX_inv_diag_j = e_piv.dot(z);
+                }
+            }
+        }
     } else {
         b_free = Eigen::VectorXd::Zero(p_free);
     }
@@ -205,7 +232,7 @@ List fast_robust_regression_cpp(
     Eigen::Map<const Eigen::MatrixXd> X(X_r.begin(), X_r.nrow(), X_r.ncol());
     Eigen::Map<const Eigen::VectorXd> y(y_r.begin(), y_r.size());
 
-    RobustModelResult res = fast_robust_regression_internal(X, y, warm_start_beta, smart_cold_start, method, c, 4.685, maxit, tol, -1.0, fixed_idx, fixed_values, warm_start_weights, warm_start_fisher_info, estimate_only);
+    RobustModelResult res = fast_robust_regression_internal(X, y, warm_start_beta, smart_cold_start, method, c, 4.685, maxit, tol, -1.0, fixed_idx, fixed_values, warm_start_weights, warm_start_fisher_info, estimate_only, j);
     FixedParamSpec fixed_spec = make_fixed_param_spec(X.cols(), fixed_idx, fixed_values);
     
     if (estimate_only) {
@@ -262,8 +289,11 @@ List fast_robust_regression_cpp(
                 }
             }
             if (free_j >= 0) {
-                Eigen::MatrixXd XtX = res.X_free.transpose() * res.X_free;
-                const double inv_diag = compute_diagonal_inverse_entry(XtX, free_j + 1);
+                double inv_diag = res.XtX_inv_diag_j;
+                if (!R_finite(inv_diag)) {
+                    Eigen::MatrixXd XtX = symmetric_crossprod(res.X_free);
+                    inv_diag = compute_diagonal_inverse_entry(XtX, free_j + 1);
+                }
                 if (R_finite(inv_diag)) {
                     ssq_j = factor * inv_diag;
                 }

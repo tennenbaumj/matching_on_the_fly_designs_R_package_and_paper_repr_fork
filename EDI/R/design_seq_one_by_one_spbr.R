@@ -93,7 +93,8 @@ DesignSeqOneByOneSPBR = R6::R6Class("DesignSeqOneByOneSPBR",
 				private$get_strata_key(private$Xraw[i, ])
 			}, character(1))
 			if (is.null(bootstrap_type) || bootstrap_type == "within_blocks") {
-				list(i_b = stratified_bootstrap_indices_cpp(as.character(unname(strata_keys))), m_vec_b = NULL)
+				strata_ids = match(strata_keys, unique(strata_keys))
+				list(i_b = stratified_bootstrap_indices_cpp(as.integer(strata_ids)), m_vec_b = NULL)
 			} else {
 				group_id = match(strata_keys, unique(strata_keys))
 				i_b = resample_group_rows_cpp(as.integer(group_id), length(unique(group_id)))

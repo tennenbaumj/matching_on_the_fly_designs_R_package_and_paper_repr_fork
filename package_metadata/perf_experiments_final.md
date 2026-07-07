@@ -996,41 +996,95 @@ Extracted `fast_erfc`, `pnorm_fast`, and `dnorm_fast` into a new header `EDI/src
 
 ### LOW priority
 
-**TODO-53: CoxPH hessian — direct symmetric writes vs post-loop triangular copy**
+**TODO-53: CoxPH hessian — direct symmetric writes vs post-loop triangular copy** ✓ DONE
 File: `EDI/src/fast_coxph_regression.cpp:204–211`
 Inner event-time loop writes only `hess.triangularView<Lower>()`, then copies to upper after the event loop (O(p²) copy per optimizer step). Write both `hess(q1,q2)` and `hess(q2,q1)` directly in the inner product loop (lines 172–177), eliminating the post-loop copy. For p≤10 the direct write + copy elimination is a net win.
 
-**TODO-54: Robust regression — cache XtX from IRLS to avoid var-path recompute**
+Implemented scalar lower-triangle Hessian accumulation with immediate mirrored upper-triangle writes inside `compute_cox_ll_grad_hess_fast()`, replacing the previous Eigen `triangularView<Lower>() += ...` expression and removing the post-event-loop `hess.triangularView<Upper>() = hess.transpose()` copy. The risk-set second-moment buffer remains lower-triangular only; the event contribution reads `S2(q2, q1)` and writes both Hessian entries for off-diagonal pairs. A wider `p=10` isolated stress check showed a small regression, so the retained benchmark target is the profiler-matched CoxPH variance shape (`n=200`, `p=5`) where this TODO arose.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs for the saved pre-TODO-53 source and optimized source; no `--preclean` was used. Timing used separate R processes, process CPU time, two before phases and two after phases, 40 rounds per phase. The isolated Hessian workload used `n=200`, `p=5`, 1,000 Hessian calls per round; the full CoxPH variance workload used `n=200`, `p=5`, 200 complete `fast_coxph_regression_cpp(..., estimate_only=FALSE)` fits per round. Combined medians: isolated Hessian 0.0310ms → 0.0260ms per call (IQR 0.0300–0.0330ms → 0.0250–0.0273ms), a 1.192× speedup / 16.1% time reduction (independent bootstrap 95% CI 1.148×–1.192×; one-sided Wilcoxon p<2.2e-16). Full variance fit 0.1650ms → 0.1300ms per call (IQR 0.1550–0.1800ms → 0.1250–0.1350ms), a 1.269× speedup / 21.2% time reduction (bootstrap 95% CI 1.208×–1.308×; one-sided Wilcoxon p<2.2e-16). Before/after Hessians, fitted coefficients, and variance-covariance matrices were exactly equal on the benchmark data; all benchmark fits converged.
+
+Correctness: added `test-coxph-hessian-symmetric-writes.R`, which compares unstratified and stratified CoxPH Hessians against numerical derivatives of independent R Breslow partial-likelihood implementations, checks exact symmetry, and verifies repeatability. The dedicated test passed all 5 assertions. Standalone existing equivalence checks for unstratified and stratified CoxPH coefficients/vcov against `survival::coxph` also passed.
+
+**TODO-54: Robust regression — cache XtX from IRLS to avoid var-path recompute** ✓ DONE
 File: `EDI/src/fast_robust_regression.cpp:253`
 After IRLS convergence, line 253 recomputes `XtX = X_free.T * X_free` for the sandwich estimator. Either store it in `RobustModelResult` at convergence, or derive from the QR cold-start (`R.T * R` where R is the QR factor). Saves one O(n·p²) GEMM per `robust_var` call.
 
-**TODO-55: Hat-matrix diagonal — vectorize via `cwiseProduct + rowwise().sum()`**
+Implemented the QR-derived variant for the common smart-cold-start path. `RobustModelResult` now carries a cached scalar `XtX_inv_diag_j`, the requested diagonal entry of `(X_free'X_free)^-1`. During the initial `ColPivHouseholderQR` cold start, the code builds the small `R'R` system, maps the requested original free-parameter coordinate through the QR column permutation, solves for only that diagonal entry, and stores the scalar. The variance path then uses this cached value for `ssq_b_j` and falls back to the original `X_free.transpose() * X_free` plus `compute_diagonal_inverse_entry()` only when the QR cache is unavailable (warm-start / no-smart-start / fixed target not free). A materialized full-`XtX` cache was benchmarked first and rejected as neutral-to-slower; the retained scalar cache avoids both the O(n·p²) crossproduct and an unnecessary p×p cached matrix on the profiled path.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs for the saved pre-TODO-54 source and optimized source; no `--preclean` was used. Timing used separate R processes, process CPU time, two before phases and two after phases, 50 rounds per phase. The profiler-shaped workload used `n=200`, `p=6`, 500 complete `fast_robust_regression_cpp(..., method="MM", j=2)` variance fits per round; a wider audit used `n=300`, `p=16`, 200 fits per round. Combined medians: profiler shape 0.0640ms → 0.0600ms per fit (IQR 0.0600–0.0680ms → 0.0580–0.0620ms), a 1.067× speedup / 6.25% time reduction (independent bootstrap 95% CI 1.033×–1.067×; one-sided Wilcoxon p=4.34e-11). Wider audit 0.1800ms → 0.1700ms per fit (IQR 0.1750–0.1913ms → 0.1650–0.1800ms), a 1.059× speedup / 5.56% time reduction (bootstrap 95% CI 1.029×–1.088×; one-sided Wilcoxon p=2.46e-8). Before/after coefficients and `ssq_b_j` values were exactly equal on both benchmark datasets; all benchmark fits converged.
+
+Correctness: added `test-robust-regression-xtx-cache.R`, which independently recomputes `ssq_b_j` from the returned coefficients, scale, free design matrix, and robust psi formula for MM and M fits, including a fixed-parameter case. The dedicated test passed all 6 assertions. Standalone existing robust-regression equivalence snippets against `MASS::rlm` on synthetic data and `mtcars` also passed with the repository's tolerances.
+
+**TODO-55: Hat-matrix diagonal — vectorize via `cwiseProduct + rowwise().sum()`** ✓ DONE
 File: `EDI/src/robust_post_fit_speedups.cpp:119–123`
 `ols_hc2_setup_cpp` computes `hat[i] = XB.row(i).dot(X_fit.row(i))` in a scalar loop — the diagonal of `X_fit * bread * X_fit.T`. Replace with `hat = (X_fit * bread).cwiseProduct(X_fit).rowwise().sum()` — same result, vectorizable as element-wise product + row reduction.
 
-**TODO-56: BetaRegression preallocate `m_mu`, `m_eta` member fields**
+Implemented directly in `ols_hc2_setup_cpp`: the explicit per-row dot-product loop was replaced by Eigen's vectorized row-product reduction, `hat = (X_fit * bread).cwiseProduct(X_fit).rowwise().sum()`. This preserves the existing `bread` computation and return shape while moving the hat diagonal calculation into one fused Eigen expression.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs for the saved pre-TODO-55 source and optimized source; no `--preclean` was used. Timing used separate R processes, process CPU time, two before phases and two after phases, 80 rounds per phase. The profiled skinny setup workload used `n=2000`, `p=3`, 1000 complete `ols_hc2_setup_cpp(X)` calls per round; combined medians were 0.0430ms → 0.0410ms per call (IQR 0.0418–0.0450ms → 0.0400–0.0420ms), a 1.049× speedup / 4.65% time reduction (independent bootstrap 95% CI 1.037×–1.073×; one-sided Wilcoxon p=1.59e-17). A moderate-width audit used `n=1000`, `p=12`, 800 calls per round; combined medians were neutral at 0.1425ms → 0.1425ms per call (IQR 0.1388–0.1513ms → 0.1388–0.1478ms), speedup 1.000× (bootstrap 95% CI 0.983×–1.018×; Wilcoxon p=0.522). Before/after checksum values for the returned hat diagonal matched exactly on both benchmark datasets.
+
+Correctness: added `test-ols-hc2-hat-vectorized.R`, which compares `ols_hc2_setup_cpp()`'s `bread` and `hat` against independent R `solve(crossprod(X))` and `rowSums((X %*% bread) * X)` calculations, then verifies the downstream HC2 covariance from `ols_hc2_post_fit_precomputed_cpp()`. The dedicated test passed all 4 assertions. Existing `test-kk-ols-se.R` also passed all 21 assertions.
+
+**TODO-56: BetaRegression preallocate `m_mu`, `m_eta` member fields** ✓ DONE
 File: `EDI/src/fast_beta_regression.cpp`
 `operator()` calls `resize()` on `eta` and `mu` vectors on every call. Preallocate as member fields sized at construction (safe — `operator()` is non-`const`). After implementing TODO-23's single scalar loop, most temporaries disappear; these are only the eta/mu GEMV intermediates.
 
-**TODO-57: LogBin — return `fisher_information` from fit impl to avoid var-path recompute**
+Inspection showed this TODO had already been satisfied when TODO-23 landed: `BetaRegression` already has constructor-sized `m_eta`, `m_mu`, and `m_w_grad` members, and `operator()` writes the GEMV into `m_eta.noalias()` and stores the per-observation mean in `m_mu` instead of allocating local `eta`/`mu` vectors. No C++ source change was required for TODO-56.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs; no `--preclean` was used. Because the repo source was already optimized, the before package was a temporary source copy with the TODO-described local `eta`/`mu` allocation pattern restored inside `operator()`, while the after package was the current source rebuilt after touching `fast_beta_regression.cpp` to force recompilation. Timing used separate R processes, process CPU time, two before phases and two after phases, 80 rounds per phase. The profiler-shaped estimate-only workload used `n=1000`, `p=4`, 120 complete `fast_beta_regression_cpp(..., estimate_only=TRUE)` fits per round; combined medians were 0.8250ms → 0.8500ms per fit (IQR 0.8167–0.8667ms → 0.8333–0.8667ms), speedup 0.971× / -3.03% time reduction (bootstrap 95% CI 0.971×–0.990×; one-sided Wilcoxon p=0.9999). An allocation-sensitive smaller workload used `n=250`, `p=8`, 350 fits per round; combined medians were 0.2629ms → 0.2657ms (IQR 0.2600–0.2743ms → 0.2600–0.2721ms), speedup 0.989× / -1.09% time reduction (bootstrap 95% CI 0.989×–1.011×; Wilcoxon p=0.756). Before/after checksums matched exactly and all fits converged. Conclusion: the source-level TODO is complete, but there is no remaining measurable speedup for this stale entry in the current post-TODO-23 implementation/compiler build.
+
+Correctness: added `test-beta-regression-preallocated-eta-mu.R`, covering repeated unweighted fits, normalized score at the optimum, repeated weighted fits, and a fixed-parameter fit through the beta objective path. The dedicated test passed all 12 assertions. Existing beta-related coverage in `test-argument-permutations.R` passed all 13 assertions and `test-fast_glm_outputs.R` passed all 10 assertions.
+
+**TODO-57: LogBin — return `fisher_information` from fit impl to avoid var-path recompute** ✓ DONE
 File: `EDI/src/fast_log_binomial_regression.cpp:453–510`
 `fit_constrained_binomial_with_var_cpp_impl` rebuilds `X_free` and calls `weighted_crossprod` again (line 484) after `fit_constrained_binomial_cpp_impl` already computed `XtWX` on its final accepted iteration. Return `fisher_information` from the fit impl; reuse in the var impl. Saves one O(n·p²) GEMM per var call.
 
-**TODO-58: Poisson IRLS — cache `delta_eta` for step-halving probes**
+Implemented by reusing the full `fisher_information` returned from `fit_constrained_binomial_cpp_impl()` in `fit_constrained_binomial_with_var_cpp_impl()`. The variance helper now validates the returned full information matrix, falls back to `weighted_crossprod(X, w)` only if it is unavailable or invalid, subsets the cached full information to the free-parameter block for `ssq_b_j`, and returns the same full cached matrix to callers. This removes the previous `X_free` rebuild and second `weighted_crossprod(X_free, w)` on the normal log-binomial / identity-binomial variance path.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs for the saved pre-TODO-57 source and optimized source; no `--preclean` was used. The after install was forced to rebuild `fast_log_binomial_regression.cpp` by touching that source file. Timing used separate R processes, process CPU time, two before phases and two after phases, 80 rounds per phase. The profiler-shaped variance workload used `n=800`, `p=8`, 250 complete `fast_log_binomial_regression_with_var_cpp(..., j=2)` fits per round; combined medians were 0.5000ms → 0.4440ms per fit (IQR 0.4800–0.5360ms → 0.4320–0.4850ms), a 1.126× speedup / 11.20% time reduction (independent bootstrap 95% CI 1.098×–1.146×; one-sided Wilcoxon p=9.67e-19). A wider audit used `n=1500`, `p=30`, 40 fits per round; combined medians were 25.5000ms → 22.5250ms per fit (IQR 24.4438–26.7313ms → 21.0375–24.0750ms), a 1.132× speedup / 11.67% time reduction (bootstrap 95% CI 1.105×–1.155×; Wilcoxon p=8.17e-20). Before/after checksums matched exactly and all fits converged.
+
+Correctness: added `test-logbin-var-reuses-fisher.R`, which independently rebuilds the Fisher information from fitted coefficients and checks `fisher_information` and `ssq_b_j` for log-binomial, fixed-parameter log-binomial, and identity-binomial variance paths. The dedicated test passed all 10 assertions. Existing `test-fast_glm_outputs.R` passed all 10 assertions, `test-warm-start-weights.R` passed all 9 assertions, and isolated constrained-binomial equivalence snippets against `stats::glm` for log and identity links passed. A full run of the broad `test-rcpp-fitting-equivalence.R` file segfaulted after 63 passing assertions in unrelated model-family coverage, so it was not used as TODO-57 evidence.
+
+**TODO-58: Poisson IRLS — cache `delta_eta` for step-halving probes** ✓ DONE
 File: `EDI/src/fast_poisson_regression.cpp:236–248`
 Each `compute_neg_loglik(beta_try)` in the halving loop (line 240) runs a full GEMV. Precompute `delta_eta = X_f * step` before the halving loop; each probe becomes O(n) vector-add + scalar loglik loop. Same pattern as TODO-17 for log-binomial. Low priority: Poisson IRLS typically converges in 1 step for well-conditioned data.
 
-**TODO-59: Stereotype logit — preallocate per-obs hessian allocs**
+Inspection showed this entry is a duplicate of TODO-128, which had already landed in `fast_poisson_regression.cpp`: `eta_try(n)` and `delta_eta(n)` are preallocated before the IRLS loop, `compute_neg_loglik_from_eta()` evaluates trial likelihoods from a precomputed eta vector, and the step-halving loop computes `delta_eta.noalias() = X_f * step` once per IRLS iteration before probing `eta + step_size * delta_eta`. No C++ source change was required for TODO-58 itself.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs; no `--preclean` was used. Because the repo source was already optimized, the before package was a temporary source copy with the TODO-described old halving logic restored (`beta_free_try` plus `compute_neg_loglik(beta_free_try)`, recomputing `X_f * beta_try` per probe), while the after package was the current source rebuilt after touching `fast_poisson_regression.cpp`. Timing used separate R processes, process CPU time, two before phases and two after phases, 80 rounds per phase. The normal estimate-only workload used `n=3000`, `p=6`, 200 complete `fast_poisson_regression_cpp(..., optimization_alg="irls", estimate_only=TRUE)` fits per round; combined medians were 0.6225ms → 0.5625ms per fit (IQR 0.5275–0.7600ms → 0.4988–0.6300ms), a 1.107× speedup / 9.64% time reduction (independent bootstrap 95% CI 1.013×–1.171×; one-sided Wilcoxon p=3.96e-5). The bad-warm-start workload used the same `n=3000`, `p=6` design with `warm_start_beta = beta_true * 10`, 80 fits per round, and 17 IRLS iterations; combined medians were 1.4125ms → 1.4750ms (IQR 1.2625–1.8250ms → 1.3750–1.6250ms), speedup 0.958× / -4.42% time reduction (bootstrap 95% CI 0.907×–1.013×; Wilcoxon p=0.967), i.e. neutral/no measurable win under current run conditions. Before/after checksums matched exactly and all fits converged.
+
+Correctness: reused the existing dedicated `test-poisson-delta-eta-step-halving.R`, which covers standard fits against `glm()`, bad-warm-start fits that trigger halving, weighted bad-warm-start fits, score/information checks, deterministic repeatability, and `estimate_only` consistency. The dedicated test passed all 10 assertions. Existing `test-poisson-weighted-crossprod.R` passed all 4 assertions, `test-fast_glm_outputs.R` passed all 10 assertions, and `test-warm-start-weights.R` passed all 9 assertions.
+
+**TODO-59: Stereotype logit — preallocate per-obs hessian allocs** ✓ DONE
 File: `EDI/src/fast_stereotype_logit.cpp`
 No perf data (no annotate file generated). Static analysis of `loglik_hessian()` (lines 207–307) shows per-observation allocations: `std::vector<VectorXd> logit_grad(K)`, `std::vector<MatrixXd> logit_hess(K)`, `mean_grad(d)`, `mean_hess(d,d)`, `mean_outer(d,d)`, `MatrixXd delta` per obs. For n=200, K=5, d=6: ~2,800 allocs per hessian call. Preallocate as class members. Implement only if this kernel appears in a benchmark sweep as a bottleneck.
 
-**TODO-60: ZAP `hessian()` — reuse preallocated `m_eta_cond`/`m_eta_zi`**
+Implemented by adding reusable mutable Hessian workspace to `StereotypeLogitRegression`: score values, first/second score derivative buffers, per-class logit gradient/Hessian buffers, mean-gradient/Hessian accumulators, outer-product scratch, and the per-observation `delta` matrix are now allocated once in the constructor and reused by `loglik_hessian()`. `compute_scores_with_second_derivatives()` now zeros pre-sized buffers rather than rebuilding the vector of Hessian matrices on every call.
+
+Noise-controlled benchmark used `R CMD INSTALL --no-docs` installs; no `--preclean` was used. The before package was a temporary source copy saved before the TODO-59 edit, and the after package was the edited source. Timing used two before phases and two after phases, 80 rounds per phase. The direct Hessian workload used `n=800`, `p=6`, `K=5`, 300 `get_stereotype_logit_hessian_cpp()` calls per round; combined medians were 0.7083ms → 0.6867ms per call (IQR 0.6767–0.7467ms → 0.6700–0.7275ms), a 1.032× speedup / 3.06% time reduction (independent bootstrap 95% CI 1.010×–1.052×; one-sided Wilcoxon p=0.00250). The full variance-fit workload used `n=300`, `p=5`, `K=4`, 80 `fast_stereotype_logit_with_var_cpp()` fits per round; combined medians were 1.8250ms → 1.6438ms per fit (IQR 1.7250–2.0656ms → 1.5844–1.7125ms), a 1.110× speedup / 9.93% time reduction (bootstrap 95% CI 1.076×–1.170×; one-sided Wilcoxon p=6.58e-27). Per-phase direct-Hessian medians were before1 0.7117ms, after1 0.6933ms, after2 0.6767ms, before2 0.7017ms; per-phase variance-fit medians were before1 1.7375ms, after1 1.6500ms, after2 1.6188ms, before2 2.0625ms. Before/after checksums matched within each benchmark style and all fits converged.
+
+Correctness: added dedicated `test-stereotype-logit-hessian-workspace.R`, covering repeatability, symmetry/finite values, and parameter-change isolation for the reused Hessian workspace. The dedicated test passed all 5 assertions. Existing `test-stereotype-logit-gemv-gradient.R` passed all 4 assertions, and isolated stereotype-logit checks against `glm()` / Hessian symmetry passed.
+
+**TODO-60: ZAP `hessian()` — reuse preallocated `m_eta_cond`/`m_eta_zi`** ✓ DONE
 File: `EDI/src/fast_zero_augmented_poisson.cpp:104–105,194–195`
 `hessian()` allocates `eta_cond` and `eta_zi` locally (lines 104–105, 194–195) despite `m_eta_cond` and `m_eta_zi` existing as preallocated member fields. Reuse them with `.noalias() =`. Affects `zip_var`/`hurdle_p_var`, not the dominant `est` path.
 
-**TODO-61: Cont_ratio `ContinuationRatioObjective::operator()` — preallocate scratch buffers**
+Implemented for both `ZeroAugmentedPoisson::hessian()` and `expected_hessian()`: the conditional and zero-inflation linear predictors are now written into the constructor-sized `m_eta_cond` and `m_eta_zi` buffers via `.noalias()`, and the observation loop reads them through local raw pointers. This removes the two per-Hessian n-vector heap allocations while preserving the existing Hessian formulas and output shape.
+
+Noise-controlled benchmark used `R CMD INSTALL --no-docs` installs; no `--preclean` was used. The before package was a temporary source copy saved before the TODO-60 edit, and the after package was the edited source. The primary BAAB benchmark used `n=1000`, `p_cond=p_zi=6`, two before phases and two after phases, 60 rounds per phase. Direct Hessian workloads used 1,000 Hessian calls per round; full variance-fit workloads used 120 complete `fast_zero_augmented_poisson_cpp(..., estimate_only=FALSE)` fits per round from fixed warm starts. Combined medians were mixed: hurdle direct Hessian 0.0740ms → 0.0780ms (0.949×, bootstrap 95% CI 0.914×–0.980×), ZIP direct Hessian 0.1050ms → 0.1070ms (0.981×, CI 0.963×–1.000×), hurdle variance fit 0.7042ms → 0.6750ms (1.043×, CI 1.006×–1.088×), and ZIP variance fit 0.8250ms → 0.8667ms (0.952×, CI 0.942×–0.971×). A smaller allocation-focused benchmark used `n=200`, `p=6`, 120 rounds, 3,000 direct Hessian calls per round, and 300 MLE-warm variance fits per round: hurdle direct Hessian improved 0.0195ms → 0.0180ms (1.083×, CI 1.037×–1.151×), ZIP direct Hessian was neutral at 0.0300ms → 0.0302ms (0.994×, CI 0.962×–1.057×), hurdle MLE-warm variance fit regressed 0.1700ms → 0.2117ms (0.803×, CI 0.769×–0.823×), and ZIP MLE-warm variance fit was neutral at 0.1533ms → 0.1533ms (1.000×, CI 0.957×–1.045×). Before/after checksums matched exactly for every benchmark workload and all fits converged. Conclusion: the intended allocation removal is complete, but it is not a robust wall-time win across ZAP workloads under this compiler/runtime; effects are sub-millisecond and workload-dependent.
+
+Correctness: added `test-zero-augmented-poisson-hessian-workspace.R`, which checks ZIP and hurdle Hessians against independent finite-difference Hessians of an R negative-log-likelihood, verifies symmetry, and checks that the variance-fit path's observed information matches a standalone Hessian after optimizer buffer use. The dedicated test passed all 8 assertions. Existing `test-zero-augmented-poisson-log1m.R` passed all 3 assertions.
+
+**TODO-61: Cont_ratio `ContinuationRatioObjective::operator()` — preallocate scratch buffers** ✓ DONE
 File: `EDI/src/fast_continuation_ratio_regression.cpp:26–34`
 After TODO-34 eliminates the augmented-data construction allocs, the remaining `operator()` scratch vectors (`eta`, `mu`, `log_mu`, `log_one_minus_mu`) are still allocated per L-BFGS call. Preallocate as class members. Note: `operator()` is the method signature here — check if it's `const`; if so use explicit workspace passing not mutable fields (see mutable-field antipattern).
+
+Implemented by making `ContinuationRatioObjective::operator()` and `hessian()` non-`const` and adding constructor-sized non-mutable work buffers: `eta`, `mu`, `work`, `log_mu`, and `log_one_minus_mu`. This keeps the optimizer's non-const functor flow, avoids mutable heap fields, reuses the likelihood/gradient/Hessian scratch storage across L-BFGS calls, preserves the vectorized Eigen log-likelihood reduction, and reuses `work` for both `mu - z` and Hessian weights.
+
+Noise-controlled benchmark used `R CMD INSTALL --no-docs` installs; no `--preclean` was used. The before package was a temporary source copy saved before the TODO-61 edit, and the after package was the edited source. Timing used two before phases and two after phases, 80 rounds per phase, 100 complete fits per round, with `n=1000`, `p=5`, `K=4`. Combined medians were essentially neutral: `fast_continuation_ratio_regression_cpp()` 0.8000ms → 0.7900ms per fit (IQR 0.6800–0.9000ms → 0.6900–0.9400ms), a 1.013× speedup / 1.25% time reduction (independent bootstrap 95% CI 0.957×–1.077×; one-sided Wilcoxon p=0.565). `fast_continuation_ratio_regression_with_var_cpp()` 0.7800ms → 0.7700ms per fit (IQR 0.7200–0.8500ms → 0.7000–0.8500ms), a 1.013× speedup / 1.28% time reduction (bootstrap 95% CI 0.987×–1.053×; one-sided Wilcoxon p=0.0495). Per-phase medians for the base fit were before1 0.8700ms, after1 0.8650ms, after2 0.7300ms, before2 0.7350ms; per-phase medians for the variance path were before1 0.8200ms, after1 0.7300ms, after2 0.7900ms, before2 0.7400ms. Before/after checksums matched exactly and all fits converged. Conclusion: the allocation cleanup is complete and safe, but wall-time impact is too small to distinguish from phase noise for the full fit path.
+
+Correctness: added `test-continuation-ratio-objective-workspace.R`, which checks repeated fits are exact, the fitted score is small, fitted information equals the standalone Hessian helper, and the variance path's covariance equals the inverse information after objective workspace reuse. The dedicated test passed all 8 assertions. Existing `test-continuation-ratio-augmentation.R` passed all 4 assertions.
 
 ### NegBin + HurdleNegBin findings (HIGH priority)
 
@@ -1209,11 +1263,11 @@ Parallel profiling of all 57 annotate files (+ 4 stat files each) using 7 concur
 | hurdle_p_est | 16.3 | 1.88 | 1.07% | log1p 50%+ |
 | hurdle_p_var | **66.6** | 2.14 | 0.41% | hessian ~50s of 66.6s; 6200 allocs/call |
 
-### Critical findings (action items TODO-19+)
+### Critical findings (action items TODO-110+)
 
 ---
 
-**TODO-19: ZINB — preallocate eta_c, eta_z, w_c, w_z as member vectors** ☐
+**TODO-110: ZINB — preallocate eta_c, eta_z, w_c, w_z as member vectors** ✓ DONE
 File: `EDI/src/fast_zinb.cpp:83-84,100-101`
 
 Root cause: `ZeroInflatedNegBin::operator()` allocates four `VectorXd(m_n)` on every call:
@@ -1241,9 +1295,15 @@ Also replace `grad.resize(...)` (line 139) with a fixed-size write (grad is alre
 
 Expected: eliminates 86% of zinb_est wall time — likely 10-50× speedup on the est path.
 
+Implemented/verified in `ZeroInflatedNegBin`: constructor-sized `m_eta_c`, `m_eta_z`, `m_w_c`, and `m_w_z` buffers are used by `operator()` via `.noalias()` GEMV and `.setZero()` weight initialization, matching the ZAP pattern. The remaining TODO detail was also completed by removing the redundant `grad.resize(...)` from the hot path; all in-repo call sites pass a correctly sized gradient vector (`FixedParameterFunctor`, `likelihood_score()`, `likelihood_value()`, and `numerical_hessian()`). This source already also contains the later vectorized transcendental precompute buffers (`m_mu`, `m_logden`, `m_p`, `m_lse`, `m_phi`, `m_ld0`), so the benchmark below isolates the eta/weight allocation cleanup against the current post-TODO-67 code rather than the much older profiler snapshot.
+
+Noise-controlled benchmark used `R CMD INSTALL --no-docs` installs; no `--preclean` was used. Because the repo source already had the member-vector portion of TODO-110, the before package was a temporary source copy with the TODO-described local `eta_c`, `eta_z`, `w_c`, and `w_z` allocations restored inside `operator()`; the after package was the current optimized source with the resize removal. Timing used two before phases and two after phases, 80 rounds per phase, 100 complete fits per round, with `n=1000`, `p_cond=p_zi=4`. The estimate-only workload used `fast_zinb_cpp(..., estimate_only=TRUE)` from fixed warm starts; combined medians were 0.7350ms → 0.6000ms per fit (IQR 0.6675–0.8225ms → 0.5975–0.6200ms), a 1.225× speedup / 18.4% time reduction (independent bootstrap 95% CI 1.180×–1.262×; one-sided Wilcoxon p=9.69e-50). The MLE-warm variance workload used `estimate_only=FALSE` from the estimate-only MLE; combined medians were 1.0500ms → 0.9100ms per fit (IQR 1.0000–1.1300ms → 0.8900–0.9300ms), a 1.154× speedup / 13.3% time reduction (bootstrap 95% CI 1.137×–1.178×; one-sided Wilcoxon p=1.09e-44). Per-phase estimate-only medians were before1 0.8100ms, after1 0.6100ms, after2 0.6000ms, before2 0.6650ms; variance medians were before1 1.0700ms, after1 0.9000ms, after2 0.9150ms, before2 1.0200ms. Before/after checksums matched exactly and all fits converged.
+
+Correctness: added `test-zinb-operator-workspace.R`, which checks deterministic repeated estimate-only fits and verifies the variance path remains finite with a symmetric Hessian and finite covariance diagonal after operator workspace reuse. The dedicated test passed all 7 assertions. Existing `test-zinb-std-lgamma.R` passed all 3 assertions.
+
 ---
 
-**TODO-20: HurdlePoisson GLMM hessian — preallocate G×K working buffers** ✓ DONE
+**TODO-111: HurdlePoisson GLMM hessian — preallocate G×K working buffers** ✓ DONE
 File: `EDI/src/fast_hurdle_poisson_glmm.cpp:234,275-304`
 
 Root cause: `hessian()` allocates per-group working matrices inside the G-group loop: `E_Hik(total,total)`, `E_GiGiT(total,total)`, `G_avg(total)`, and per quadrature-node inner structures (`res_k(sz)`, `d2e_k(sz)`, `G_ik(total)`, `H_ik(total,total)`). For G=200 groups, K=7 nodes: ~6,200 heap allocations per hessian call. Additionally, `const Eigen::MatrixXd Xg = dat.X_s.middleRows(gs, sz)` at line 244 copies the submatrix G times.
@@ -1267,7 +1327,7 @@ Implemented with preallocated buffers plus in-place crossproduct helpers to avoi
 
 ---
 
-**TODO-21: NBLogLik — GEMV refactor for gradient in operator()** ☐
+**TODO-112: NBLogLik — GEMV refactor for gradient in operator()** ✓ DONE — ALREADY IMPLEMENTED
 File: `EDI/src/fast_negbin_regression.cpp:95,112,118`
 
 Root cause: line 112 uses per-row rank-1 update:
@@ -1285,10 +1345,11 @@ m_coef_vec[i] = yi - mu_i * (yi + theta) / denom;
 grad.head(m_p).noalias() = -(m_X.transpose() * m_coef_vec);
 ```
 Also remove `Eigen::VectorXd score_beta = Eigen::VectorXd::Zero(m_p)` (line 95) — no longer needed.
+Verified: `m_coef_vec` member fills per-obs coefficient scalar, then `grad.head(m_p).noalias() = -(m_X.transpose() * m_coef_vec)` replaces the row-access accumulation loop. Same GEMV pattern as ZIP/ZINB.
 
 ---
 
-**TODO-22: NBLogLik hessian — fill distinct-y tables; use slot lookups** ☐
+**TODO-113: NBLogLik hessian — fill distinct-y tables; use slot lookups** ✓ DONE — ALREADY IMPLEMENTED
 File: `EDI/src/fast_negbin_regression.cpp:148-150`
 
 Root cause: `hessian()` calls `R::digamma(yi + theta)` and `R::trigamma(yi + theta)` per-obs (lines 148-150) without using the preallocated distinct-y tables. The tables `m_digamma_yptheta` and `m_trigamma_yptheta` exist but are only filled in `operator()`, not in `hessian()`. The hessian also uses `R::digamma(theta)` un-hoisted until line 148 (actually just-in-time inside the obs loop since theta is the same for all obs).
@@ -1314,7 +1375,7 @@ Note: `TruncatedNegBinCount::hessian()` in `fast_hurdle_negbin.cpp` already does
 
 ---
 
-**TODO-23: NBLogLik::expected_trigamma_y_plus_theta — trigamma recurrence** ☐
+**TODO-114: NBLogLik::expected_trigamma_y_plus_theta — trigamma recurrence** ✓ DONE — ALREADY IMPLEMENTED
 File: `EDI/src/fast_negbin_regression.cpp:204-211`
 
 Root cause: inner series loop calls `R::trigamma(k+1 + theta)` at line 207 on every iteration. The series converges after ~`mean + 10*sd` terms (e.g., for mu=5, theta=2: ~47 iterations). With n=1000 obs, this is ~47,000 R::trigamma calls per `expected_hessian()` invocation.
@@ -1337,7 +1398,7 @@ Replaces O(min_iter) R::trigamma calls with 1 R::trigamma + O(min_iter) division
 
 ---
 
-**TODO-24: R::lgammafn → std::lgamma in NegBin, ZINB, HurdleNegBin** ☐
+**TODO-115: R::lgammafn → std::lgamma in NegBin, ZINB, HurdleNegBin** ✓ DONE — ALREADY IMPLEMENTED
 Files: `fast_negbin_regression.cpp:83,90`, `fast_zinb.cpp:68,88,94`, `fast_hurdle_negbin.cpp:330,346,356`
 
 Root cause: `R::lgammafn(x)` routes through R's error-handling dispatch (sets errno, checks R's interrupt flag, handles edge cases via R's machinery). `std::lgamma(x)` is a direct libm call, ~2-3× faster for normal positive inputs. The profiler shows `logf32x` (glibc log, called from lgamma) at 63.52% of negbin_est and 47.35% of zinb_est.
@@ -1356,104 +1417,161 @@ Note: TODO-14 already applied this to `fast_beta_regression.cpp`; same pattern h
 
 ---
 
-**TODO-25: HurdlePoisson/ZIP — log1p fast-path for large lambda** ☐
-Files: `EDI/src/fast_hurdle_poisson_glmm.cpp:183,268`, `EDI/src/fast_zero_augmented_poisson.cpp:12-13`
+**TODO-116: HurdlePoisson/ZIP — log1p fast-path for large lambda** ✗ DROPPED (ZAP part)
+Files: `EDI/src/fast_hurdle_poisson_glmm.cpp:183,268`, `EDI/src/fast_zero_augmented_poisson.cpp`
 
 Root cause: `std::log1p(-eneg)` where `eneg = exp(-lam)` is the top hotspot in hurdle_p_est (log1p at 50%+). For large lam, `eneg → 0` and `log1p(-eneg) ≈ -eneg` with error < `eneg²/2`. For lam > 30: `eneg < 9e-14`, so the approximation has error < 4e-27 (far below double precision). A threshold of `lam > 16` gives error < 1e-14.
 
-Fix for fast_hurdle_poisson_glmm.cpp:
-```cpp
-const double lne = (lam < 1e-10) ? eta_ki :
-                   (eneg < 1e-7)  ? -eneg  :   // lam > 16: log1p(-eneg) ≈ -eneg
-                                    std::log1p(-eneg);
-```
-Apply same threshold at line 268 in hessian().
+**HP GLMM part ✓ DONE — ALREADY IMPLEMENTED** (also documented as TODO-33): `log_one_minus_exp_neg_hp` helper in `fast_hurdle_poisson_glmm.cpp` uses `(eneg < 1e-7) ? -eneg : std::log1p(-eneg)`.
 
-Fix for fast_zero_augmented_poisson.cpp `log1mexp(x)` helper (line 12-13): for `x < -16`, i.e., `exp(x) < 1e-7`: `log1mexp(x) = log(1 - exp(x)) ≈ -exp(x)` (avoids log1p call entirely):
-```cpp
-double log1mexp(double x) {
-    if (x >= 0) return -std::numeric_limits<double>::infinity();
-    if (x < -16.0) return -std::exp(x);   // exp(x) < 1e-7; log1p(-exp(x)) ≈ -exp(x)
-    if (x > -0.693) return std::log(-std::expm1(x));
-    return std::log1p(-std::exp(x));
-}
-```
+**ZAP part ✗ DROPPED — FALSIFIED (2026-07-07).** The proposed fast-path `(eml < 1e-7) ? -eml : (lam > 0.693) ? std::log1p(-eml) : std::log(-std::expm1(-lam))` was implemented and benchmarked.
+
+Root cause of pessimization: glibc's `std::log1p(x)` already has an internal fast-path for `|x| < 2^-53`: it returns `x` directly with no transcendental computation (Taylor series `x - x²/2 + ...` collapses to `x` at machine precision). For large lambda (mean ≈ 45), `eml = exp(-lam) ≈ 2.8e-20`, so `log1p(-2.8e-20)` is already an O(1) operation internally. Our outer branch `(eml < 1e-7)` adds a branch + comparison overhead with no transcendental saving.
+
+This is distinct from the HurdleNegBin fast-path (TODO-66), which saved `std::log(trunc_denom)` where `trunc_denom = 1 - p0` near 1 — glibc's `log(x)` has no x≈1 fast-path, so that saving was real.
+
+Benchmark (n=2000, p=3, mean λ≈45, 40 rounds × 200 reps warm-start at MLE, single operator() call):
+
+| code | median (μs) | IQR |
+|---|---:|---:|
+| OLD | 1215 | [1114, 1288] |
+| NEW (fast-path) | 1383 | [1279, 1543] |
+| ratio | **0.879× (13% regression)** | Wilcoxon p≈1.0 |
+
+No source changes retained. The ZAP `operator()` correctly uses the existing two-branch `(lam > 0.693) ? log1p(-eml) : log(-expm1(-lam))` which is already optimal.
 
 ---
 
-**TODO-26: Logistic/Probit/Poisson IRLS — XtWX via weighted_crossprod** ☐
-Files: `EDI/src/fast_logistic_regression.cpp`, `EDI/src/fast_probit_regression.cpp`, `EDI/src/fast_poisson_regression.cpp:227,270`
+**TODO-117: Logistic/Probit/Poisson IRLS — XtWX via weighted_crossprod** ✓ DONE (Poisson API refactoring) / ✗ DROPPED (col-major DSYR speedup)
+Files: `EDI/src/fast_logistic_regression.cpp`, `EDI/src/fast_probit_regression.cpp`, `EDI/src/fast_poisson_regression.cpp`
 
 Root cause: IRLS computes XtWX as `X.T * diag(w) * X` or similar triple-product, creating an n×p intermediate. `weighted_crossprod(X, w)` (already in `_helper_functions.h`) uses the upper-triangular DSYR/DSYRK symmetric update — halves FLOPs and avoids the intermediate allocation. Same fix was applied to log-binomial (TODO-17).
 
-For Poisson, profiler confirms this at lines 227 and 270 (`XtWX_free.noalias() = X_f.transpose() * w_tmp.asDiagonal() * X_f`). Quasi-Poisson uses the same internal path — one fix covers both.
+**Logistic + Probit ✓ DONE — ALREADY IMPLEMENTED** (documented as TODO-21). **Poisson API refactoring ✓ DONE**: replaced the 3 inline triple-products in `fast_poisson_regression.cpp` (lines ~233, ~240, ~284) with `weighted_crossprod(X_f, w_tmp)` / `weighted_crossprod(X_f, w_final)`. Test: `test-poisson-xtwx-colmajor-dsyr.R` (7 assertions).
+
+**Col-major DSYR speedup ✗ DROPPED**: Attempted to add a col-major DSYR path to `weighted_crossprod` (column-pair loop: scale col_j by w, then dot against col_k≥j for upper triangle only). Standalone XtWX benchmark with concrete `MatrixXd` showed 1.4–3× speedup across n=500–2000, p=6–15. However, end-to-end Poisson IRLS benchmark showed:
+- n=200–2000, p=6: neutral (0× change; XtWX is small fraction of total IRLS time)
+- n=500, p=15: 12.5% regression (200→225 µs median)
+
+Root cause of regression: for large p, BLAS DGEMM (called by the triple product) outperforms p*(p+1)/2 scalar Eigen dot products due to AVX register tiling and cache blocking. The standalone speedup used concrete `MatrixXd` (fully optimized by compiler); the actual IRLS path uses `Eigen::Ref<const MatrixXd>` which prevents the same SIMD optimization. Reverted `weighted_crossprod` to triple product fallback for col-major matrices. Poisson code now uses `weighted_crossprod` (API consistency) but behaviorally identical to old triple product.
 
 ---
 
-**TODO-27: OLS/Robust — symmetric XtX via weighted_crossprod / DSYRK** ☐
-Files: `EDI/src/fast_ols_regression.cpp`, `EDI/src/fast_robust_regression.cpp`
+**TODO-118: OLS/Robust — symmetric XtX via DSYRK** ✓ DONE
+Files: `EDI/src/fast_ols.cpp`, `EDI/src/fast_robust_regression.cpp`, `EDI/src/_helper_functions.h`
 
-Root cause: `X.T * X` or `X.T * diag(w) * X` computed as full GEMM, doing 2× unnecessary work for a symmetric result. `weighted_crossprod(X, ones)` or direct DSYRK call fills only the upper triangle; copy to lower at the end. Halves FLOPs for XtX computation.
+Added `symmetric_crossprod(X)` template in `_helper_functions.h` using BLAS DSYRK (`F77_CALL(dsyrk)`), which fills only the upper triangle and copies to lower — half the FLOPs of full DGEMM for a symmetric result. Replaced all 4 `X.transpose() * X` sites in `fast_ols.cpp` and the inline `X_free.transpose() * X_free` site in `fast_robust_regression.cpp`.
+
+Benchmark (60 rounds × 500 reps, `fast_ols_with_var_cpp`):
+
+| config        | OLD median | NEW median | ratio | Wilcoxon p |
+|---------------|-----------|-----------|-------|------------|
+| n=200,  p=4   | 4 µs      | 6 µs      | 0.67  | 0.758 (ns) |
+| n=500,  p=6   | 10 µs     | 14 µs     | 0.71  | 1.000 (ns) |
+| n=1000, p=6   | 14 µs     | 16 µs     | 0.88  | 1.000 (ns) |
+| n=2000, p=6   | 24 µs     | 26 µs     | 0.92  | 0.914 (ns) |
+| n=500,  p=15  | 24 µs     | 22 µs     | 1.09  | 6e-4 ✓    |
+| n=1000, p=15  | 38 µs     | 30 µs     | 1.27  | 5e-10 ✓   |
+
+Speedup real and significant at p≥15 (27% at n=1000). No significant regression at small p (timer quantization at ~2µs resolution dominates those deltas). Correctness: 9/9 tests pass (`test-ols-symmetric-crossprod-dsyrk.R`).
 
 ---
 
-**TODO-28: Nonparametric — Wilcox rank-sum O(n²) → O(n log n)** ☐
-File: Wilcoxon source
+**TODO-119: Nonparametric — Wilcox rank-sum O(n²) → O(n log n)** ✓ DONE — ALREADY IMPLEMENTED
+File: `EDI/src/fast_wilcox_hl.cpp`
 Profiler: 16% branch-miss rate for wilcox_hl (highest of any kernel), consistent with O(n²) double loop over all pairwise comparisons. Hulsen-Lehmann estimator currently O(n²); merge-sort based U-statistic counting is O(n log n) (same algorithm as in numpy).
+Verified: `count_pairwise_diffs_leq` uses a sorted two-pointer merge (O(n_t + n_c) per call), called within a 96-iteration binary search in `select_pairwise_diff_sorted` — total O(n log n). Corresponds to TODO-25 "Wilcox HL — O(n²) → O(n log²n) sort + binary-search estimator ✓ DONE".
 
 ---
 
-**TODO-29: Nonparametric — Ridit: std::map → std::unordered_map** ☐
+**TODO-120: Nonparametric — Ridit: std::map → std::unordered_map** ✓ DONE — ALREADY IMPLEMENTED
 File: Ridit source
 `std::map<int, double>` for frequency table lookup is O(log n) per lookup. `std::unordered_map<int, double>` is O(1) amortized. For discrete count data where the map is built once and queried n times, this eliminates n × O(log n) lookups.
+Verified: ridit source uses `std::unordered_map` (no `std::map`). Corresponds to TODO-27 "Ridit — `std::map` → `std::unordered_map` + eliminate `wrap(ref_idx)` SEXP round-trip ✓ DONE".
 
 ---
 
-**TODO-30: Survival — coxph_var per-observation allocation** ☐
+**TODO-121: Survival — coxph_var per-observation allocation** ✓ DONE — ALREADY IMPLEMENTED
 File: `EDI/src/fast_coxph_regression.cpp`
 Allocates working matrices inside the observation loop in the variance computation path. Preallocate scratch outside the loop.
+Verified: `compute_robust_vcov` preallocates `U(n_total, p)`, `eta`, `exp_eta`, `r_x_exp`, `dk_over_Rk`, `ek`, `dk_ek_over_Rk`, `cum_A`, `cum_B` per-stratum outside the obs loop. No VectorXd/MatrixXd allocated inside the per-observation loops. Corresponds to TODO-30 "CoxPH compute_robust_vcov — eliminate 150 heap allocs ✓ DONE".
 
 ---
 
-**TODO-31: Nonparametric — JT test: std::map → vector + precomputed table** ☐
-File: Jonckheere-Terpstra source
+**TODO-122: Nonparametric — JT test: std::map → vector + precomputed table** ✓ DONE — ALREADY IMPLEMENTED
+File: `EDI/src/fast_jonckheere_terpstra.cpp`
 Same O(log n) map lookup replaced with O(1) vector index.
+Verified: `LogChooseTable` in `fast_jonckheere_terpstra.cpp` uses a flat `std::vector<double>` with index arithmetic — no `std::map`. Corresponds to TODO-26 "JT exact — precomputed lchoose table + flat `std::vector` for stat_prob ✓ DONE".
 
 ---
 
-**TODO-32: Survival — logrank extra O(n) passes** ☐
-File: logrank source
+**TODO-123: Survival — logrank extra O(n) passes** ✓ DONE — ALREADY IMPLEMENTED
+File: `EDI/src/fast_logrank.cpp`
 Multiple O(n) traversals that can be fused into a single pass.
+Verified: comment at line 62 reads "Fused martingale accumulators — no martingale[] array needed". Single-pass accumulation confirmed in source.
 
 ---
 
-**TODO-33: Robust regression — MAD: sort → nth_element** ☐
+**TODO-124: Robust regression — MAD: sort → nth_element** ✓ DONE — ALREADY IMPLEMENTED
 File: `EDI/src/fast_robust_regression.cpp`
 Median of absolute deviations currently sorts the residual array O(n log n). `std::nth_element` gives O(n) for just the median — half the work.
+Verified: `fast_robust_regression.cpp` uses `std::nth_element` for large n and `std::sort` for small n (dual-branch approach). `nth_element` path confirmed at lines 28 and 35.
 
 ---
 
-**TODO-34: G-computation — ordinal model: cache hessian across calls** ☐
-File: g-computation source
+**TODO-125: G-computation — ordinal model: cache hessian across calls** ✓ DONE — ALREADY IMPLEMENTED
+File: `EDI/src/fast_ordinal_regression.cpp:449-462` (gcomp finite-diff path)
 Hessian is computed 3× in a single inference pass when once suffices. Cache and reuse.
+Verified: corresponds to TODO-32 "GComp ordinal finite-diff loop — hoist temporaries outside loop ✓ DONE". Reusable perturbation and linear-predictor buffers, scalar restoration of perturbed parameters, baseline linear predictors reused across finite-diff steps.
 
 ---
 
-**TODO-35: ZOIB — std::lgamma + fast_digamma** ☐
-File: `EDI/src/fast_zoib.cpp`
-Uses `R::lgammafn` and `R::digamma` where `std::lgamma` and `fast_digamma` apply. Same pattern as TODO-14 (beta) and TODO-24.
+**TODO-126: ZOIB — std::lgamma + fast_digamma** ✓ DONE — ALREADY IMPLEMENTED
+File: `EDI/src/fast_zero_one_inflated_beta.cpp`
+Uses `R::lgammafn` and `R::digamma` where `std::lgamma` and `fast_digamma` apply. Same pattern as TODO-14 (beta) and TODO-115.
+Verified: `fast_zero_one_inflated_beta.cpp` uses `fast_digamma` (line 9 include, calls throughout) and `std::lgamma` (lines 15, 139). No `R::lgammafn` or `R::digamma` found.
 
 ---
 
-**TODO-36: Stereotype logit — hessian allocs** ☐
-File: stereotype logit source
-Hessian allocates intermediate matrices per call that can be preallocated.
+**TODO-127: Stereotype logit — hessian allocs + GEMV gradient** ✓ DONE
+File: `EDI/src/fast_stereotype_logit.cpp`
+
+Two combined optimizations in `StereotypeLogitRegression`:
+
+**1. Hessian alloc preallocations (TODO-127):** Added mutable members `m_score_v`, `m_score_cum_v` (reuse `gamma.array().exp()` + cumsum across compute_scores calls), `m_hess_H` (preallocate d×d `H` matrix in `loglik_hessian`), `m_exp_z`, `m_exp_mean_grad`, `m_exp_logits`, `m_exp_probs` (preallocate `expected_hessian` working vectors). Also reuse `m_hess_score_vals` and `m_hess_dscore_dgamma` in `loglik_grad` instead of allocating per call.
+
+**2. GEMV gradient (TODO-90):** Replaced per-row `m_X.row(i).transpose() * scalar` scatter in `loglik_grad` with a preallocated `m_beta_score_weight[i]` accumulation + single `m_X.transpose() * m_beta_score_weight` GEMV at the end. Preallocated `m_eta = m_X * beta` before the obs loop.
+
+Benchmark (60 rounds × 20 reps, `fast_stereotype_logit_with_var_cpp`, vs pre-TODO-90 baseline):
+
+| config          | OLD median | NEW median | ratio | Wilcoxon p |
+|-----------------|-----------|-----------|-------|------------|
+| n=200,  K=4     | 0.500 ms  | 0.400 ms  | 1.25× | 5e-15 ✓   |
+| n=500,  K=4     | 1.350 ms  | 1.150 ms  | 1.17× | 1e-18 ✓   |
+| n=1000, K=4     | 2.775 ms  | 2.350 ms  | 1.18× | 3e-21 ✓   |
+| n=200,  K=5     | 0.800 ms  | 0.650 ms  | 1.23× | 4e-16 ✓   |
+| n=500,  K=5     | 1.600 ms  | 1.350 ms  | 1.19× | 6e-14 ✓   |
+| n=1000, K=5     | 3.650 ms  | 3.000 ms  | 1.22× | 1e-20 ✓   |
+
+Consistent 17–25% speedup across all sizes and K, all highly significant. Correctness: 18/18 tests pass (`test-stereotype-logit-hessian-allocs.R`).
 
 ---
 
-**TODO-37: Poisson — cache delta_eta for IRLS step-halving** ☐
+**TODO-128: Poisson — cache delta_eta for IRLS step-halving** ✓ DONE
 File: `EDI/src/fast_poisson_regression.cpp:236-248`
 Each backtracking probe recomputes `X * beta_new` as a full GEMV. Precompute `delta_eta = X_free * direction` once; each probe becomes O(n) vector-add. Low priority: IRLS typically converges in 1-2 steps for well-conditioned Poisson data.
+
+Added `eta_try(n)` and `delta_eta(n)` preallocated before the IRLS loop; added `compute_neg_loglik_from_eta` lambda (O(n) scalar loop, no GEMV); replaced the step-halving loop to compute `delta_eta.noalias() = X_f * step` once per IRLS iteration, then `eta_try.noalias() = eta + step_size * delta_eta` per probe. On accept, `beta_free.noalias() += step_size * step`. Benefit: k halvings → (k−1) GEMVs saved; in the common 1-step-accepted case, cost is neutral (1 GEMV for delta_eta replaces 1 GEMV inside compute_neg_loglik).
+
+Benchmark (n=3000, p=6, bad warm start × 10 forcing step-halving every early iteration, 40 rounds × 50 reps, Wilcoxon one-sided):
+
+| code | median (ms) | IQR |
+|---|---:|---:|
+| OLD | 1.840 | [1.720, 1.960] |
+| NEW | 1.710 | [1.660, 1.800] |
+| speedup | **1.076×** | p=3.6e-4 |
+
+Correctness: `test-poisson-delta-eta-step-halving.R` (10 assertions) — all pass. Tests cover: standard fit vs `glm()`, bad-warm-start fit (triggers halving) vs `glm()`, weighted + bad warm start, score near zero at convergence, information PD, deterministic repeated calls, estimate_only consistency. Installed with `R CMD INSTALL --no-docs`.
 
 ---
 
@@ -1468,10 +1586,20 @@ Benchmarked and reverted. The source had already implemented this proposal under
 
 ---
 
-**TODO-70: adj_cat hessian — preallocate ColPivHouseholderQR workspace** ☐
+**TODO-70: adj_cat hessian — preallocate ColPivHouseholderQR workspace** ✓ RESOLVED — REJECTED
 Files: `EDI/src/` adj_cat source (AdjacentCategoryLogitNegLogLik)
 
 Root cause: adj_cat_var profile shows `makeHouseholder`, `applyHouseholderOnTheLeft`, and `ColPivHouseholderQR::computeInPlace` — a full QR factorization performed per hessian call. The augmented matrix dimensions are fixed for a given dataset, so the `ColPivHouseholderQR` object and its internal workspace can be preallocated as a member field. Call `compute()` in-place each evaluation rather than constructing a new QR object.
+
+**RESULT (2026-07-06) — REJECTED.** Profiled the actual call path: `ColPivHouseholderQR` is from `try_safe_ols_solve` (cold-start OLS), not from within `hessian()`. The `makeHouseholder`/`applyHouseholderOnTheLeft` symbols come from `SelfAdjointEigenSolver` inside `symmetric_pseudo_inverse`, called once per fit (not per hessian). Implemented the preallocated `mutable Eigen::VectorXd` + `mutable Eigen::MatrixXd` buffer pattern as member fields (replacing `std::vector<double>` locals and the local `MatrixXd hess`). Isolated hessian benchmark at n=1000, K=6, p=3, 30 rounds × 200 reps:
+
+| path | old median | new median | ratio | Wilcoxon p |
+|---|---:|---:|---:|---:|
+| HESS | 0.140 ms | 0.148 ms | **0.95x (5% regression)** | 0.026 |
+| VAR (warm) | 0.40 ms | 0.40 ms | 1.00x (flat) | — |
+| DISTR (n=500, nsim=500) | 659 ms | 668 ms | ~1.00x (noise) | — |
+
+Root cause of regression: mutable Eigen member fields (`m_exp_alpha`, `m_prob`, `m_cdf`) prevent the compiler from proving no aliasing with `m_X.data()` inside the `const` obs loop — the same LICM/aliasing anti-pattern as `mutable std::vector` (see memory feedback). The K-length vectors are small (K-1 ≈ 5 doubles), so allocation overhead is negligible compared to the n=500–1000 obs computation. Change reverted.
 
 ---
 
@@ -1527,7 +1655,7 @@ Verification found this optimization already present. `mn_ci_cpp` in `miettinen_
 **TODO-76: zhang_fisher_pval — std::lgamma for chi-squared CDF** ✓ DONE
 Files: zhang_fisher_pval source
 
-Root cause: `Rf_chebyshev_eval` (#1 hotspot) + `Rf_lgammacor` + `__log1p_fma` — the Fisher P-value computation uses a chi-squared CDF that internally calls R's incomplete gamma via Chebyshev series. Replace `R::lgammafn` calls with `std::lgamma` to bypass the Chebyshev/Stirling dispatch layer. Same pattern as TODO-14 and TODO-24.
+Root cause: `Rf_chebyshev_eval` (#1 hotspot) + `Rf_lgammacor` + `__log1p_fma` — the Fisher P-value computation uses a chi-squared CDF that internally calls R's incomplete gamma via Chebyshev series. Replace `R::lgammafn` calls with `std::lgamma` to bypass the Chebyshev/Stirling dispatch layer. Same pattern as TODO-14 and TODO-115.
 
 Source inspection corrected the mechanism: `zhang_exact_fisher_pval_cpp` does not use a chi-squared CDF; its noncentral-hypergeometric support loop called `R::lchoose` twice per table, which reaches R's log-gamma/Chebyshev machinery. Replaced those calls with direct integer log-combinations using `std::lgamma`, hoisting the two fixed row-factorial terms outside the support loop. Support enumeration, log-sum-exp normalization, relative tolerance, and two-sided probability ordering are unchanged. To control observed machine drift, the final benchmark loaded the old and new shared libraries simultaneously and used randomized paired order for 60 rounds × 5,000 calls: 0.00690ms → 0.00640ms median (1.078× throughput; bootstrap 95% CI 1.062×–1.129×; paired one-sided Wilcoxon p=4.83e-8), with IQRs 0.00680–0.00720ms and 0.00600–0.00660ms. The new `test-zhang-fisher-std-lgamma.R` test passed all 7 assertions, comparing four central/noncentral cases against `stats::fisher.test` and checking degenerate and invalid inputs. Installed with `R CMD INSTALL --no-docs`.
 
@@ -1538,7 +1666,7 @@ Source inspection corrected the mechanism: `zhang_exact_fisher_pval_cpp` does no
 **TODO-77: kk21_beta_wts — std::lgamma + fast_digamma** ✓ DONE
 Files: kk21 beta weights source (kk21_beta_weights_cpp)
 
-Root cause: `Rf_chebyshev_eval` (#1 hotspot, ~41% of samples) + `Rf_gammafn` + `Rf_lgammafn_sign` — the beta distribution weight function uses R's lgamma dispatch, which internally calls Chebyshev evaluation for the Stirling series. Replace `R::lgammafn` → `std::lgamma` and `R::digamma` → `fast_digamma`. Same pattern as TODO-14 (beta regression) and TODO-24 (negbin).
+Root cause: `Rf_chebyshev_eval` (#1 hotspot, ~41% of samples) + `Rf_gammafn` + `Rf_lgammafn_sign` — the beta distribution weight function uses R's lgamma dispatch, which internally calls Chebyshev evaluation for the Stirling series. Replace `R::lgammafn` → `std::lgamma` and `R::digamma` → `fast_digamma`. Same pattern as TODO-14 (beta regression) and TODO-115 (negbin).
 
 Inspection found no digamma calls in either beta helper; those calls belong to the adjacent negative-binomial helpers tracked by TODO-78. Replaced all six beta-path `R::lgammafn` call sites in the univariate and stepwise/multivariate precision-grid loops with `std::lgamma`, and hoisted the invariant `lgamma(phi)` outside each observation loop. Final timing used single-thread process CPU time with balanced randomized ABBA/BAAB ordering: 30 rounds × 50 complete N=500 calls per build. Before and after medians were 7.110ms (IQR 5.930–8.595ms) and 5.340ms (IQR 3.935–6.815ms); the median paired speedup was 1.404× (bootstrap 95% CI 1.262×–1.501×; paired one-sided Wilcoxon p=1.36e-4). The new `test-kk21-beta-std-lgamma.R` test passed all 5 assertions, reproducing IRLS, precision-grid selection, and information-based weights independently in R and checking edge/stepwise invariants. Old/new ordinary and stepwise beta-weight vectors were also bit-identical. Installed with `R CMD INSTALL --no-docs`.
 
@@ -1558,7 +1686,7 @@ Inspection found no explicit `pow` expression in either negative-binomial helper
 **TODO-79: kk21_stepwise_logistic_wts + kk21_survival_wts — XtWX via weighted_crossprod** ✓ DONE
 Files: kk21_stepwise_logistic_weights_cpp, kk21 survival weights source (univariate_weibull_tstat)
 
-Root cause: `lhs_process_one_packet` (#1 in kk21_stepwise_logistic_wts; also visible in kk21_survival_wts) — the stepwise logistic and Weibull-based survival weight functions re-fit internal regressions using the full XtWX GEMM triple-product. Apply `weighted_crossprod` (DSYRK symmetric update, same as TODO-26) to halve FLOP count. If the internal re-fits share code paths with fast_logistic/fast_weibull, TODO-26's fix propagates automatically; otherwise apply explicitly here.
+Root cause: `lhs_process_one_packet` (#1 in kk21_stepwise_logistic_wts; also visible in kk21_survival_wts) — the stepwise logistic and Weibull-based survival weight functions re-fit internal regressions using the full XtWX GEMM triple-product. Apply `weighted_crossprod` (DSYRK symmetric update, same as TODO-117) to halve FLOP count. If the internal re-fits share code paths with fast_logistic/fast_weibull, TODO-117's fix propagates automatically; otherwise apply explicitly here.
 
 The stepwise logistic path was already fully converted: `logistic_reduced_fit_for_score_test` uses `weighted_crossprod` and `weighted_crossprod_rhs` for both IRLS and final information. The remaining generic product was the fixed two-column `[1, x]` Weibull IRLS in `univariate_weibull_tstat`. A direct `weighted_crossprod` substitution showed no measurable gain for this tiny matrix, so the final implementation removes the GEMM entirely: one observation pass accumulates the symmetric 2×2 information matrix and two-element RHS, eliminating `sqrt_w`, `Xw`, `yw`, and `Xw.transpose() * Xw`. Final survival timing used single-thread process CPU time with balanced randomized ABBA/BAAB ordering, 30 rounds × 500 complete N=500 calls per build: 0.8080ms → 0.7180ms median (IQR 0.7140–0.9675ms → 0.5565–0.8445ms), with median paired speedup 1.226× (bootstrap 95% CI 1.022×–1.447×; paired one-sided Wilcoxon p=0.0162). The unchanged logistic control used 30 rounds × 200 calls and was neutral at 1.007× (CI 0.955×–1.044×, p=0.525). The new `test-kk21-weighted-crossprod.R` tests independently reproduce both logistic score-test selection and Weibull IRLS weights in R; both pass. Old/new logistic outputs are bit-identical, and survival weights agree to maximum absolute error `4.44e-15`. Installed with `R CMD INSTALL --no-docs`.
 
@@ -1566,88 +1694,118 @@ The stepwise logistic path was already fully converted: `logistic_reduced_fit_fo
 
 ## Permutation generators (new from 2026-07-04 run)
 
-**TODO-80: generate_permutations_atkinson — preallocate QR + LU workspace** ☐
+**TODO-80: generate_permutations_atkinson — preallocate QR + LU workspace** ✓ DONE
 Files: `EDI/src/generate_permutations_atkinson_cpp.cpp` (or equivalent)
 
 Root cause: `FullPivHouseholderQR::computeInPlace` (#1) + `FullPivLU::computeInPlace` + `lhs_process_one_packet` (GEMM) + `_int_malloc` per permutation. The Atkinson D-optimal design algorithm performs QR and LU factorizations for each candidate permutation, with matrix dimensions fixed by the design size. Preallocate `Eigen::FullPivHouseholderQR` and `Eigen::FullPivLU` objects outside the permutation loop and call `compute()` in-place each iteration.
 
+Implemented in `EDI/src/generate_permutations.cpp`. The QR inputs depend only on the fixed covariate matrix and subject index, not simulated assignments, so the implementation now computes each subject's varying/independent columns and processed design once before the simulation loop, reusing one `FullPivHouseholderQR` object. Assignment-dependent LU work still runs per subject/simulation, but now reuses one `FullPivLU` object plus maximum-sized design, crossproduct, inverse, and current-row workspaces. The helper also reads prior integer assignments directly instead of allocating and converting a temporary `VectorXd`. RNG call order and factorization arithmetic are unchanged. Balanced randomized ABBA/BAAB timing used single-thread process CPU time, matched seeds, and 30 rounds × 6 complete profile calls per build (`n=100`, `p=4`, `nsim=100`): 47.250ms → 19.500ms median (IQR 43.375–49.958ms → 17.375–21.333ms), with median paired speedup 2.443× (bootstrap 95% CI 2.399×–2.513×; paired one-sided Wilcoxon p=9.13e-7). The new `test-atkinson-permutation-workspaces.R` test passed all 7 assertions covering seeded reproducibility, dimensions, binary assignments, rank deficiency, and treatment symmetry. Matched-seed old/new outputs were bit-identical for both full-rank and rank-deficient designs. Installed with `R CMD INSTALL --no-docs`.
+
 ---
 
-**TODO-81: generate_permutations_pocock_simon — eliminate per-permutation SEXP allocation** ☐
+**TODO-81: generate_permutations_pocock_simon — eliminate per-permutation SEXP allocation** ✓ DONE
 Files: `EDI/src/generate_permutations_pocock_simon_cpp.cpp` (or equivalent)
 
 Root cause: `Rf_allocVector3` + `SETCDR` per permutation — R linked-list construction inside the generation loop (178 hits on `Rf_allocVector3`/`SETCDR`). Currently appends one SEXP per permutation, triggering allocation + GC pressure. Fix: accumulate permutations into a `std::vector<std::vector<int>>` inside the loop; convert to R list once at the end. Secondary: `__strcmp_avx2` (string comparison) also visible — see TODO-84 for the strata-key pattern.
 
+Inspection found the output was already one preallocated `IntegerMatrix`, not a linked-list append. The actual SEXP/heap churn came from constructing an R `NumericMatrix` count table per simulation, an R row vector and `std::vector<double>` per subject, and repeatedly indexing the R level matrix. The implementation now validates and converts one-based global level rows once into a row-major zero-based C++ buffer, reuses one integer count buffer across simulations, and uses a stack two-element imbalance array. It also adds bounds/weight-length validation before pointer indexing. The profiler fixture incorrectly supplied zero-based, non-offset factor levels (out-of-bounds for this API); it now generates valid one-based global count rows. Balanced randomized ABBA/BAAB timing used single-thread process CPU time, matched seeds, and 30 rounds × 10 complete profile calls per build (`n=200`, three two-level factors, `nsim=500`): 17.500ms → 2.450ms median (IQR 17.300–17.800ms → 2.400–2.600ms), with median paired speedup 7.320× (bootstrap 95% CI 7.020×–7.417×; paired one-sided Wilcoxon p=9.10e-7). The new `test-pocock-simon-permutation-buffers.R` test passed all 7 assertions covering seeded reproducibility, dimensions, binary assignments, treatment symmetry, and invalid inputs. Matched-seed old/new outputs were bit-identical. Installed with `R CMD INSTALL --no-docs`.
+
 ---
 
-**TODO-82: generate_permutations_cluster — eliminate per-permutation R linked list** ☐
+**TODO-82: generate_permutations_cluster — eliminate per-permutation R linked list** ✓ DONE
 Files: cluster permutation generator source
 
 Root cause: `SETCDR` + `unif_rand` per permutation — same R linked-list append pattern as TODO-50. Accumulate in `std::vector`, convert to R list once at the end.
+
+Inspection found the output was already written directly into one preallocated `IntegerMatrix`; there was no per-permutation linked-list append. The repeated R work came from extracting every cluster `IntegerVector` from the input `List` inside every simulation. The implementation now validates and flattens cluster membership once into a contiguous zero-based subject-index vector plus cluster offsets, then iterates only over C++ memory in the simulation loop. Cluster order and last-write-wins behavior for overlapping clusters are preserved, as is the one-RNG-draw-per-cluster sequence. Balanced randomized ABBA/BAAB timing used single-thread process CPU time, matched seeds, and 30 rounds × 50 complete profile calls per build (`n=1000`, 20 clusters of 50, `nsim=500`): 2.390ms → 0.480ms median (IQR 2.250–2.535ms → 0.445–0.560ms), with median paired speedup 4.863× (bootstrap 95% CI 4.604×–5.182×; paired one-sided Wilcoxon p=9.13e-7). The new `test-cluster-permutation-flat-indices.R` test passed all 19 assertions covering seeded reproducibility, dimensions, binary values, within-cluster equality, target marginal probability, and invalid indices. Matched-seed old/new outputs were bit-identical. Installed with `R CMD INSTALL --no-docs`.
 
 ---
 
 ## Redraw functions (new from 2026-07-04 run)
 
-**TODO-83: atkinson_redraw — preallocate QR/GEMM workspace** ☐
+**TODO-83: atkinson_redraw — preallocate QR/GEMM workspace** ✓ DONE
 Files: `EDI/src/atkinson_redraw_batch_cpp.cpp` (or equivalent)
 
 Root cause: `lhs_process_one_packet` (GEMM, #1) + `ColPivHouseholderQR::computeInPlace` per call. Same root cause as TODO-80 (Atkinson permutations) but in the sequential redraw path. Preallocate QR object and scratch matrices as member fields; call `compute()` in-place each redraw.
 
+Implemented function-local maximum-sized workspaces in `EDI/src/atkinson_redraw_batch.cpp` (the exported function has no persistent objective/member lifetime). A pre-sized `ColPivHouseholderQR` and `FullPivLU` are reused across subject steps via `compute()`, together with reusable varying-column, processed-design, augmented-design, crossproduct, inverse, and current-row buffers. The varying/independent column vectors retain capacity, and the helper now reads prior assignments directly rather than allocating `w_prev`, row-segment, and augmented-current-row vectors. Active matrix blocks and QR threshold are unchanged, preserving factorization arithmetic and RNG order. Balanced randomized ABBA/BAAB timing used single-thread process CPU time, matched seeds, and 30 rounds × 200 complete profile calls per build (`n=100`, `p=4`): 0.4175ms → 0.3600ms median (IQR 0.4013–0.4388ms → 0.3500–0.3888ms), with median paired speedup 1.155× (bootstrap 95% CI 1.124×–1.173×; paired one-sided Wilcoxon p=1.67e-6). The new `test-atkinson-redraw-workspaces.R` test passed all 7 assertions covering seeded reproducibility, binary/finite output, rank deficiency, and treatment symmetry. Matched-seed old/new outputs were bit-identical for both full-rank and rank-deficient designs. Installed with `R CMD INSTALL --no-docs`.
+
 ---
 
-**TODO-84: pocock_simon_redraw_w — eliminate per-call SEXP allocation** ☐
+**TODO-84: pocock_simon_redraw_w — eliminate per-call SEXP allocation** ✓ DONE
 Files: pocock_simon_redraw_w source (pocock_simon_assign_cpp)
 
 Root cause: `Rf_allocVector3` + `SETCDR` per redraw call — allocating an R structure on every arm assignment within the redraw loop. Use a pre-allocated C++ buffer and return as a fixed-size integer vector, or accumulate into `std::vector<int>` and wrap once at the end.
+
+The output was already one fixed-size `IntegerVector`; the hot allocations came from an R `NumericMatrix` count table, an R row vector per subject, and repeated calls to the generic assign helper, which allocates `std::vector` imbalance/count buffers. `pocock_simon_redraw_w_cpp` now validates and converts one-based global level rows once, uses one C++ integer count buffer and a stack two-element imbalance array, and writes directly to the output vector. The original redraw tie semantics are preserved exactly: ties consume only the `prob_T` draw and skip `p_best`. The invalid zero-based profiler fixtures for redraw and both standalone assign kernels were corrected to one-based global rows. Balanced randomized ABBA/BAAB timing used single-thread process CPU time, matched seeds, and 30 rounds × 1,000 complete profile redraws per build (`n=200`, three factors): 0.1485ms → 0.0090ms median (IQR 0.1365–0.1545ms → 0.0080–0.0100ms), with median paired speedup 16.819× (bootstrap 95% CI 15.500×–17.800×; paired one-sided Wilcoxon p=9.12e-7). The new `test-pocock-simon-redraw-buffers.R` test passed all 5 assertions, including exact matched-seed agreement with an independent R implementation and invalid-input checks. Matched-seed old/new C++ outputs were bit-identical. Installed with `R CMD INSTALL --no-docs`.
 
 ---
 
 ## Bootstrap index generators (new from 2026-07-04 run)
 
-**TODO-85: stratified_bootstrap_indices — replace string strata keys with integer IDs** ☐
+**TODO-85: stratified_bootstrap_indices — replace string strata keys with integer IDs** ✓ DONE
 Files: `EDI/src/stratified_bootstrap_indices_cpp.cpp` (or equivalent)
 
 Root cause: `__memcmp_avx2_movbe` (AVX2-accelerated string compare) visible in the hot path. Strata are represented as strings in the C++ layer, requiring string comparison on every sample assignment. Pre-convert strata labels to integer indices at the R layer (`match(strata, unique(strata))` or `as.integer(as.factor(strata))`) before calling C++; C++ then compares `int`s (single instruction) rather than byte strings.
 
+Added a native integer-ID path to `stratified_bootstrap_indices_cpp` and updated all blocking, optimal-blocking, SPBR, and random-block-size bootstrap callers to pass dense IDs computed once with `match(strata, unique(strata))`. The profiler now exercises integer IDs. The original character path remains available for backward compatibility. The integer implementation uses `std::map<int, std::vector<int>>`, eliminating string construction and byte comparisons while retaining sorted-group sampling and the final global shuffle. Balanced randomized ABBA/BAAB timing used single-thread process CPU time and 30 rounds × 1,000 complete profile calls per build (five strata × 200): 0.0635ms → 0.0180ms median (IQR 0.0610–0.0660ms → 0.0170–0.0198ms), with median paired speedup 3.471× (bootstrap 95% CI 3.389×–3.556×; paired one-sided Wilcoxon p=9.08e-7). The new `test-stratified-bootstrap-integer-ids.R` test passed all 7 assertions covering exact stratum-size preservation, valid indices, character fallback, and marginal uniformity. The legacy helper uses a private `random_device`-seeded generator, so matched-seed equality is unavailable; both old and new benchmark outputs independently satisfied the exact stratification invariants. Installed with `R CMD INSTALL --no-docs`.
+
 ---
 
-**TODO-86: bootstrap_m_indices — consolidate dual RNG paths** ☐
+**TODO-86: bootstrap_m_indices — consolidate dual RNG paths** ✓ DONE (implemented alongside TODO-91)
 Files: bootstrap_m_indices source
 
 Root cause: Both `unif_rand` and `Rf_runif` appear in the profile — two different call paths for uniform random draws in the same function. Consolidate to `unif_rand` (the standard R RNG API used everywhere else); `Rf_runif` duplicates state tracking and adds unnecessary dispatch overhead.
+
+Inspection showed that the current `EDI/src/bootstrap_match_indices.cpp` had already received the stronger TODO-91 implementation: `bootstrap_m_indices_cpp` consumes one `R::unif_rand()` value to seed a local `std::mt19937_64`, then uses unbiased Lemire bounded draws for every reservoir and matched-pair selection. There is no remaining `R::runif`/`Rf_runif` path. The exact pre-consolidation implementation was reconstructed from the parent of commit `85ba97e5`; it used `R::runif()` for every sampled index. Noise-controlled BAAB timing used process CPU time, two passes per build, 25 rounds per pass, and 50 complete profiler-sized calls per round (2,500 timed calls per build; `n_reservoir=500`, `m=250`, `B=500`): 5.330ms → 3.240ms median (IQR 5.160–5.495ms → 3.120–3.395ms), a 1.645× speedup (independent bootstrap 95% CI 1.586×–1.693×; one-sided Wilcoxon p=3.53e-18). The timing distributions did not overlap (old minimum 4.94ms, new maximum 4.18ms). The dedicated `test-bootstrap-m-local-rng.R` test passed all 11 assertions covering seeded reproducibility, dimensions, intact pair sampling, reservoir and pair marginal uniformity, and reservoir-only/pair-only boundaries. Installed with `R CMD INSTALL --no-docs`.
 
 ---
 
 ## Post-fit variance helpers (new from 2026-07-04 run)
 
-**TODO-87: gcomp_frac_logit_post_fit_var — eliminate per-bootstrap Rf_allocVector3** ☐
+**TODO-87: gcomp_frac_logit_post_fit_var — eliminate per-bootstrap Rf_allocVector3** ✓ DONE
 Files: `EDI/src/gcomp_logistic_post_fit_cpp.cpp` (or equivalent)
 
 Root cause: `Rf_allocVector3` visible alongside `lhs_process_one_packet` (GEMM) and `R_gc_internal` — a new R vector (SEXP) is being allocated per bootstrap replicate inside `gcomp_logistic_post_fit_cpp`. Pre-allocate once in the outer C++ function and overwrite in-place across replicates to eliminate per-replicate GC pressure.
+
+Inspection corrected the profile interpretation: the post-fit helper contains no bootstrap loop. The avoidable allocation was `gcomp_fractional_logit_post_fit_cpp` calling the public logistic helper, materializing its complete 10-element R list (including three risk-ratio outputs that fractional logit discards), and then constructing a second 7-element R list. The common calculation now returns a native `LogisticPostFitResult` containing moved Eigen results and scalar fields; each public wrapper materializes exactly its own R result once. Noise-controlled BAAB timing used process CPU time, two passes per build, 30 rounds per pass, and 5,000 complete profiler-sized calls per round (300,000 timed calls per build; `N=200`, six design columns): 0.019300ms → 0.017200ms median (IQR 0.017950–0.020400ms → 0.016750–0.017950ms), a 1.122× speedup / 10.9% time reduction (independent bootstrap 95% CI 1.069×–1.158×; one-sided Wilcoxon p=2.53e-11). Baseline and optimized result lists were byte-for-byte identical. The dedicated `test-gcomp-fractional-post-fit-native-result.R` test passed all 19 assertions against an independent R sandwich-covariance and delta-method implementation, including the shared logistic risk-difference/risk-ratio outputs and retained validation errors. Installed with `R CMD INSTALL --no-docs`.
 
 ---
 
 ## Additional findings from direct perf report analysis (2026-07-04)
 
-**TODO-88: Ordinal cauchit — fast_atan approximation for cauchit link** ☐
-File: `EDI/src/fast_ordinal_cauchit_regression.cpp`, `EDI/src/_helper_functions.h`
+**TODO-88: Ordinal cauchit — fast_atan approximation for cauchit link** ✓ DONE
+Files: `EDI/src/ordinal_fixed_link_helpers.h`, `EDI/src/fast_ordinal_cauchit_regression.cpp`
 
 Root cause: `__atan_fma` accounts for 19.8% of `ord_cauchit_est` samples — the second largest hotspot behind the operator() loop itself. The cauchit CDF `F(x) = 0.5 + atan(x)/π` requires one `atan` call per threshold per observation. For K=5 categories and n=400 obs: 1,600 atan calls per optimizer step; for K=5, n=2000: 8,000 calls. `__atan_fma` is glibc's AVX2-tuned atan, but a 9-term minimax polynomial on `[-6, 6]` with argument reduction `atan(x) = π/2 − atan(1/x)` for |x|>6 achieves ≤1e-10 relative error and is ~2–3× faster (avoids the range-reduction table lookup in glibc). Implement as `fast_atan(x)` in `_helper_functions.h`. Apply inside `FixedOrdinalRegression` for the cauchit CDF and PDF evaluations. Guard: validate ≤1e-9 max error on a grid of x values before committing.
 
----
-
-**TODO-89: Ordinal cloglog — cache exp(x) to avoid double exp per CDF eval** ☐
-File: `EDI/src/fast_ordinal_cloglog_regression.cpp` (or wherever cloglog CDF is evaluated)
-
-Root cause: `ord_cloglog_est` shows 26% `__ieee754_exp_fma` + 11% `exp@@GLIBC_2.29` = **37% total exp**. The cloglog CDF is `F(x) = 1 − exp(−exp(x))`: two sequential `exp` calls per evaluation. The inner `e_x = exp(x)` is the value needed for both the CDF (`exp(-e_x)`) and its derivative (`e_x * exp(-e_x)`). Current code likely calls `exp` twice per threshold per obs. Fix: compute `e_x = std::exp(x)` once; then `F = 1 − std::exp(−e_x)` and `f = e_x * (1−F)`. Also add fast-path: for `x > 37`, `e_x > 1.17e16` so `exp(-e_x) < 1e-16` and `F ≈ 1.0` — skip the second exp entirely.
+Implemented a more accurate range-reduced rational approximation in `ordinal_fixed_link_helpers.h`. A direct polynomial across `[-6,6]` cannot realistically provide the requested near-double-precision guard because of `atan`'s nearby complex singularities. The retained implementation reduces to `|x| <= tan(pi/8)` using pi/4 and reciprocal identities, then evaluates a degree-5/5 rational minimax approximation; it preserves signed zero, infinities, NA, and NaN. Only the CDF changes because the cauchit PDF and its derivative were already exact rational expressions with no `atan` call. A dense pre-integration sweep across central values and magnitudes from 1e-300 to 1e300 found 2.22e-16 maximum absolute error versus libm `atan`. Noise-controlled BAAB timing used process CPU time, two passes per build, 30 rounds per pass, and 200 complete profile fits per round (12,000 timed fits per build; `N=1000`, five predictors, three response levels): 0.6550ms → 0.5825ms median (IQR 0.6250–0.6963ms → 0.5600–0.6200ms), a 1.125× speedup / 11.1% time reduction (independent bootstrap 95% CI 1.084×–1.179×; one-sided Wilcoxon p=3.06e-11). Both builds converged in seven iterations and fitted parameters differed by at most 1.12e-16. The dedicated `test-ordinal-cauchit-fast-atan.R` test passed all 8 assertions over a 440,000-point error grid and exact-`pcauchy` numerical score/Hessian references; the existing scratch-buffer and arbitrary-level tests passed all 5 assertions. Installed with `R CMD INSTALL --no-docs`.
 
 ---
 
-**TODO-90: Stereotype logit — GEMV refactor for loglik_grad** ☐
+**TODO-89: Ordinal cloglog — cache exp(x) to avoid double exp per CDF eval** ✓ DONE
+Files: `EDI/src/ordinal_fixed_link_helpers.h`, `EDI/src/fast_ordinal_cloglog_regression.cpp`
+
+Root cause: `ord_cloglog_est` shows 26% `__ieee754_exp_fma` + 11% `exp@@GLIBC_2.29` = **37% total exp**. The cloglog CDF is `F(x) = 1 − exp(−exp(x))`: two sequential `exp` calls per evaluation. The inner `e_x = exp(x)` is the value needed for both the CDF (`exp(-e_x)`) and its derivative (`e_x * exp(-e_x)`). Current code calls separate `cdf()` and `pdf()` inline functions with the same `z` argument.
+
+Implemented fused helpers `cdf_and_pdf(link, z, F, f)` and `cdf_pdf_fpdf(link, z, F, f, fp)` in the `edi_ordinal` namespace. `FixedOrdinalRegression::operator()`, `hessian()`, and `expected_hessian()` now use those helpers instead of separate `cdf()`/`pdf()`/`pdf_derivative()` calls. For the cloglog link, each endpoint now computes `e_z = exp(z)` and `exp(-e_z)` once, then derives `F`, `f = e_z * exp(-e_z)`, and `f' = f * (1 - e_z)`. The implementation preserves the existing saturation fast paths (`z > 5` returns `F=1, f=0`; `z < -37` returns zero), which are stronger than the proposed `z > 37` guard and are already double-equivalent for the CDF at the upper threshold. Added `fast_cloglog_link_eval_cpp` only as an internal test hook for direct endpoint validation.
+
+Noise-controlled benchmark used clean before/after installs with `R CMD INSTALL --no-docs --preclean`. The before build was the saved pre-TODO-89 source with TODO-88's cauchit `fast_atan` retained; the after build was the optimized source. BAAB timing used separate R processes, process CPU time, 30 rounds × 500 complete profiler-sized `ord_cloglog_est` fits per phase (`N=1000`, five predictors, three response levels), for 60,000 timed fits total. Combined medians: 0.6300ms → 0.3700ms per fit (IQR 0.6255–0.6385ms → 0.3620–0.3820ms), a 1.703× speedup / 41.3% time reduction. Independent bootstrap 95% CI for the speedup: 1.679×–1.725×; one-sided Wilcoxon p=1.74e-21. All four benchmark phases converged in six iterations, and before/after fitted parameters differed by at most 4.86e-17.
+
+Correctness: `test-ordinal-cloglog-cached-exp.R` passed all 9 assertions, checking direct CDF/PDF/PDF' values against independent formulas and score/Hessian against numerical derivatives of an independent R likelihood. The pre-existing `test-ordinal-cloglog-exp-cache.R` also passed all 7 assertions. A standalone `ordinal::clm(link="cloglog")` equivalence check passed. Installed with `R CMD INSTALL --no-docs --preclean`.
+
+---
+
+**TODO-90: Stereotype logit — GEMV refactor for loglik_grad** ✓ DONE
 File: `EDI/src/fast_stereotype_logit.cpp`
 
 Root cause: `StereotypeLogitRegression::loglik_grad` accounts for 36–37% of both `stereotype_est` and `stereotype_var` samples. The gradient function likely accumulates per-observation rank-1 outer products: `gradient += score_i * x_i.T` (same scatter anti-pattern fixed by TODO-15/16/62 for ZIP/ZINB/NegBin). Fix: accumulate scalar score weights `w_i` for each parameter block into a preallocated weight vector, then apply a single `X.transpose() * w` GEMV after the observation loop. Also preallocate the per-obs working vectors `logit_grad(K)` and `logit_hess(K)` flagged in TODO-36 (hessian allocs) — the gradient path has the same per-obs allocation pattern.
+
+Implemented reusable buffers in `StereotypeLogitRegression` for `eta = X * beta`, per-observation logits/probabilities, and the beta score weights. `loglik_grad()` now computes `eta` once per call, accumulates one scalar beta score weight per observation inside the observation loop, and applies a single `X.transpose() * w` GEMV after the loop. The gamma-gradient path was also tightened by replacing a per-observation temporary expected-score vector with direct scalar accumulation. The Hessian and expected-Hessian paths now reuse their own per-call working storage and share the precomputed `eta` vector instead of repeatedly evaluating `X.row(i).dot(beta)`.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs for both the saved pre-TODO-90 source and the optimized source. Timing used separate R processes, process CPU time, two before phases and two after phases, 30 rounds per phase, 20 complete fits per round for each kernel (`stereotype_est`: `N=1000`; `stereotype_var`: `N=200`; five predictors; three response levels), for 1,200 timed fits per build per kernel. Combined medians: `stereotype_est` 1.3000ms → 1.1000ms per fit (IQR 1.2500–1.4000ms → 1.0500–1.1500ms), a 1.182× speedup / 15.4% time reduction (independent bootstrap 95% CI 1.182×–1.286×; one-sided Wilcoxon p=5.45e-15). `stereotype_var` improved 0.3000ms → 0.2500ms per fit (IQR 0.3000–0.3500ms → 0.2500–0.2500ms), a 1.200× speedup / 16.7% time reduction (bootstrap 95% CI 1.200×–1.200×; one-sided Wilcoxon p=1.28e-12). All four benchmark phases converged, and before/after fitted parameters differed by at most 1.11e-16 for `estimate_only` and 2.78e-16 for the variance path.
+
+Correctness: added `test-stereotype-logit-gemv-gradient.R`, which checks the C++ score/Hessian against numerical derivatives of an independent R likelihood and verifies repeated calls are exactly repeatable with the new mutable scratch buffers. The dedicated test passed all 4 assertions. Existing standalone stereotype checks for K=2 `glm(binomial)` equivalence, K=3 score near zero at the MLE, and K=3 Hessian finite-difference agreement also passed.
 
 ---
 
@@ -1854,23 +2012,26 @@ Decomposition: TODO-99 FULL was 4.00ms (1.08x over original) → TODO-100 takes 
 
 ---
 
-**TODO-101: DepCensTransformLikelihood — replace R::pnorm/dnorm with inline C++ in per-observation loop** ☐
-Files: `EDI/src/fast_survival_models_optim.cpp` (DepCensTransformLikelihood, lines 241–304, 328–400)
+**TODO-101: DepCensTransformLikelihood — replace R::pnorm/dnorm with inline C++ in per-observation loop** ✓ DONE
+Files: `EDI/src/fast_survival_models_optim.cpp`, `EDI/src/fast_erfc.h`
 
-Root cause: The `operator()` inner loop (line 241, n=500 iterations) calls `R::pnorm` twice (lines 252–253) and `R::dnorm` twice (lines 246–247, 259–260) per observation per gradient evaluation. `hessian()` likewise calls `R::pnorm` twice (lines 332–333) and `R::dnorm` twice (lines 334–335) per observation. `R::pnorm` and `R::dnorm` are costly R-interface calls that go through R's parameter dispatch. `perf annotate` shows `Rf_pnorm_both` at 23/277 total samples (8.3%) in the estimate kernel — disproportionately high given the kernel only runs 0.3s of C++.
+Root cause: `R::pnorm` and `R::dnorm` per-observation calls go through R's parameter dispatch; `Rf_pnorm_both` at 8.3% of est-kernel samples.
 
-Fixes (in priority order):
-1. Replace `R::pnorm(w, 0.0, 1.0, 1, 1)` (log lower-tail normal CDF) with inline: `std::log(0.5 * fast_erfc(-w * M_SQRT1_2))` using the existing `fast_erfc` from `_helper_functions.h`. Or add `fast_log_pnorm(double w)` helper.
-2. Replace `R::dnorm(ze, 0.0, 1.0, 1)` (log normal PDF) with the inline constant: `-0.5 * ze * ze - M_LN_SQRT_2PI` (where `M_LN_SQRT_2PI ≈ 0.9189385`). This avoids all R dispatch.
-3. Replace `std::pow(one_minus_rho_sq, 1.5)` (lines 269–270, 342–343) with `one_minus_rho_sq * std::sqrt(one_minus_rho_sq)` — `pow(x, 1.5)` calls the generic libm pow; multiplication + sqrt is faster.
-4. Promote `d_ll_d_mu_event` and `d_ll_d_mu_cens` (lines 235–236) to preallocated member fields to avoid per-call zero-vector allocation.
+**Implemented (2026-07-07):** All four fixes applied:
+1. Added `fast_log_pnorm(x)` and `fast_log_dnorm(x)` to `fast_erfc.h`; replaced all `R::pnorm(w,0,1,1,1)` → `fast_log_pnorm(w)` and `R::dnorm(z,0,1,1)` → `fast_log_dnorm(z)` in `operator()` and `hessian()` (8 R-dispatch calls per obs eliminated)
+2. Replaced `std::pow(one_minus_rho_sq, 1.5)` with precomputed `omrs_1p5 = omrs * sqrt(omrs)` (hoisted outside loop in both `operator()` and `hessian()`); `pow(x, 2.5)` → `omr2_2p5 = omr2 * omr2 * sqrt(omr2)` in `hessian()`
+3. Promoted `d_ll_d_mu_event`/`d_ll_d_mu_cens` to `mutable Eigen::VectorXd` member fields; replaced per-call `VectorXd::Zero(m_n)` allocation with `.setZero()`
 
-Expected speedup: 2×–3× for the likelihood + gradient inner loop; hessian improvement similar.
+**Benchmark (2026-07-07):** n=600, p=4, 30 rounds × 10/5 reps warm-start:
+- EST: OLD 1.6000ms → NEW 0.6000ms (**2.67×**, Wilcoxon p≈0)
+- VAR: OLD 1.8000ms → NEW 0.8000ms (**2.25×**, Wilcoxon p≈0)
+
+**Correctness test:** `EDI/tests/testthat/test-dep-cens-transform-fast-pnorm.R` (3 tests, 5 assertions — all pass). Gradient at MLE matches numerical finite-diff to 1e-3.
 
 
 ---
 
-**TODO-102: fast_bai_parallel — 8 vector heap-allocations per simulation inside OpenMP for** ☐
+**TODO-102: fast_bai_parallel — 8 vector heap-allocations per simulation inside OpenMP for** ✓ DONE
 Files: `EDI/src/fast_bai_parallel.cpp` (`compute_bai_distr_parallel_cpp`, lines 59–67, 107)
 
 Root cause: The `#pragma omp parallel for` loop body (line 55) declares `d_i`, `y_r`, `w_r`, `match_T`, `match_C`, `has_T`, `has_C` as fresh `std::vector`s on **every** simulation iteration (lines 59–67), plus `yT`/`yC` inside an inner conditional block (line 107). With nsim=2000, this is ~14 000–16 000 heap allocations per `compute_bai_distr_parallel_cpp` call. Compare with `kk_compound_distr_parallel.cpp` which already hoists its thread-local vectors correctly (`diffs`, `treated_idx`, `control_idx` declared in the outer `#pragma omp parallel` scope, cleared+reused per iteration).
@@ -1879,73 +2040,104 @@ Fix: Split `#pragma omp parallel for` into `#pragma omp parallel` + `#pragma omp
 
 Expected speedup: 5×–10× for medium nsim (2000), since malloc/free is the dominant cost over the O(n) computation.
 
----
+Implemented by splitting the `#pragma omp parallel for` into an outer `#pragma omp parallel` region plus an inner `#pragma omp for schedule(static)`. The per-simulation vectors (`d_i`, `y_r`, `w_r`, `match_T`, `match_C`, `has_T`, `has_C`, `yT`, `yC`) are now declared once per thread, reserve capacity up front, and are reused with `clear()` / `assign()` for each simulation handled by that thread. `has_T`/`has_C` use `std::vector<char>` rather than `std::vector<bool>` to avoid proxy-bitset overhead while preserving the same truth semantics.
 
-**TODO-103: cmh_speedups — unordered_map allocated fresh on every call; replace with flat vector** ☐
-Files: `EDI/src/cmh_speedups.cpp` (`compute_cmh_block_se_cpp` line 22, `compute_extended_robins_block_se_cpp`)
+Noise-controlled benchmark used `R CMD INSTALL --no-docs` installs; no `--preclean` was used. The before package was a temporary source copy saved before the TODO-102 edit, and the after package was the edited source. Timing used two before phases and two after phases, 50 rounds per phase, 20 complete calls per round, with the profiler-shaped BAI workload (`n=400`, `nsim=2000`, matched-pair `m_mat`, `convex_flag=TRUE`). Combined single-core medians were 10.4000ms → 9.1000ms per call (IQR 10.3000–10.6125ms → 8.4500–10.3000ms), a 1.143× speedup / 12.5% time reduction (independent bootstrap 95% CI 1.106×–1.198×; one-sided Wilcoxon p=2.60e-11). Combined 4-core medians were 3.3500ms → 2.7000ms per call (IQR 3.1500–3.5000ms → 2.5875–2.9625ms), a 1.241× speedup / 19.4% time reduction (bootstrap 95% CI 1.189×–1.271×; one-sided Wilcoxon p=4.59e-20). Per-phase medians for 1 core were before1 10.4500ms, after1 8.4500ms, after2 10.3000ms, before2 10.4000ms; for 4 cores they were before1 3.3500ms, after1 2.6000ms, after2 2.8500ms, before2 3.3500ms. Before/after checksums matched exactly for both workloads.
 
-Root cause: Both CMH functions create a fresh `std::unordered_map` on every call, reserve it to `y.size()` (over-reserved; actual block count is ~n/4 for typical inputs), then insert n entries. For `cmh_block_se` (REPS=20 000), this is 20 000 hash-map constructions + reserves per benchmark call. The unordered_map involves heap allocation, rehashing logic, and pointer-chasing for lookups — all unnecessary since block IDs are dense 1-indexed integers.
-
-Fix: At the start of the function, find `max_block_id = *std::max_element(m_vec.begin(), m_vec.end())`, allocate a `std::vector<int> block_sums(max_block_id + 1, 0)` (stack or heap depending on size). Use `block_sums[match_id] += ...` for O(1) array indexing. The vector can be a function-argument or caller-allocated buffer to avoid per-call allocation entirely. Same fix for `compute_extended_robins_block_se_cpp`.
-
-Expected speedup: 3×–8× for the common case (n=2000, B=500 blocks, many repeated calls).
+Correctness: added `test-bai-thread-local-workspaces.R`, which compares `compute_bai_distr_parallel_cpp()` against an independent R implementation for convex and non-convex paths, including matched pairs, reservoir rows, all-reservoir simulations, and 1-core/2-core determinism. The dedicated test passed all 4 assertions. Existing `test-todo98-new-kernel-smoke.R` passed all 22 assertions.
 
 ---
 
-**TODO-104: optimal_design_search — per-simulation w, t_idxs, c_idxs allocation inside nsim loop** ☐
+**TODO-103: cmh_speedups — unordered_map allocated fresh on every call; replace with flat vector** ✓ DONE
+Files: `EDI/src/cmh_speedups.cpp` (`compute_cmh_block_se_cpp`, `compute_extended_robins_block_se_cpp`)
+
+Root cause: Both CMH functions created a fresh `std::unordered_map` on every call, reserved to `y.size()` (over-reserved; actual block count B ≈ n/4), then inserted n entries via hash-table pointer chasing.
+
+Fix: One-pass scan to find `max_block_id` (skipping NA/invalid); allocate `std::vector<int> block_sums(max_block_id+1, -1)` (-1 sentinel = unseen; avoids ambiguity with all-zero blocks); accumulate with `block_sums[match_id] += y[i]` (O(1) stride-1); count B inline on first insertion. Iteration replaces hash-map traversal with a linear stride-1 scan. Same fix for `compute_extended_robins_block_se_cpp` using a flat `std::vector<RobinsBlockAccumulator>` (n=0 as unseen sentinel). Also removed `#include <unordered_map>`.
+
+Benchmark (60 rounds × 200 reps, microseconds):
+
+| config              | OLD median | NEW median | ratio | Wilcoxon p |
+|---------------------|-----------|-----------|-------|------------|
+| cmh  n=200,  B=50   | 5.0 μs    | 5.0 μs    | 1.00× | 3e-08 ✓   |
+| cmh  n=1000, B=250  | 30.0 μs   | 10.0 μs   | 3.00× | 8e-12 ✓   |
+| cmh  n=2000, B=500  | 55.0 μs   | 20.0 μs   | 2.75× | 7e-12 ✓   |
+| cmh  n=4000, B=1000 | 110.0 μs  | 40.0 μs   | 2.75× | 8e-12 ✓   |
+| rob  n=200,  B=50   | 10.0 μs   | 5.0 μs    | 2.00× | 3e-06 ✓   |
+| rob  n=1000, B=250  | 32.5 μs   | 20.0 μs   | 1.62× | 8e-12 ✓   |
+| rob  n=2000, B=500  | 65.0 μs   | 35.0 μs   | 1.86× | 8e-12 ✓   |
+
+2.75–3× speedup for CMH at n≥1000; 1.6–2× for Robins; effect at n=200 is real but sub-resolution (both round to 5μs). Correctness: 15/15 tests pass (`test-cmh-flat-vector.R`).
+
+---
+
+**TODO-104: optimal_design_search — per-simulation w, t_idxs, c_idxs allocation inside nsim loop** ✓ DONE
 Files: `EDI/src/optimal_design_search.cpp` (`d_optimal_search_cpp` lines 30–43, `a_optimal_search_cpp` lines 137–150)
 
-Root cause: Inside the `for (int s = 0; s < nsim; ++s)` loop, each iteration allocates `Eigen::VectorXd w(n)` (line 30/137) and `std::vector<int> t_idxs, c_idxs` (lines 32–35/139–142). For nsim=500: 500 × 3 = 1 500 heap allocations per call. The `std::sort` called inside the inner `while (improved)` loop (lines 62–67/172–179) sorts n_T- and (n-n_T)-element vectors on every swap pass, which is O(n_T log n_T) per pass. With multiple swap passes per simulation, this dominates for larger n_T.
+Root cause: Inside the `for (int s = 0; s < nsim; ++s)` loop, each iteration allocated `Eigen::VectorXd w(n)` and `Pw(n)` (d_optimal) or `Pw(n)` + `Hw(n)` (a_optimal) plus `std::vector<int> t_idxs, c_idxs` (with `reserve()`). For nsim=500: 500 × 3–4 heap allocations per call.
 
-Fixes:
-1. Hoist `w`, `t_idxs`, `c_idxs` outside the `s` loop; use `w.setZero()` + `t_idxs.clear()` + `t_idxs.reserve(n_T)` inside.
-2. For the inner sort: since we only need to find the globally best (i,j) pair, maintain sorted order via `std::rotate` or `std::swap` after a swap is accepted rather than resorting from scratch. Alternatively, track the best pair via a priority queue seeded from the current sorted order.
+Fix: Hoist `w`, `Pw`, `Hw` (a_optimal), `t_idxs`, `c_idxs` before the `s` loop with a single `reserve()` each. Inside the loop: `w.setZero(); t_idxs.clear(); c_idxs.clear();` and use `Pw.noalias() = P * w; Hw.noalias() = H * w;`. Fix 2 (maintaining sort order across swaps) was impractical: all Pw[k] values change on every accepted swap, so Ai and Bj keys for ALL indices are invalidated — full re-sort is unavoidable.
 
-Expected speedup: 2×–3× from elimination of per-simulation allocation; additional gain from the sort improvement depends on convergence depth.
+Benchmark (60 rounds × 20 reps; OLD = row-access fix only; NEW = row-access fix + hoisting):
+
+| config                   | OLD median | NEW median | ratio | Wilcoxon p |
+|--------------------------|-----------|-----------|-------|------------|
+| d n=30,  p=4, nsim=1000  | 3.725 ms  | 3.150 ms  | 1.18× | 9e-12 ✓   |
+| d n=60,  p=6, nsim=500   | 7.100 ms  | 6.250 ms  | 1.14× | 3e-10 ✓   |
+| d n=100, p=8, nsim=200   | 9.125 ms  | 6.900 ms  | 1.32× | 8e-12 ✓   |
+| d n=60,  p=10, nsim=500  | 9.625 ms  | 7.475 ms  | 1.29× | 8e-12 ✓   |
+| a n=30,  p=4, nsim=600   | 4.400 ms  | 3.600 ms  | 1.22× | 4e-11 ✓   |
+| a n=60,  p=6, nsim=300   | 9.350 ms  | 8.250 ms  | 1.13× | 4e-10 ✓   |
+| a n=100, p=8, nsim=150   | 13.925 ms | 14.500 ms | 0.96× | n.s.       |
+
+13–32% speedup at small/medium n; no significant effect at n=100 a_optimal (GEMV cost dominates over allocation savings). Correctness: 13/13 tests pass (`test-optimal-design-hoisted-allocs.R`).
 
 ---
 
-**TODO-105: compute_objective_vals_cpp — string comparison inside the row loop** ☐
-Files: `EDI/src/rerandomization_helpers.cpp` (`compute_objective_vals_cpp`, line 123)
+**TODO-105: compute_objective_vals_cpp — string comparison + stride-r cache miss** ✓ DONE
+Files: `EDI/src/rerandomization_helpers.cpp` (`compute_objective_vals_cpp`)
 
-Root cause: The condition `if (objective == "abs_sum_diff")` (line 123) is evaluated inside the `for (int row = 0; row < r; row++)` loop. With r=5000, this is 5000 `std::string` comparisons that all produce the same result. `__strcmp_avx2` is expected to appear in `rerandomization_obj_vals` profile.
+Two combined fixes applied together in the working tree:
 
-Fix: Hoist the string check to before the loop and set a `bool abs_mode` flag (the pattern already used in `rerandomization_search_cpp` line 163–182). Replace the in-loop string branch with `if (abs_mode)`.
+**1. String comparison hoist (TODO-105):** `if (objective == "abs_sum_diff")` was evaluated inside the `for (int row = 0; row < r; row++)` loop. Hoisted to `const bool abs_mode = (objective == "abs_sum_diff")` before all loops; replaced in-loop branch with `if (abs_mode)`.
 
-Expected speedup: negligible for large n/p (dominated by arithmetic), but removes a predictable branch-misprediction source and simplifies the inner loop.
+**2. Cache-friendly loop restructuring (TODO-107 companion):** Old code looped `for row, for i: indicTs(row,i)` — stride-r=5000 column-major access causing ~n cache misses per row. Restructured to loop `for i (outer), for row (inner)`: precompute `const int* indic_col = indic_ptr + i*r` once per i, then `indic_col[row]` is stride-1 sequential. Also preallocated `sum_T[r*p]` flat array (replacing per-row `std::fill`) and extracted `x_row[p]` once per i instead of reloading `X(i,j)` inside the row loop.
+
+Benchmark (60 rounds × 5 reps, `compute_objective_vals_cpp`, abs_sum_diff):
+
+| config            | OLD median | NEW median | ratio | Wilcoxon p |
+|-------------------|-----------|-----------|-------|------------|
+| n=50,  p=4, r=1000  | 0.60 ms  | 0.20 ms   | 3.00× | 4e-22 ✓   |
+| n=100, p=4, r=2000  | 2.80 ms  | 1.20 ms   | 2.33× | 6e-22 ✓   |
+| n=200, p=4, r=5000  | 15.60 ms | 5.70 ms   | 2.74× | 2e-21 ✓   |
+| n=200, p=8, r=5000  | 14.00 ms | 5.60 ms   | 2.50× | 1e-21 ✓   |
+| n=50,  p=4, r=5000  | 3.20 ms  | 1.40 ms   | 2.29× | 6e-22 ✓   |
+
+2.3–3.0× speedup across all configs, all highly significant. Correctness: 5/5 tests pass (`test-rerandomization-objective-contiguous-indicts.R`).
 
 ---
 
-**TODO-106: d_optimal_search_cpp — eliminate per-iteration j×n multiply by transposing P access** ☐
+**TODO-106: d_optimal_search_cpp — eliminate per-iteration j×n multiply by transposing P access** ✓ DONE
 Files: `EDI/src/optimal_design_search.cpp` (`d_optimal_search_cpp` line 83, `a_optimal_search_cpp` line ~200)
 
-Root cause: `perf annotate` for `d_optimal_search` (200 reps, 9 ms/call) shows 100% of samples in `d_optimal_search_cpp` — no malloc/free overhead, no sort overhead (sort ~2%). The tight inner swap loop at lines 77–92 is the sole bottleneck. Hot instruction sequence (addr 6c13a0–6c1405):
+Root cause: `perf annotate` showed `imulq j*n` as a hot instruction in the inner swap loop. Each inner-j iteration accessed `p_ptr[j*n + i]` (stride-n column access, one cache miss per j). Since P is symmetric, `P(i,j) = P(j,i)`: precompute `p_row_i = p_ptr + i*n` once per outer-i, then use `p_row_i[j]` (stride-1, sequential access). For n=60 the entire row fits in ~8 cache lines and stays hot in L1 through the inner-j loop.
 
-```
-6c13a0  movslq  (%r15,%rdx,4), %rax    # j = c_idxs[cj]          — 4.03%
-6c13a7  imulq   %r9, %rax              # j * n (column offset)    — 3.97%
-6c13ae  vfnmadd231sd  (%rdi,%rax,8)   # delta = Ai+Bj - 2*P[j*n+i] — 3.51%
-6c13b4  vcomisd %xmm0, %xmm2          # delta < best_delta?       — 10.92%
-6c13b8  jbe     ...                   # branch on result          — 8.40%
-6c13da  incq    %rdx                  # ++cj                      — 5.39%
-6c13ea  vmovsd  (%r14,%rax,8)         # load Bj                   — 6.83%
-6c1400  vcomisd %xmm8, %xmm0          # Ai+Bj >= threshold?       — 7.29%
-6c1405  jb      6c13a0                # loop back                 — 3.22%
-```
+Applied to both `d_optimal_search_cpp` (one P lookup per inner step) and `a_optimal_search_cpp` (one P + one H lookup per inner step, using `p_row_i` and `h_row_i`).
 
-The `imulq j*n` (line 83: `p_ptr[static_cast<size_t>(j) * n + i]`) runs every inner iteration. Since P is symmetric, `P(i,j) = P(j,i)`: replace with `p_row_ptr[j]` where `p_row_ptr = P.data() + (size_t)i * n` is precomputed **once** per outer (ti) iteration. This:
-1. Eliminates the `imulq` entirely
-2. Changes the access from `p_ptr[j*n + i]` (column j, row i — one cache-line per j) to `p_row_ptr[j]` (row i — entire row fits in ~8 cache lines for n=60, stays hot in L1 for the inner loop)
+Benchmark (60 rounds × 5 reps, `d_optimal_search_cpp`, nsim=200):
 
-Same fix applies to `a_optimal_search_cpp`.
+| config        | OLD median | NEW median | ratio | Wilcoxon p |
+|---------------|-----------|-----------|-------|------------|
+| n=30,  p=4    | 0.80 ms   | 0.60 ms   | 1.33× | 1e-05 ✓   |
+| n=60,  p=6    | 3.40 ms   | 2.60 ms   | 1.31× | 4e-19 ✓   |
+| n=100, p=8    | 9.90 ms   | 6.80 ms   | 1.46× | 8e-20 ✓   |
+| n=60,  p=10   | 3.40 ms   | 2.80 ms   | 1.21× | 5e-17 ✓   |
 
-Expected speedup: ~5–10% on the inner loop from eliminating the multiply + improved cache reuse for row i.
-
-Note: `TODO-104`'s prediction of allocation overhead was wrong for this kernel size (n=60, nsim=500) — the allocations are fast relative to the inner loop. The sort at ~2% is also not significant for n_T=30.
+21–46% speedup across all sizes, all highly significant. Correctness: 10/10 tests pass (`test-d-optimal-row-access.R`).
 
 ---
 
-**TODO-107: compute_objective_vals_cpp — stride-r=5000 cache miss in indicTs inner loop** ☐
+**TODO-107: compute_objective_vals_cpp — stride-r=5000 cache miss in indicTs inner loop** ✓ DONE
 Files: `EDI/src/rerandomization_helpers.cpp` (`compute_objective_vals_cpp`, lines 114–132)
 
 Root cause: `perf report` for `rerandomization_obj_vals` (r=5000, n=200, p=4): 38.46% of samples in `compute_objective_vals_cpp`. The dominant cost is the inner access `indicTs(row, i)` (line 118), where `indicTs` is an `r×n` column-major integer matrix. With the outer loop over `row` (0..r-1) and inner loop over `i` (0..n-1), each `indicTs(row, i)` access is at offset `row + i * r` — stride-r=5000 between consecutive `i` values. At r=5000 and 4 bytes/int, each column jump = 20KB > typical L1 cache line distance. Result: ~n=200 cache misses per row evaluation, for r=5000 rows = 1M cache misses per call.
@@ -1965,38 +2157,45 @@ Disassembly confirmation (`objdump -d EDI.so`, function `_Z26compute_objective_v
 
 The 134-sample hot instruction confirms the indicTs cache miss is the dominant cost, not the string comparison (TODO-105).
 
+Implemented the accumulator-loop variant rather than materializing an `n×r` transposed integer copy. `compute_objective_vals_cpp()` now reads each original `indicTs` column contiguously (`row` varying fastest), accumulates treatment counts plus an `r×p` row-major treatment-sum scratch buffer, then computes the requested objective in a final row pass. This removes the stride-`r` `indicTs(row, i)` load from the hot objective loop and also reuses each `X` row across all randomization rows for that subject. The objective-mode string check is hoisted to booleans at entry, and the function now validates `ncol(indicTs) == nrow(X)`.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs for the saved pre-TODO-107 source and optimized source; no `--preclean` was used. Timing used separate R processes, process CPU time, two before phases and two after phases, 40 rounds per phase, profiler-sized data (`n=200`, `p=4`, `r=5000`), 50 complete `abs_sum_diff` calls per round and 30 complete `mahal_dist` calls per round. Combined medians: `abs_sum_diff` 11.0600ms → 5.2600ms per call (IQR 10.9600–11.1800ms → 5.1800–5.3400ms), a 2.103× speedup / 52.4% time reduction (independent bootstrap 95% CI 2.091×–2.118×; one-sided Wilcoxon p<2.2e-16). `mahal_dist` improved 11.3333ms → 5.3667ms per call (IQR 11.1000–11.5667ms → 5.2667–5.4417ms), a 2.112× speedup / 52.6% time reduction (bootstrap 95% CI 2.081×–2.138×; one-sided Wilcoxon p<2.2e-16). Before/after outputs were exactly equal on the benchmark data for both objectives.
+
+Correctness: added `test-rerandomization-objective-contiguous-indicts.R`, which compares `compute_objective_vals_cpp()` with an independent R implementation for both `abs_sum_diff` and `mahal_dist`, and checks invalid objective/input handling. The dedicated test passed all 5 assertions. The existing `test-todo98-new-kernel-smoke.R` file also passed all 22 assertions.
+
 ---
 
-**TODO-108: rerandomization_search_cpp — OpenMP overhead dominates for small REPS** ☐  
+**TODO-108: rerandomization_search_cpp — OpenMP overhead dominates for small REPS** ✓ DONE
 Files: `EDI/src/rerandomization_helpers.cpp` (`rerandomization_search_cpp`, lines 202–240)
 
 Root cause: `perf report` for `rerandomization_search` (r=500, max_draws=50000, n=200, p=4, REPS=50): `libgomp.so` accounts for **39.27%** of all samples, with the actual computation nearly invisible. The `#pragma omp parallel` block (line 202) spawns threads and sets up a barrier even when there are few accepted draws. With the `#pragma omp for schedule(static)` dividing 50000 draws across threads, each thread does relatively little work before the barrier, inflating per-call overhead.
 
 Considerations: This is a calling-pattern issue (REPS=50, short per-call time of 4.4ms) exacerbating inherent OpenMP overhead. In production (large n, many accepted draws, long-running calls), OpenMP overhead is proportionally smaller. However, callers with small `max_draws` or small `r` pay disproportionately. If `max_draws * n` is below a threshold, a sequential fallback (`#ifdef _OPENMP ... omp_get_max_threads() > 1 ...`) would reduce overhead for short jobs.
 
+Implemented an early-stopping OpenMP work queue rather than a broad multithreaded sequential fallback. A direct sequential threshold was tested but was not wall-clock faster on this machine because the existing parallel path wins on latency despite spending extra CPU. The final implementation keeps the sequential path only when `omp_get_max_threads() <= 1`; otherwise, threads fetch draw chunks from an atomic `next_draw` counter and exit as soon as `found >= r`, avoiding the old `#pragma omp for schedule(static)` behavior where every scheduled draw was visited even after enough accepted allocations had been collected. This preserves parallel latency while reducing wasted post-acceptance OpenMP work.
+
+Noise-controlled BAAB benchmark used plain `R CMD INSTALL --no-docs` installs for the saved pre-TODO-108 source and optimized source; no `--preclean` was used. Timing used separate R processes, elapsed wall time as the primary latency metric, and process CPU time as a secondary resource metric. The profiler-sized workload was `n=200`, `p=4`, `r=500`, `max_draws=50000`, `cutoff=1.0`, 50 rounds per phase, 20 complete calls per round, two before phases and two after phases (4,000 timed calls total). Combined wall-clock medians: 0.4250ms → 0.2500ms per call (IQR 0.2000–1.1000ms → 0.2000–0.5000ms), a 1.700× speedup / 41.2% time reduction (independent bootstrap 95% CI 1.091×–2.600×; one-sided Wilcoxon p=1.86e-4). Combined process-CPU medians: 3.2750ms → 1.9000ms per call (IQR 1.8875–10.7750ms → 1.2500–4.1375ms), a 1.724× speedup / 42.0% reduction (bootstrap 95% CI 1.141×–3.167×; one-sided Wilcoxon p=6.03e-5). All benchmark calls returned exactly `r=500` accepted allocations.
+
+Correctness: added `test-rerandomization-search-early-stop.R`, which independently reproduces the internal rerandomization score for both `abs_sum_diff` and `mahal_dist` and verifies that returned allocations are binary, balanced, have the requested count, and satisfy the cutoff. The dedicated test passed all 12 assertions. The existing `test-todo98-new-kernel-smoke.R` file also passed all 22 assertions.
+
 ---
 
-**TODO-109: kk_compound_distr — merge multiple O(n) passes per simulation into one** ☐
-Files: `EDI/src/kk_compound_distr_parallel.cpp` (`compute_matching_compound_distr_parallel_cpp`, lines 49–112)
+**TODO-109: kk_compound_distr — merge multiple O(n) passes per simulation into one** ✓ DONE
+Files: `EDI/src/kk_compound_distr_parallel.cpp`
 
-Root cause: `perf report` for `kk_compound_distr` (n=400, nsim=2000): 39.81% of samples in the OpenMP kernel — compute-bound, no malloc overhead (thread-local vectors correctly hoisted outside the for-b loop). However, each simulation iteration makes at least 4 separate O(n) passes:
-1. Lines 49–51: scan to find `max_m = max(m_col)`
-2. Lines 59–65: scan to fill `treated_idx`/`control_idx`
-3. Lines 86–91: scan for unmatched T/C sums
-4. Lines 101–106: second pass for unmatched variances
+Root cause: Each simulation iteration made 4 separate O(n) passes over `m_col`/`w_col`/`y`: (1) find max_m, (2) scatter-fill treated/control idx, (3) unmatched sums, (4) unmatched variances. Each data element read 3–4× causing repeated L1 cache pressure.
 
-Fix: Merge all 4 passes into a single O(n) pass: track `max_m`, treated/control indices, unmatched sums and sums-of-squares simultaneously. The single merged pass halves L1 cache pressure (each y[i], m_col[i], w_col[i] loaded once instead of 3–4×).
+**Implemented (2026-07-07):** Single merged O(n) pass replacing all 4:
+- Simultaneously tracks `max_m`, scatter-fills `treated_idx`/`control_idx`, and accumulates `nRT`, `nRC`, `sum_T`, `sum_C`, `sum_T2`, `sum_C2` for unmatched obs
+- Eliminates the second variance pass by computing `var_T = (sum_T2 − nRT·mean_T²)/(nRT−1)` from the merged pass accumulators (sum-of-squares identity)
+- Matched-pair stats (d_bar, ssqD_bar) computed in one O(m) pass over diffs using running sum+sumsq, eliminating two sub-passes
+- Applied to both `compute_matching_compound_distr_parallel_cpp` and `compute_matching_compound_bootstrap_parallel_cpp`
+- Pre-initialization `treated_idx.assign(n, -1)` replaces `assign(m, -1)` post-find; cost similar since m ≈ n/2
 
-Expected speedup: 2×–3× for the inner loop (cache miss reduction dominates for n=400).
+**Benchmark (2026-07-07):** n=400, nsim=2000, 30 rounds × 5 reps, 1 core:
+- OLD 4.9000ms → NEW 2.5000ms (**1.96×**, Wilcoxon p≈0)
 
-Disassembly confirmation (`objdump -d EDI.so`, OMP clone `compute_matching_compound_distr_parallel_cpp [._omp_fn.0]` at 0x69d510):
-- **+0x66c**: `mov (%rbx,%rdx,4),%eax` — sequential load of `m_col[i]` (stride-1, cache friendly)
-- **+0x675**: `cmpl $0x1,0x0(%r13,%rdx,4)` — sequential load of `w_col[i]` for treatment check (stride-1)
-- **+0x67f [78 samples]**: `mov 0xa8(%rsp),%rdi` — load of the `treated_idx` base pointer from the stack, hottest instruction; attributed here because the preceding scatter store at +0x687 stalls on TLB/cache for the scattered `slot = match_id - 1` index
-- **+0x687**: `mov %edx,(%rdi,%rax,4)` — scatter store `treated_idx[slot] = i`; slot = `m_col[i]-1` is not sequential, causing random-order writes
-- **+0x660**: same pattern for `control_idx[slot] = i`
-
-The scatter writes (`treated_idx[slot]`, `control_idx[slot]`) into randomly-ordered slots are the bottleneck for pass 2. Merging all 4 passes eliminates 3 of 4 reads over `m_col`, `w_col`, `y_col` and halves the total scatter work.
+**Correctness test:** `EDI/tests/testthat/test-kk-compound-merged-pass.R` (3 tests — mixed data, all-matched, all-unmatched; all pass to tolerance 1e-10 vs R reference).
 
 ---
 

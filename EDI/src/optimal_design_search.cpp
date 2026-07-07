@@ -25,14 +25,17 @@ IntegerMatrix d_optimal_search_cpp(SEXP P_sexp, int nsim, int n_T) {
     std::random_device rd;
     std::mt19937 g(rd());
 
+    // Hoist per-simulation heap allocations outside the nsim loop.
+    Eigen::VectorXd w(n), Pw(n);
+    std::vector<int> t_idxs, c_idxs;
+    t_idxs.reserve(n_T);
+    c_idxs.reserve(n - n_T);
+
     for (int s = 0; s < nsim; ++s) {
         std::shuffle(indices.begin(), indices.end(), g);
-        Eigen::VectorXd w(n);
         w.setZero();
-        std::vector<int> t_idxs;
-        std::vector<int> c_idxs;
-        t_idxs.reserve(n_T);
-        c_idxs.reserve(n - n_T);
+        t_idxs.clear();
+        c_idxs.clear();
         for (int i = 0; i < n; ++i) {
             if (i < n_T) {
                 w(indices[i]) = 1.0;
@@ -42,7 +45,7 @@ IntegerMatrix d_optimal_search_cpp(SEXP P_sexp, int nsim, int n_T) {
             }
         }
 
-        Eigen::VectorXd Pw = P * w;
+        Pw.noalias() = P * w;
         bool improved = true;
         while (improved) {
             improved = false;
@@ -132,14 +135,17 @@ IntegerMatrix a_optimal_search_cpp(SEXP P_sexp, SEXP H_sexp, int nsim, int n_T) 
     std::random_device rd;
     std::mt19937 g(rd());
 
+    // Hoist per-simulation heap allocations outside the nsim loop.
+    Eigen::VectorXd w(n), Pw(n), Hw(n);
+    std::vector<int> t_idxs, c_idxs;
+    t_idxs.reserve(n_T);
+    c_idxs.reserve(n - n_T);
+
     for (int s = 0; s < nsim; ++s) {
         std::shuffle(indices.begin(), indices.end(), g);
-        Eigen::VectorXd w(n);
         w.setZero();
-        std::vector<int> t_idxs;
-        std::vector<int> c_idxs;
-        t_idxs.reserve(n_T);
-        c_idxs.reserve(n - n_T);
+        t_idxs.clear();
+        c_idxs.clear();
         for (int i = 0; i < n; ++i) {
             if (i < n_T) {
                 w(indices[i]) = 1.0;
@@ -149,8 +155,8 @@ IntegerMatrix a_optimal_search_cpp(SEXP P_sexp, SEXP H_sexp, int nsim, int n_T) 
             }
         }
 
-        Eigen::VectorXd Pw = P * w;
-        Eigen::VectorXd Hw = H * w;
+        Pw.noalias() = P * w;
+        Hw.noalias() = H * w;
         double wPw = w.dot(Pw);
         double wHw = w.dot(Hw);
 

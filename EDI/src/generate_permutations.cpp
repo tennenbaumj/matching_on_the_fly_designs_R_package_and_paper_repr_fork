@@ -45,10 +45,13 @@ MatrixXd extract_submatrix_int(const MatrixXd& X, int n_rows, const std::vector<
 }
 
 // Helper: find_independent_cols
-std::vector<int> find_independent_cols_int(const MatrixXd& X) {
+std::vector<int> find_independent_cols_int(
+	const MatrixXd& X,
+	FullPivHouseholderQR<MatrixXd>& qr
+) {
 	int p = X.cols();
 	if (p == 0) return std::vector<int>();
-	FullPivHouseholderQR<MatrixXd> qr(X);
+	qr.compute(X);
 	int rank = qr.rank();
 	std::vector<int> indep_cols;
 	if (rank == 0) return indep_cols;
@@ -58,28 +61,46 @@ std::vector<int> find_independent_cols_int(const MatrixXd& X) {
 	return indep_cols;
 }
 
+struct AtkinsonStepData {
+	bool usable = false;
+	MatrixXd X_prev;
+	VectorXd xt_prev;
+};
+
 // Helper: compute_atkinson_weight_internal
-double compute_atkinson_weight_internal(const VectorXd& w_prev, const MatrixXd& X_prev, const VectorXd& xt_prev, int t) {
-	int rows = w_prev.size();
+double compute_atkinson_weight_internal(
+	const int* w_prev,
+	const MatrixXd& X_prev,
+	const VectorXd& xt_prev,
+	int t,
+	FullPivLU<MatrixXd>& lu,
+	MatrixXd& design_workspace,
+	MatrixXd& crossprod_workspace,
+	MatrixXd& inverse_workspace,
+	VectorXd& xt_workspace
+) {
+	int rows = t - 1;
 	int p = X_prev.cols();
 	int cols = p + 2;
 	if (rows == 0 || cols < 2) return 0.5;
 
-	MatrixXd XprevWT(rows, cols);
-	XprevWT.col(0) = w_prev;
+	auto XprevWT = design_workspace.topLeftCorner(rows, cols);
+	for (int i = 0; i < rows; ++i) XprevWT(i, 0) = static_cast<double>(w_prev[i]);
 	XprevWT.col(1).setOnes();
 	XprevWT.rightCols(p) = X_prev;
 
-	MatrixXd XwtXw = XprevWT.transpose() * XprevWT;
-	FullPivLU<MatrixXd> lu(XwtXw);
+	auto XwtXw = crossprod_workspace.topLeftCorner(cols, cols);
+	XwtXw.noalias() = XprevWT.transpose() * XprevWT;
+	lu.compute(XwtXw);
 	if (!lu.isInvertible()) return 0.5;
 
-	MatrixXd M = static_cast<double>(t - 1) * lu.inverse();
-	VectorXd row_segment = M.row(0).segment(1, p + 1);
-	VectorXd xt(p + 1);
-	xt(0) = 1.0; xt.tail(p) = xt_prev;
+	auto M = inverse_workspace.topLeftCorner(cols, cols);
+	M.noalias() = static_cast<double>(t - 1) * lu.inverse();
+	auto xt = xt_workspace.head(p + 1);
+	xt(0) = 1.0;
+	xt.tail(p) = xt_prev;
 
-	double A = row_segment.dot(xt);
+	double A = M.row(0).segment(1, p + 1).dot(xt);
 	if (A == 0 || !std::isfinite(A)) return 0.5;
 
 	double val = M(0, 0) / A + 1.0;
@@ -215,6 +236,39 @@ List generate_permutations_atkinson_cpp(SEXP X_sexp, int n, int p_raw, double pr
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
   int bernoulli_threshold = p_raw + 2 + 1;
+
+	// The varying/independent covariate columns depend only on X and t, not on
+	// the simulated assignments. Compute each QR and processed design once.
+	std::vector<AtkinsonStepData> step_data(static_cast<std::size_t>(n));
+	FullPivHouseholderQR<MatrixXd> qr_workspace;
+	for (int t = bernoulli_threshold + 1; t <= n; ++t) {
+		std::vector<int> var_cols = which_cols_vary_subset_int(X, t);
+		if (var_cols.empty()) continue;
+		MatrixXd X_var = extract_submatrix_int(X, t - 1, var_cols);
+		std::vector<int> indep_cols = find_independent_cols_int(X_var, qr_workspace);
+		if (indep_cols.empty()) continue;
+
+		AtkinsonStepData& step = step_data[static_cast<std::size_t>(t - 1)];
+		step.X_prev.resize(t - 1, static_cast<int>(indep_cols.size()));
+		step.xt_prev.resize(static_cast<int>(indep_cols.size()));
+		for (int i = 0; i < t - 1; ++i) {
+			for (std::size_t j = 0; j < indep_cols.size(); ++j) {
+				step.X_prev(i, static_cast<int>(j)) = X_var(i, indep_cols[j]);
+			}
+		}
+		for (std::size_t j = 0; j < indep_cols.size(); ++j) {
+			step.xt_prev(static_cast<int>(j)) = X(t - 1, var_cols[indep_cols[j]]);
+		}
+		step.usable = true;
+	}
+
+	const int max_cols = X.cols() + 2;
+	FullPivLU<MatrixXd> lu_workspace;
+	MatrixXd design_workspace(n, max_cols);
+	MatrixXd crossprod_workspace(max_cols, max_cols);
+	MatrixXd inverse_workspace(max_cols, max_cols);
+	VectorXd xt_workspace(max_cols - 1);
+
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
     for (int t = 1; t <= n; ++t) {
@@ -222,20 +276,11 @@ List generate_permutations_atkinson_cpp(SEXP X_sexp, int n, int p_raw, double pr
         w_col[t - 1] = (u01(rng) < prob_T) ? 1 : 0;
         continue;
       }
-      std::vector<int> var_cols = which_cols_vary_subset_int(X, t);
-      if (var_cols.empty()) { w_col[t - 1] = (u01(rng) < prob_T) ? 1 : 0; continue; }
-      MatrixXd X_var = extract_submatrix_int(X, t - 1, var_cols);
-      std::vector<int> indep_cols = find_independent_cols_int(X_var);
-      if (indep_cols.empty()) { w_col[t - 1] = (u01(rng) < prob_T) ? 1 : 0; continue; }
-      MatrixXd X_prev(t - 1, indep_cols.size());
-      for (int i = 0; i < t - 1; ++i) {
-        for (size_t j = 0; j < indep_cols.size(); ++j) X_prev(i, j) = X_var(i, indep_cols[j]);
-      }
-      VectorXd xt_prev(indep_cols.size());
-      for (size_t j = 0; j < indep_cols.size(); ++j) xt_prev(j) = X(t - 1, var_cols[indep_cols[j]]);
-      VectorXd w_prev_e(t - 1);
-      for (int i = 0; i < t - 1; ++i) w_prev_e(i) = static_cast<double>(w_col[i]);
-      double p = compute_atkinson_weight_internal(w_prev_e, X_prev, xt_prev, t);
+      const AtkinsonStepData& step = step_data[static_cast<std::size_t>(t - 1)];
+      if (!step.usable) { w_col[t - 1] = (u01(rng) < prob_T) ? 1 : 0; continue; }
+      double p = compute_atkinson_weight_internal(
+		w_col, step.X_prev, step.xt_prev, t, lu_workspace,
+		design_workspace, crossprod_workspace, inverse_workspace, xt_workspace);
       w_col[t - 1] = (u01(rng) < p) ? 1 : 0;
     }
   }
@@ -247,27 +292,44 @@ List generate_permutations_pocock_simon_cpp(const IntegerMatrix& x_levels_matrix
   auto rng = make_local_rng();
   int n = x_levels_matrix.nrow();
   int num_covs = x_levels_matrix.ncol();
+  if (num_levels_total <= 0) stop("num_levels_total must be positive");
+  if (weights.size() != num_covs) stop("weights length must match the number of covariates");
+
+  // Convert the R matrix's one-based global level rows to a cache-friendly,
+  // zero-based row-major buffer once, validating before any pointer indexing.
+  std::vector<int> level_rows(static_cast<std::size_t>(n) * num_covs);
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < num_covs; ++j) {
+      const int row_idx = x_levels_matrix(i, j) - 1;
+      if (row_idx < 0 || row_idx >= num_levels_total) {
+        stop("x_levels_matrix contains a level index outside 1..num_levels_total");
+      }
+      level_rows[static_cast<std::size_t>(i) * num_covs + j] = row_idx;
+    }
+  }
+
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
+  const double* weights_ptr = weights.begin();
+  std::vector<int> counts(static_cast<std::size_t>(num_levels_total) * 2);
 
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
-    NumericMatrix counts(num_levels_total, 2); // 2 treatments
+    std::fill(counts.begin(), counts.end(), 0);
 
     for (int i = 0; i < n; ++i) {
-      IntegerVector subject_levels = x_levels_matrix.row(i);
+      const int* subject_levels = level_rows.data() + static_cast<std::size_t>(i) * num_covs;
 
-      // Inline the assign logic to avoid R API contention from IntegerVector
-      std::vector<double> G(2, 0.0);
+      double G[2] = {0.0, 0.0};
       for (int k = 0; k < 2; ++k) {
         double G_k = 0.0;
         for (int j = 0; j < num_covs; ++j) {
-          int row_idx = subject_levels[j] - 1;
-          double c0 = counts(row_idx, 0) + (k == 0 ? 1 : 0);
-          double c1 = counts(row_idx, 1) + (k == 1 ? 1 : 0);
+          const int row_idx = subject_levels[j];
+          double c0 = counts[static_cast<std::size_t>(row_idx) * 2] + (k == 0 ? 1 : 0);
+          double c1 = counts[static_cast<std::size_t>(row_idx) * 2 + 1] + (k == 1 ? 1 : 0);
           double m = (c0 + c1) / 2.0;
           double var = (c0-m)*(c0-m) + (c1-m)*(c1-m); // Variance proportional
-          G_k += weights[j] * var;
+          G_k += weights_ptr[j] * var;
         }
         G[k] = G_k;
       }
@@ -277,7 +339,7 @@ List generate_permutations_pocock_simon_cpp(const IntegerMatrix& x_levels_matrix
 
       w_col[i] = assigned_w;
       for (int j = 0; j < num_covs; ++j) {
-        counts(subject_levels[j] - 1, assigned_w)++;
+        counts[static_cast<std::size_t>(subject_levels[j]) * 2 + assigned_w]++;
       }
     }
   }
@@ -290,13 +352,30 @@ List generate_permutations_cluster_cpp(int n, int nsim, double prob_T, List clus
   IntegerMatrix w_mat(n, nsim);
   int* w_ptr = w_mat.begin();
   int num_clusters = cluster_indices.size();
+
+  // Flatten the R list once. Offsets retain cluster order and allow overlapping
+  // clusters to preserve the original last-write-wins behavior.
+  std::vector<std::size_t> cluster_offsets(static_cast<std::size_t>(num_clusters) + 1);
+  std::vector<int> subject_indices;
+  subject_indices.reserve(static_cast<std::size_t>(n));
+  for (int c = 0; c < num_clusters; ++c) {
+    cluster_offsets[static_cast<std::size_t>(c)] = subject_indices.size();
+    IntegerVector idxs = cluster_indices[c];
+    for (int i = 0; i < idxs.size(); ++i) {
+      const int subject = idxs[i] - 1;
+      if (subject < 0 || subject >= n) stop("cluster_indices contains an index outside 1..n");
+      subject_indices.push_back(subject);
+    }
+  }
+  cluster_offsets[static_cast<std::size_t>(num_clusters)] = subject_indices.size();
+
   for (int b = 0; b < nsim; ++b) {
     int* w_col = w_ptr + (size_t)b * n;
     for (int c = 0; c < num_clusters; ++c) {
-      IntegerVector idxs = cluster_indices[c];
       int w_cluster = (u01(rng) < prob_T) ? 1 : 0;
-      int m = idxs.size();
-      for (int i = 0; i < m; ++i) w_col[idxs[i] - 1] = w_cluster;
+      const std::size_t begin = cluster_offsets[static_cast<std::size_t>(c)];
+      const std::size_t end = cluster_offsets[static_cast<std::size_t>(c + 1)];
+      for (std::size_t i = begin; i < end; ++i) w_col[subject_indices[i]] = w_cluster;
     }
   }
   return List::create(_["w_mat"] = w_mat, _["m_mat"] = R_NilValue);

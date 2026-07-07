@@ -333,6 +333,31 @@ test_that("fast_continuation_ratio_regression_with_var_cpp is equivalent to VGAM
 	expect_equal(as.numeric(diag(res_cpp$vcov)[3:4]), as.numeric(diag(stats::vcov(res_r))[3:4]), tolerance = 1e-3)
 })
 
+test_that("fast_gaussian_lmm_cpp is equivalent to lme4::lmer fixed effects and variance components", {
+	skip_if_not_installed("lme4")
+	set.seed(26)
+	# KK design: matched pairs (size 2) and reservoir singletons (size 1)
+	n_pairs      <- 80
+	n_singletons <- 40
+	n            <- 2 * n_pairs + n_singletons
+	group <- c(rep(seq_len(n_pairs), each = 2L),
+	           seq_len(n_singletons) + n_pairs)
+	G <- n_pairs + n_singletons
+	X <- cbind(1, rnorm(n))
+	u <- rnorm(G, sd = 0.7)[group]
+	y <- X %*% c(-0.3, 0.8) + u + rnorm(n, sd = 0.4)
+
+	res_cpp <- EDI:::fast_gaussian_lmm_cpp(X, y, as.integer(group))
+	df <- data.frame(y = as.numeric(y), x = X[, 2], group = factor(group))
+	res_r <- lme4::lmer(y ~ x + (1 | group), data = df, REML = FALSE)
+
+	expect_equal(as.numeric(res_cpp$b[1:2]), as.numeric(lme4::fixef(res_r)), tolerance = 1e-4)
+	sigma_eps_r <- as.numeric(sigma(res_r))
+	sigma_u_r   <- as.numeric(sqrt(as.numeric(lme4::VarCorr(res_r)$group)))
+	expect_equal(as.numeric(exp(res_cpp$b[3])), sigma_eps_r, tolerance = 1e-4)
+	expect_equal(as.numeric(exp(res_cpp$b[4])), sigma_u_r,   tolerance = 1e-4)
+})
+
 test_that("fast_zinb_cpp is equivalent to glmmTMB", {
 	skip_if_not_installed("glmmTMB")
 	set.seed(18)
@@ -486,25 +511,4 @@ test_that("fast_hurdle_negbin_with_var_cpp is equivalent to pscl::hurdle(dist='n
 	expect_equal(as.numeric(res_cpp$b), as.numeric(stats::coef(res_r, "count")), tolerance = 1e-4)
 	expect_equal(as.numeric(res_cpp$hurdle_b), as.numeric(stats::coef(res_r, "zero")), tolerance = 1e-4)
 	expect_equal(as.numeric(res_cpp$theta_hat), as.numeric(res_r$theta), tolerance = 1e-3)
-})
-
-test_that("fast_gaussian_lmm_cpp is equivalent to lme4::lmer fixed effects and variance components", {
-	skip_if_not_installed("lme4")
-	set.seed(26)
-	n <- 200
-	g <- 20
-	group <- rep(1:g, each = n / g)
-	X <- cbind(1, rnorm(n))
-	u <- rnorm(g, sd = 0.7)[group]
-	y <- X %*% c(-0.3, 0.8) + u + rnorm(n, sd = 0.4)
-
-	res_cpp <- EDI:::fast_gaussian_lmm_cpp(X, y, as.integer(group))
-	df <- data.frame(y = as.numeric(y), x = X[, 2], group = factor(group))
-	res_r <- lme4::lmer(y ~ x + (1 | group), data = df, REML = FALSE)
-
-	expect_equal(as.numeric(res_cpp$b[1:2]), as.numeric(lme4::fixef(res_r)), tolerance = 1e-4)
-	sigma_eps_r <- as.numeric(sigma(res_r))
-	sigma_u_r   <- as.numeric(sqrt(as.numeric(lme4::VarCorr(res_r)$group)))
-	expect_equal(as.numeric(exp(res_cpp$b[3])), sigma_eps_r, tolerance = 1e-4)
-	expect_equal(as.numeric(exp(res_cpp$b[4])), sigma_u_r,   tolerance = 1e-4)
 })

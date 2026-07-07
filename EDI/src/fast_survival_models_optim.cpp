@@ -201,13 +201,16 @@ private:
     const int m_n;
     const int m_p;
     const Eigen::VectorXd m_log_y;
+    mutable Eigen::VectorXd m_d_ll_d_mu_event;
+    mutable Eigen::VectorXd m_d_ll_d_mu_cens;
 
 public:
-    DepCensTransformLikelihood(const Eigen::Ref<const Eigen::VectorXd>& y, 
-                               const Eigen::Ref<const Eigen::VectorXd>& dead, 
+    DepCensTransformLikelihood(const Eigen::Ref<const Eigen::VectorXd>& y,
+                               const Eigen::Ref<const Eigen::VectorXd>& dead,
                                const Eigen::Ref<const Eigen::MatrixXd>& X) :
         m_y(y), m_dead(dead), m_X(X), m_n(y.size()), m_p(X.cols()),
-        m_log_y(y.array().log().matrix()) {}
+        m_log_y(y.array().log().matrix()),
+        m_d_ll_d_mu_event(y.size()), m_d_ll_d_mu_cens(y.size()) {}
 
     double operator()(const Eigen::Ref<const Eigen::VectorXd>& params, Eigen::Ref<Eigen::VectorXd> grad) {
         // params: [beta_event (p), beta_cens (p), log_sigma_event (1), log_sigma_cens (1), atanh_rho (1)]
@@ -231,33 +234,36 @@ public:
 
         double loglik = 0.0;
         grad.setZero();
-        
-        Eigen::VectorXd d_ll_d_mu_event = Eigen::VectorXd::Zero(m_n);
-        Eigen::VectorXd d_ll_d_mu_cens = Eigen::VectorXd::Zero(m_n);
+
+        m_d_ll_d_mu_event.setZero();
+        m_d_ll_d_mu_cens.setZero();
         double d_ll_d_log_sigma_event = 0.0;
         double d_ll_d_log_sigma_cens = 0.0;
         double d_ll_d_atanh_rho = 0.0;
+
+        const double omrs_sqrt = std::sqrt(one_minus_rho_sq);
+        const double omrs_1p5  = one_minus_rho_sq * omrs_sqrt;
 
         for (int i = 0; i < m_n; ++i) {
             double ze = z_event[i];
             double zc = z_cens[i];
             double d = m_dead[i];
 
-            double log_f_event = R::dnorm(ze, 0.0, 1.0, 1) - log_sigma_event - m_log_y[i];
-            double log_f_cens = R::dnorm(zc, 0.0, 1.0, 1) - log_sigma_cens - m_log_y[i];
+            double log_f_event = fast_log_dnorm(ze) - log_sigma_event - m_log_y[i];
+            double log_f_cens  = fast_log_dnorm(zc) - log_sigma_cens  - m_log_y[i];
 
             double w_event = (rho * ze - zc) / sd_cond;
-            double w_cens = (rho * zc - ze) / sd_cond;
-            
-            double log_S_cond_cens = R::pnorm(w_event, 0.0, 1.0, 1, 1);
-            double log_S_cond_event = R::pnorm(w_cens, 0.0, 1.0, 1, 1);
+            double w_cens  = (rho * zc - ze) / sd_cond;
+
+            double log_S_cond_cens  = fast_log_pnorm(w_event);
+            double log_S_cond_event = fast_log_pnorm(w_cens);
 
             double li = d * (log_f_event + log_S_cond_cens) + (1.0 - d) * (log_f_cens + log_S_cond_event);
             loglik += li;
 
-            // Derivatives
-            double mill_event = std::exp(R::dnorm(w_event, 0.0, 1.0, 1) - log_S_cond_cens);
-            double mill_cens = std::exp(R::dnorm(w_cens, 0.0, 1.0, 1) - log_S_cond_event);
+            // Derivatives — Mills ratio via inline log-pdf minus log-survival
+            double mill_event = std::exp(fast_log_dnorm(w_event) - log_S_cond_cens);
+            double mill_cens  = std::exp(fast_log_dnorm(w_cens)  - log_S_cond_event);
 
             // d/d_ze w_event = rho / sd_cond
             // d/d_zc w_event = -1 / sd_cond
@@ -266,36 +272,36 @@ public:
             //                = (ze - rho^2*ze + rho^2*ze - rho*zc) / (1-rho^2)^(3/2)
             //                = (ze - rho*zc) / (1-rho^2)^(3/2)
             
-            double d_w_event_d_rho = (ze - rho * zc) / std::pow(one_minus_rho_sq, 1.5);
-            double d_w_cens_d_rho = (zc - rho * ze) / std::pow(one_minus_rho_sq, 1.5);
+            double d_w_event_d_rho = (ze - rho * zc) / omrs_1p5;
+            double d_w_cens_d_rho  = (zc - rho * ze) / omrs_1p5;
 
             if (d > 0.5) {
                 // d * log_f_event
-                d_ll_d_mu_event[i] += ze / sigma_event;
+                m_d_ll_d_mu_event[i] += ze / sigma_event;
                 d_ll_d_log_sigma_event += (ze * ze - 1.0);
-                
+
                 // d * log_S_cond_cens
-                d_ll_d_mu_event[i] += mill_event * (rho / sd_cond) * (-1.0 / sigma_event);
-                d_ll_d_mu_cens[i] += mill_event * (-1.0 / sd_cond) * (-1.0 / sigma_cens);
+                m_d_ll_d_mu_event[i] += mill_event * (rho / sd_cond) * (-1.0 / sigma_event);
+                m_d_ll_d_mu_cens[i]  += mill_event * (-1.0 / sd_cond) * (-1.0 / sigma_cens);
                 d_ll_d_log_sigma_event += mill_event * (rho / sd_cond) * (-ze);
-                d_ll_d_log_sigma_cens += mill_event * (-1.0 / sd_cond) * (-zc);
-                d_ll_d_atanh_rho += mill_event * d_w_event_d_rho * one_minus_rho_sq; // d_rho/d_atanh_rho = 1-rho^2
+                d_ll_d_log_sigma_cens  += mill_event * (-1.0 / sd_cond) * (-zc);
+                d_ll_d_atanh_rho += mill_event * d_w_event_d_rho * one_minus_rho_sq;
             } else {
                 // (1-d) * log_f_cens
-                d_ll_d_mu_cens[i] += zc / sigma_cens;
+                m_d_ll_d_mu_cens[i] += zc / sigma_cens;
                 d_ll_d_log_sigma_cens += (zc * zc - 1.0);
 
                 // (1-d) * log_S_cond_event
-                d_ll_d_mu_cens[i] += mill_cens * (rho / sd_cond) * (-1.0 / sigma_cens);
-                d_ll_d_mu_event[i] += mill_cens * (-1.0 / sd_cond) * (-1.0 / sigma_event);
-                d_ll_d_log_sigma_cens += mill_cens * (rho / sd_cond) * (-zc);
+                m_d_ll_d_mu_cens[i]  += mill_cens * (rho / sd_cond) * (-1.0 / sigma_cens);
+                m_d_ll_d_mu_event[i] += mill_cens * (-1.0 / sd_cond) * (-1.0 / sigma_event);
+                d_ll_d_log_sigma_cens  += mill_cens * (rho / sd_cond) * (-zc);
                 d_ll_d_log_sigma_event += mill_cens * (-1.0 / sd_cond) * (-ze);
                 d_ll_d_atanh_rho += mill_cens * d_w_cens_d_rho * one_minus_rho_sq;
             }
         }
 
-        grad.head(m_p) = - m_X.transpose() * d_ll_d_mu_event;
-        grad.segment(m_p, m_p) = - m_X.transpose() * d_ll_d_mu_cens;
+        grad.head(m_p) = - m_X.transpose() * m_d_ll_d_mu_event;
+        grad.segment(m_p, m_p) = - m_X.transpose() * m_d_ll_d_mu_cens;
         grad[2 * m_p] = - d_ll_d_log_sigma_event;
         grad[2 * m_p + 1] = - d_ll_d_log_sigma_cens;
         grad[2 * m_p + 2] = - d_ll_d_atanh_rho;
@@ -325,22 +331,26 @@ public:
 
         Eigen::MatrixXd Hess = Eigen::MatrixXd::Zero(total_p, total_p);
 
+        const double omr2_sqrt = std::sqrt(omr2);
+        const double omr2_1p5  = omr2 * omr2_sqrt;
+        const double omr2_2p5  = omr2 * omr2 * omr2_sqrt;
+
         for (int i = 0; i < m_n; ++i) {
             const double ze = z_e[i], zc = z_c[i], d = m_dead[i];
             const double w_e = (rho * ze - zc) / s_cond;
             const double w_c = (rho * zc - ze) / s_cond;
-            const double log_S_cond_c = R::pnorm(w_e, 0.0, 1.0, 1, 1);
-            const double log_S_cond_e = R::pnorm(w_c, 0.0, 1.0, 1, 1);
-            const double mill_e = std::exp(R::dnorm(w_e, 0.0, 1.0, 1) - log_S_cond_c);
-            const double mill_c = std::exp(R::dnorm(w_c, 0.0, 1.0, 1) - log_S_cond_e);
-            
+            const double log_S_cond_c = fast_log_pnorm(w_e);
+            const double log_S_cond_e = fast_log_pnorm(w_c);
+            const double mill_e = std::exp(fast_log_dnorm(w_e) - log_S_cond_c);
+            const double mill_c = std::exp(fast_log_dnorm(w_c) - log_S_cond_e);
+
             const double dm_e = -mill_e * (w_e + mill_e);
             const double dm_c = -mill_c * (w_c + mill_c);
 
             const double d_we_d_ze = rho / s_cond, d_we_d_zc = -1.0 / s_cond;
             const double d_wc_d_zc = rho / s_cond, d_wc_d_ze = -1.0 / s_cond;
-            const double d_we_d_rho = (ze - rho * zc) / std::pow(omr2, 1.5);
-            const double d_wc_d_rho = (zc - rho * ze) / std::pow(omr2, 1.5);
+            const double d_we_d_rho = (ze - rho * zc) / omr2_1p5;
+            const double d_wc_d_rho = (zc - rho * ze) / omr2_1p5;
             const double d_rho_d_ath = omr2;
             const double d2_rho_d_ath2 = -2.0 * rho * omr2;
 
@@ -357,9 +367,9 @@ public:
                 const double h_zeze = dm_e * d_we_d_ze * d_we_d_ze;
                 const double h_zczc = dm_e * d_we_d_zc * d_we_d_zc;
                 const double h_zezc = dm_e * d_we_d_ze * d_we_d_zc;
-                const double d2_we_d_ze_d_rho = 1.0/std::pow(omr2, 1.5);
-                const double d2_we_d_zc_d_rho = -rho/std::pow(omr2, 1.5);
-                const double d2_we_d_rho2 = (3.0 * rho * ze - (1.0 + 2.0*rho*rho)*zc) / std::pow(omr2, 2.5);
+                const double d2_we_d_ze_d_rho = 1.0 / omr2_1p5;
+                const double d2_we_d_zc_d_rho = -rho / omr2_1p5;
+                const double d2_we_d_rho2 = (3.0 * rho * ze - (1.0 + 2.0*rho*rho)*zc) / omr2_2p5;
 
                 const double dze_de = -1.0/sigma_e, dze_dls = -ze;
                 const double dzc_dc = -1.0/sigma_c, dzc_dlsc = -zc;
@@ -389,9 +399,9 @@ public:
                     add_h(m_p+j, 2*m_p+1, -2.0*zc/sigma_c * xi[j]);
                 }
 
-                const double d2_wc_d_zc_d_rho = 1.0/std::pow(omr2, 1.5);
-                const double d2_wc_d_ze_d_rho = -rho/std::pow(omr2, 1.5);
-                const double d2_wc_d_rho2 = (3.0 * rho * zc - (1.0 + 2.0*rho*rho)*ze) / std::pow(omr2, 2.5);
+                const double d2_wc_d_zc_d_rho = 1.0 / omr2_1p5;
+                const double d2_wc_d_ze_d_rho = -rho / omr2_1p5;
+                const double d2_wc_d_rho2 = (3.0 * rho * zc - (1.0 + 2.0*rho*rho)*ze) / omr2_2p5;
 
                 const double dze_de = -1.0/sigma_e, dze_dls = -ze;
                 const double dzc_dc = -1.0/sigma_c, dzc_dlsc = -zc;

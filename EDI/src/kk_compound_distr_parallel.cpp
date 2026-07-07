@@ -45,51 +45,45 @@ NumericVector compute_matching_compound_distr_parallel_cpp(
 			const int* w_col = w_mat.data() + static_cast<size_t>(b) * n;
 			const int* m_col = m_mat.data() + static_cast<size_t>(b) * n;
 
+			// Single merged pass: max_m + scatter fill + unmatched sum+sumsq.
+			// Reads m_col, w_col, y once each instead of 3-4 times.
+			treated_idx.assign(n, -1);
+			control_idx.assign(n, -1);
 			int m = 0;
+			int nRT = 0, nRC = 0;
+			double sum_T = 0, sum_C = 0, sum_T2 = 0, sum_C2 = 0;
 			for (int i = 0; i < n; ++i) {
-				if (m_col[i] > m) m = m_col[i];
-			}
-
-			double d_bar = NA_REAL;
-			double ssqD_bar = NA_REAL;
-
-			if (m > 0) {
-				treated_idx.assign(m, -1);
-				control_idx.assign(m, -1);
-				for (int i = 0; i < n; ++i) {
-					const int match_id = m_col[i];
-					if (match_id <= 0) continue;
+				const int match_id = m_col[i];
+				if (match_id > m) m = match_id;
+				if (match_id > 0) {
 					const int slot = match_id - 1;
 					if (w_col[i] == 1) treated_idx[slot] = i;
 					else control_idx[slot] = i;
+				} else {
+					const double yi = y[i];
+					if (w_col[i] == 1) { nRT++; sum_T += yi; sum_T2 += yi * yi; }
+					else { nRC++; sum_C += yi; sum_C2 += yi * yi; }
 				}
-				diffs.assign(m, 0.0);
-				for (int match_id = 1; match_id <= m; ++match_id) {
-					const int slot = match_id - 1;
-					diffs[slot] = y[treated_idx[slot]] - y[control_idx[slot]];
+			}
+
+			// Compute matched-pair stats in one O(m) pass.
+			double d_bar = NA_REAL;
+			double ssqD_bar = NA_REAL;
+			if (m > 0) {
+				double sum_d = 0.0, sum_d2 = 0.0;
+				diffs.resize(m);
+				for (int slot = 0; slot < m; ++slot) {
+					const double diff = y[treated_idx[slot]] - y[control_idx[slot]];
+					diffs[slot] = diff;
+					sum_d  += diff;
+					sum_d2 += diff * diff;
 				}
-				double sum_d = 0.0;
-				for (double diff : diffs) sum_d += diff;
 				d_bar = sum_d / m;
-				if (m > 1) {
-					double ss = 0.0;
-					for (double diff : diffs) {
-						const double centered = diff - d_bar;
-						ss += centered * centered;
-					}
-					ssqD_bar = ss / (m - 1) / m;
-				}
+				if (m > 1)
+					ssqD_bar = (sum_d2 - m * d_bar * d_bar) / (m - 1) / m;
 			}
 
-			int nRT = 0, nRC = 0;
-			double sum_T = 0, sum_C = 0;
-			for (int i = 0; i < n; ++i) {
-				if (m_col[i] == 0) {
-					if (w_col[i] == 1) { nRT++; sum_T += y[i]; }
-					else { nRC++; sum_C += y[i]; }
-				}
-			}
-
+			// Unmatched stats: variance via sum-of-squares (no second pass).
 			double r_bar = NA_REAL;
 			double ssqR = NA_REAL;
 			if (nRT > 0 && nRC > 0) {
@@ -97,15 +91,8 @@ NumericVector compute_matching_compound_distr_parallel_cpp(
 				double mean_C = sum_C / nRC;
 				r_bar = mean_T - mean_C;
 				if (nRT > 1 && nRC > 1 && (nRT + nRC) > 2) {
-					double sq_diff_T = 0, sq_diff_C = 0;
-					for (int i = 0; i < n; ++i) {
-						if (m_col[i] == 0) {
-							if (w_col[i] == 1) sq_diff_T += (y[i] - mean_T) * (y[i] - mean_T);
-							else sq_diff_C += (y[i] - mean_C) * (y[i] - mean_C);
-						}
-					}
-					double var_T = sq_diff_T / (nRT - 1);
-					double var_C = sq_diff_C / (nRC - 1);
+					double var_T = (sum_T2 - nRT * mean_T * mean_T) / (nRT - 1);
+					double var_C = (sum_C2 - nRC * mean_C * mean_C) / (nRC - 1);
 					int nR = nRT + nRC;
 					ssqR = (var_T * (nRT - 1) + var_C * (nRC - 1)) / (nR - 2) * (1.0 / nRT + 1.0 / nRC);
 				}
@@ -165,49 +152,40 @@ NumericVector compute_matching_compound_bootstrap_parallel_cpp(
 			const int* w_col = w_mat.data() + static_cast<size_t>(b) * n;
 			const int* m_col = m_mat.data() + static_cast<size_t>(b) * n;
 
+			// Single merged pass: max_m + scatter fill + unmatched sum+sumsq.
+			treated_idx.assign(n, -1);
+			control_idx.assign(n, -1);
 			int m = 0;
+			int nRT = 0, nRC = 0;
+			double sum_T = 0, sum_C = 0, sum_T2 = 0, sum_C2 = 0;
 			for (int i = 0; i < n; ++i) {
-				if (m_col[i] > m) m = m_col[i];
+				const int match_id = m_col[i];
+				if (match_id > m) m = match_id;
+				if (match_id > 0) {
+					const int slot = match_id - 1;
+					if (w_col[i] == 1) treated_idx[slot] = i;
+					else control_idx[slot] = i;
+				} else {
+					const double yi = y_col[i];
+					if (w_col[i] == 1) { nRT++; sum_T += yi; sum_T2 += yi * yi; }
+					else { nRC++; sum_C += yi; sum_C2 += yi * yi; }
+				}
 			}
 
 			double d_bar = NA_REAL;
 			double ssqD_bar = NA_REAL;
-
 			if (m > 0) {
-				treated_idx.assign(m, -1);
-				control_idx.assign(m, -1);
-				for (int i = 0; i < n; ++i) {
-					const int match_id = m_col[i];
-					if (match_id <= 0) continue;
-					const int slot = match_id - 1;
-					if (w_col[i] == 1) treated_idx[slot] = i;
-					else control_idx[slot] = i;
+				double sum_d = 0.0, sum_d2 = 0.0;
+				diffs.resize(m);
+				for (int slot = 0; slot < m; ++slot) {
+					const double diff = y_col[treated_idx[slot]] - y_col[control_idx[slot]];
+					diffs[slot] = diff;
+					sum_d  += diff;
+					sum_d2 += diff * diff;
 				}
-				diffs.assign(m, 0.0);
-				for (int match_id = 1; match_id <= m; ++match_id) {
-					const int slot = match_id - 1;
-					diffs[slot] = y_col[treated_idx[slot]] - y_col[control_idx[slot]];
-				}
-				double sum_d = 0.0;
-				for (double diff : diffs) sum_d += diff;
 				d_bar = sum_d / m;
-				if (m > 1) {
-					double ss = 0.0;
-					for (double diff : diffs) {
-						const double centered = diff - d_bar;
-						ss += centered * centered;
-					}
-					ssqD_bar = ss / (m - 1) / m;
-				}
-			}
-
-			int nRT = 0, nRC = 0;
-			double sum_T = 0, sum_C = 0;
-			for (int i = 0; i < n; ++i) {
-				if (m_col[i] == 0) {
-					if (w_col[i] == 1) { nRT++; sum_T += y_col[i]; }
-					else { nRC++; sum_C += y_col[i]; }
-				}
+				if (m > 1)
+					ssqD_bar = (sum_d2 - m * d_bar * d_bar) / (m - 1) / m;
 			}
 
 			double r_bar = NA_REAL;
@@ -217,15 +195,8 @@ NumericVector compute_matching_compound_bootstrap_parallel_cpp(
 				double mean_C = sum_C / nRC;
 				r_bar = mean_T - mean_C;
 				if (nRT > 1 && nRC > 1 && (nRT + nRC) > 2) {
-					double sq_diff_T = 0, sq_diff_C = 0;
-					for (int i = 0; i < n; ++i) {
-						if (m_col[i] == 0) {
-							if (w_col[i] == 1) sq_diff_T += (y_col[i] - mean_T) * (y_col[i] - mean_T);
-							else sq_diff_C += (y_col[i] - mean_C) * (y_col[i] - mean_C);
-						}
-					}
-					double var_T = sq_diff_T / (nRT - 1);
-					double var_C = sq_diff_C / (nRC - 1);
+					double var_T = (sum_T2 - nRT * mean_T * mean_T) / (nRT - 1);
+					double var_C = (sum_C2 - nRC * mean_C * mean_C) / (nRC - 1);
 					int nR = nRT + nRC;
 					ssqR = (var_T * (nRT - 1) + var_C * (nRC - 1)) / (nR - 2) * (1.0 / nRT + 1.0 / nRC);
 				}

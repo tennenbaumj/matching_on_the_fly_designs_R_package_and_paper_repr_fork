@@ -1871,6 +1871,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// fast_atan_cauchit_cpp
+NumericVector fast_atan_cauchit_cpp(const NumericVector& x);
+RcppExport SEXP _EDI_fast_atan_cauchit_cpp(SEXP xSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type x(xSEXP);
+    rcpp_result_gen = Rcpp::wrap(fast_atan_cauchit_cpp(x));
+    return rcpp_result_gen;
+END_RCPP
+}
 // get_ordinal_cauchit_regression_score_cpp
 SEXP get_ordinal_cauchit_regression_score_cpp(const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& y, const Rcpp::NumericVector& params, Nullable<IntegerVector> fixed_idx, Nullable<NumericVector> fixed_values);
 RcppExport SEXP _EDI_get_ordinal_cauchit_regression_score_cpp(SEXP XSEXP, SEXP ySEXP, SEXP paramsSEXP, SEXP fixed_idxSEXP, SEXP fixed_valuesSEXP) {
@@ -1963,6 +1974,17 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type fixed_values(fixed_valuesSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type warm_start_fisher_info(warm_start_fisher_infoSEXP);
     rcpp_result_gen = Rcpp::wrap(fast_ordinal_clmm_cpp(X, y, group_id, K, j_T, link, estimate_only, n_gh, max_abs_log_sigma, maxit, eps_g, warm_start_params, optimization_alg, fixed_idx, fixed_values, warm_start_fisher_info));
+    return rcpp_result_gen;
+END_RCPP
+}
+// fast_cloglog_link_eval_cpp
+List fast_cloglog_link_eval_cpp(const NumericVector& x);
+RcppExport SEXP _EDI_fast_cloglog_link_eval_cpp(SEXP xSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type x(xSEXP);
+    rcpp_result_gen = Rcpp::wrap(fast_cloglog_link_eval_cpp(x));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4805,11 +4827,13 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_fast_neg_bin_cpp", (DL_FUNC) &_EDI_fast_neg_bin_cpp, 12},
     {"_EDI_fast_ols_cpp", (DL_FUNC) &_EDI_fast_ols_cpp, 4},
     {"_EDI_fast_ols_with_var_cpp", (DL_FUNC) &_EDI_fast_ols_with_var_cpp, 5},
+    {"_EDI_fast_atan_cauchit_cpp", (DL_FUNC) &_EDI_fast_atan_cauchit_cpp, 1},
     {"_EDI_get_ordinal_cauchit_regression_score_cpp", (DL_FUNC) &_EDI_get_ordinal_cauchit_regression_score_cpp, 5},
     {"_EDI_get_ordinal_cauchit_regression_hessian_cpp", (DL_FUNC) &_EDI_get_ordinal_cauchit_regression_hessian_cpp, 5},
     {"_EDI_fast_ordinal_cauchit_regression_cpp", (DL_FUNC) &_EDI_fast_ordinal_cauchit_regression_cpp, 11},
     {"_EDI_fast_ordinal_cauchit_regression_with_var_cpp", (DL_FUNC) &_EDI_fast_ordinal_cauchit_regression_with_var_cpp, 8},
     {"_EDI_fast_ordinal_clmm_cpp", (DL_FUNC) &_EDI_fast_ordinal_clmm_cpp, 16},
+    {"_EDI_fast_cloglog_link_eval_cpp", (DL_FUNC) &_EDI_fast_cloglog_link_eval_cpp, 1},
     {"_EDI_get_ordinal_cloglog_regression_score_cpp", (DL_FUNC) &_EDI_get_ordinal_cloglog_regression_score_cpp, 5},
     {"_EDI_get_ordinal_cloglog_regression_hessian_cpp", (DL_FUNC) &_EDI_get_ordinal_cloglog_regression_hessian_cpp, 5},
     {"_EDI_fast_ordinal_cloglog_regression_cpp", (DL_FUNC) &_EDI_fast_ordinal_cloglog_regression_cpp, 11},

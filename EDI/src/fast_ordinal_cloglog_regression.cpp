@@ -40,6 +40,24 @@ public:
 };
 
 // [[Rcpp::export]]
+List fast_cloglog_link_eval_cpp(const NumericVector& x) {
+    const R_xlen_t n = x.size();
+    NumericVector cdf(n), pdf(n), pdf_derivative(n);
+    for (R_xlen_t i = 0; i < n; ++i) {
+        double F = NA_REAL, f = NA_REAL, fp = NA_REAL;
+        edi_ordinal::cdf_pdf_fpdf(edi_ordinal::Link::Cloglog, x[i], F, f, fp);
+        cdf[i] = F;
+        pdf[i] = f;
+        pdf_derivative[i] = fp;
+    }
+    return List::create(
+        Named("cdf") = cdf,
+        Named("pdf") = pdf,
+        Named("pdf_derivative") = pdf_derivative
+    );
+}
+
+// [[Rcpp::export]]
 SEXP get_ordinal_cloglog_regression_score_cpp(const Rcpp::NumericMatrix& X,
 														 const Rcpp::NumericVector& y,
 														 const Rcpp::NumericVector& params,

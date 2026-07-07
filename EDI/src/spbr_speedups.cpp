@@ -45,28 +45,35 @@ NumericVector spbr_redraw_w_cpp(SEXP strata_keys_sexp, SEXP block_size_sexp, SEX
 
 // [[Rcpp::export]]
 IntegerVector stratified_bootstrap_indices_cpp(SEXP strata_keys_sexp) {
-    CharacterVector strata_keys = as<CharacterVector>(strata_keys_sexp);
-    int n = strata_keys.size();
-    
-    std::map<std::string, std::vector<int>> strata_map;
-    for (int i = 0; i < n; ++i) {
-        std::string key = as<std::string>(strata_keys[i]);
-        strata_map[key].push_back(i + 1);
-    }
-    
     static std::random_device rd;
     static std::mt19937 gen(rd());
-    
+    const int n = Rf_xlength(strata_keys_sexp);
     IntegerVector indices(n);
     int current_idx = 0;
-    for (auto const& [key, members] : strata_map) {
-        int m = members.size();
-        std::uniform_int_distribution<> dis(0, m - 1);
-        for (int j = 0; j < m; ++j) {
-            indices[current_idx++] = members[dis(gen)];
+
+    if (TYPEOF(strata_keys_sexp) == INTSXP) {
+        IntegerVector strata_ids(strata_keys_sexp);
+        std::map<int, std::vector<int>> strata_map;
+        for (int i = 0; i < n; ++i) strata_map[strata_ids[i]].push_back(i + 1);
+        for (auto const& [id, members] : strata_map) {
+            const int m = members.size();
+            std::uniform_int_distribution<> dis(0, m - 1);
+            for (int j = 0; j < m; ++j) indices[current_idx++] = members[dis(gen)];
+        }
+    } else {
+        CharacterVector strata_keys = as<CharacterVector>(strata_keys_sexp);
+        std::map<std::string, std::vector<int>> strata_map;
+        for (int i = 0; i < n; ++i) {
+            std::string key = as<std::string>(strata_keys[i]);
+            strata_map[key].push_back(i + 1);
+        }
+        for (auto const& [key, members] : strata_map) {
+            const int m = members.size();
+            std::uniform_int_distribution<> dis(0, m - 1);
+            for (int j = 0; j < m; ++j) indices[current_idx++] = members[dis(gen)];
         }
     }
-    
+
     std::shuffle(indices.begin(), indices.end(), gen);
     return indices;
 }

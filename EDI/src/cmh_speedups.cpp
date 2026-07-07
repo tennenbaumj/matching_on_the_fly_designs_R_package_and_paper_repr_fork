@@ -1,6 +1,5 @@
 #include <Rcpp.h>
 #include <algorithm>
-#include <unordered_map>
 #include <vector>
 
 using namespace Rcpp;
@@ -16,21 +15,30 @@ double compute_cmh_block_se_cpp(const NumericVector& y,
     return NA_REAL;
   }
 
-  // y is binary (0/1), so y[i]^2 == y[i] and sum_sq == sum; store integer sum only.
-  std::unordered_map<int, int> block_sums;
-  block_sums.reserve(static_cast<std::size_t>(y.size()));
+  // Find max block ID (skipping NA/invalid entries) to size the flat accumulator.
+  int max_block_id = 0;
+  for (int i = 0; i < (int)m_vec.size(); ++i) {
+    const int mid = m_vec[i];
+    if (mid != NA_INTEGER && mid > max_block_id) max_block_id = mid;
+  }
+  if (max_block_id <= 0) return NA_REAL;
 
+  // y is binary (0/1), so y[i]^2 == y[i] and sum_sq == sum; store integer sum only.
+  // -1 sentinel: block not yet seen (distinguishes "unseen" from "seen but all zeros").
+  std::vector<int> block_sums(max_block_id + 1, -1);
+  int B = 0;
   int n_included = 0;
-  for (int i = 0; i < y.size(); ++i) {
+  for (int i = 0; i < (int)y.size(); ++i) {
     const int match_id = m_vec[i];
     if (match_id == NA_INTEGER || match_id <= 0 || !R_finite(y[i])) {
       continue;
     }
-    block_sums[match_id] += static_cast<int>(y[i]);
+    int& bs = block_sums[match_id];
+    if (bs < 0) { bs = 0; ++B; }
+    bs += static_cast<int>(y[i]);
     ++n_included;
   }
 
-  const int B = static_cast<int>(block_sums.size());
   if (B <= 0) {
     return NA_REAL;
   }
@@ -45,8 +53,9 @@ double compute_cmh_block_se_cpp(const NumericVector& y,
   const double denom = n_b_d - 1.0;
 
   double var_cmh = 0.0;
-  for (const auto& entry : block_sums) {
-    const double s = static_cast<double>(entry.second);
+  for (int bid = 1; bid <= max_block_id; ++bid) {
+    if (block_sums[bid] < 0) continue;  // unseen block
+    const double s = static_cast<double>(block_sums[bid]);
     // ss  = sum_sq - sum^2/n_b = s - s^2/n_b = s*(n_b - s)/n_b
     // contribution = (n_b/(n_b-1)) * ss = s*(n_b - s)/(n_b - 1)
     var_cmh += s * (n_b_d - s) / denom;
@@ -67,21 +76,29 @@ double compute_extended_robins_block_se_cpp(const NumericVector& y,
     return NA_REAL;
   }
 
+  // Find max block ID to size the flat accumulator.
+  int max_block_id = 0;
+  for (int i = 0; i < (int)m_vec.size(); ++i) {
+    const int mid = m_vec[i];
+    if (mid != NA_INTEGER && mid > max_block_id) max_block_id = mid;
+  }
+  if (max_block_id <= 0) return NA_REAL;
+
   struct RobinsBlockAccumulator {
     int n = 0;
     double sum_t = 0.0;
     double sum_c = 0.0;
   };
 
-  std::unordered_map<int, RobinsBlockAccumulator> blocks;
-  blocks.reserve(static_cast<std::size_t>(y.size()));
+  std::vector<RobinsBlockAccumulator> flat_blocks(max_block_id + 1);
+  int B = 0;
 
   int total_t = 0;
   int total_c = 0;
   double total_sum_t = 0.0;
   double total_sum_c = 0.0;
 
-  for (int i = 0; i < y.size(); ++i) {
+  for (int i = 0; i < (int)y.size(); ++i) {
     const int match_id = m_vec[i];
     if (match_id == NA_INTEGER || match_id <= 0) {
       continue;
@@ -90,7 +107,8 @@ double compute_extended_robins_block_se_cpp(const NumericVector& y,
       return NA_REAL;
     }
 
-    RobinsBlockAccumulator& block = blocks[match_id];
+    RobinsBlockAccumulator& block = flat_blocks[match_id];
+    if (block.n == 0) ++B;
     block.n += 1;
     if (w[i] == 1.0) {
       ++total_t;
@@ -103,7 +121,6 @@ double compute_extended_robins_block_se_cpp(const NumericVector& y,
     }
   }
 
-  const int B = static_cast<int>(blocks.size());
   if (B <= 0) {
     return NA_REAL;
   }
@@ -113,8 +130,9 @@ double compute_extended_robins_block_se_cpp(const NumericVector& y,
   }
 
   double variance_tot = 0.0;
-  for (const auto& entry : blocks) {
-    const RobinsBlockAccumulator& block = entry.second;
+  for (int bid = 1; bid <= max_block_id; ++bid) {
+    const RobinsBlockAccumulator& block = flat_blocks[bid];
+    if (block.n == 0) continue;  // unseen block
     if (block.n <= 1) {
       return NA_REAL;
     }

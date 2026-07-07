@@ -13,6 +13,7 @@
 #include "ordinal_fixed_link_helpers.h"
 #include "optimization_starts.h"
 #include <RcppEigen.h>
+#include <R_ext/BLAS.h>
 #include <optimization/LBFGS.h>
 #include <vector>
 #include <set>
@@ -135,7 +136,18 @@ inline Eigen::MatrixXd weighted_crossprod(const Eigen::MatrixBase<Derived>& X,
         return res;
     }
 
-    return X.transpose() * w.asDiagonal() * X;
+    // col-major: column-pair DSYR — upper triangle only, halves FLOPs vs full GEMM
+    Eigen::MatrixXd res(p, p);
+    Eigen::VectorXd wXj(n);
+    for (int j = 0; j < p; ++j) {
+        wXj.noalias() = (w.array() * X.col(j).array()).matrix();
+        for (int k = j; k < p; ++k) {
+            const double acc = wXj.dot(X.col(k));
+            res(j, k) = acc;
+            if (k != j) res(k, j) = acc;
+        }
+    }
+    return res;
 }
 
 // Overload for Map
@@ -208,6 +220,21 @@ inline Eigen::VectorXd weighted_crossprod_rhs(const Eigen::Map<const Eigen::Matr
             res(j) += X(i, j) * wi_yi;
         }
     }
+    return res;
+}
+
+// Compute X^T X using BLAS DSYRK (half FLOPs vs full DGEMM, BLAS-optimized)
+template<typename Derived>
+inline Eigen::MatrixXd symmetric_crossprod(const Eigen::MatrixBase<Derived>& X) {
+    const BLAS_INT n = static_cast<BLAS_INT>(X.rows());
+    const BLAS_INT p = static_cast<BLAS_INT>(X.cols());
+    Eigen::MatrixXd res(p, p);
+    if (p == 0) return res;
+    const double alpha = 1.0, beta = 0.0;
+    const BLAS_INT lda = static_cast<BLAS_INT>(X.derived().outerStride());
+    const BLAS_INT ldc = p;
+    F77_CALL(dsyrk)("U", "T", &p, &n, &alpha, X.derived().data(), &lda, &beta, res.data(), &ldc FCONE FCONE);
+    res.triangularView<Eigen::Lower>() = res.transpose();
     return res;
 }
 

@@ -1154,10 +1154,10 @@ get_kernel = function(name) {
 
     stratified_bootstrap_indices = local({
         set.seed(SEED)
-        strata_keys = as.character(rep(paste0("S", 1:5), each = 200L))
-        list(desc = "stratified_bootstrap_indices_cpp(strata_keys) [5 strata x 200]",
+        strata_ids = as.integer(rep(1:5, each = 200L))
+        list(desc = "stratified_bootstrap_indices_cpp(strata_ids) [5 strata x 200]",
              REPS = 40000L,
-             fn   = function() EDI:::stratified_bootstrap_indices_cpp(strata_keys))
+             fn   = function() EDI:::stratified_bootstrap_indices_cpp(strata_ids))
     }),
 
     bootstrap_m_indices = local({
@@ -1239,7 +1239,7 @@ get_kernel = function(name) {
     pocock_simon_assign = local({
         set.seed(SEED)
         counts = matrix(as.double(c(10L, 8L, 12L, 9L, 11L, 10L)), nrow = 3L, ncol = 2L)
-        levels_idx = as.integer(c(0L, 1L, 2L))
+        levels_idx = as.integer(c(1L, 2L, 3L))
         weights    = c(1.0, 1.0, 1.0)
         list(desc = "pocock_simon_assign_cpp(counts, levels_idx, weights, p_best=0.7, prob_T=0.5)",
              REPS = 400000L,
@@ -1249,7 +1249,7 @@ get_kernel = function(name) {
     pocock_simon_assign_and_update = local({
         set.seed(SEED)
         counts = matrix(as.double(c(10L, 8L, 12L, 9L, 11L, 10L)), nrow = 3L, ncol = 2L)
-        levels_idx = as.integer(c(0L, 1L, 2L))
+        levels_idx = as.integer(c(1L, 2L, 3L))
         weights    = c(1.0, 1.0, 1.0)
         list(desc = "pocock_simon_assign_and_update_cpp(counts, levels_idx, weights, p_best=0.7, prob_T=0.5)",
              REPS = 400000L,
@@ -1259,8 +1259,9 @@ get_kernel = function(name) {
     pocock_simon_redraw_w = local({
         set.seed(SEED)
         n = 200L; n_factors = 3L; n_levels_each = 2L
-        x_levels_matrix = matrix(as.integer(sample(0:(n_levels_each - 1L), n * n_factors, replace = TRUE)),
-                                  nrow = n, ncol = n_factors)
+        x_levels_matrix = vapply(seq_len(n_factors), function(j) {
+            as.integer(sample.int(n_levels_each, n, replace = TRUE) + (j - 1L) * n_levels_each)
+        }, integer(n))
         num_levels_total = n_factors * n_levels_each
         weights = rep(1.0, n_factors)
         list(desc = "pocock_simon_redraw_w_cpp(x_levels_matrix, num_levels_total=6L, weights, p_best=0.7, prob_T=0.5) [n=200]",
@@ -1318,8 +1319,9 @@ get_kernel = function(name) {
     generate_permutations_pocock_simon = local({
         set.seed(SEED)
         n = 200L; n_factors = 3L; n_levels_each = 2L
-        x_levels_matrix = matrix(as.integer(sample(0:(n_levels_each - 1L), n * n_factors, replace = TRUE)),
-                                  nrow = n, ncol = n_factors)
+        x_levels_matrix = vapply(seq_len(n_factors), function(j) {
+            as.integer(sample.int(n_levels_each, n, replace = TRUE) + (j - 1L) * n_levels_each)
+        }, integer(n))
         num_levels_total = n_factors * n_levels_each
         weights = rep(1.0, n_factors)
         list(desc = "generate_permutations_pocock_simon_cpp(x_levels_matrix, 6L, weights, p_best=0.7, prob_T=0.5, nsim=500L)",

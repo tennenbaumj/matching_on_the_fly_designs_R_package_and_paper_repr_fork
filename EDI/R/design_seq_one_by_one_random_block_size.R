@@ -104,7 +104,8 @@ DesignSeqOneByOneRandomBlockSize = R6::R6Class("DesignSeqOneByOneRandomBlockSize
 				strata_keys = vapply(1:private$t, function(i) {
 					private$get_strata_key(private$Xraw[i, ])
 				}, character(1))
-				stratified_bootstrap_indices_cpp(as.character(unname(strata_keys)))
+				strata_ids = match(strata_keys, unique(strata_keys))
+				stratified_bootstrap_indices_cpp(as.integer(strata_ids))
 			} else {
 				sample_int_replace_cpp(private$t, private$t)
 			}

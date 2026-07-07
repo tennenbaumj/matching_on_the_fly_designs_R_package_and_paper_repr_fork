@@ -508,9 +508,14 @@ List fit_constrained_binomial_with_var_cpp_impl(const Eigen::Ref<const Eigen::Ma
   }
 
   FixedParamSpec fixed_spec = make_fixed_param_spec((int)X.cols(), fixed_idx, fixed_values);
-  Eigen::MatrixXd X_free(X.rows(), (int)fixed_spec.free_idx.size());
-  for (int col = 0; col < (int)fixed_spec.free_idx.size(); ++col) X_free.col(col) = X.col(fixed_spec.free_idx[col]);
-  Eigen::MatrixXd XtWX_free = weighted_crossprod(X_free, w);
+  Eigen::MatrixXd fisher_information;
+  if (fit.containsElementNamed("fisher_information")) {
+    fisher_information = as<Eigen::MatrixXd>(fit["fisher_information"]);
+  }
+  if (fisher_information.rows() != X.cols() || fisher_information.cols() != X.cols() || !all_finite_mat(fisher_information)) {
+    fisher_information = weighted_crossprod(X, w);
+  }
+  Eigen::MatrixXd XtWX_free = subset_matrix(fisher_information, fixed_spec.free_idx, fixed_spec.free_idx);
   Eigen::LDLT<Eigen::MatrixXd> ldlt(XtWX_free);
   if (ldlt.info() != Eigen::Success) {
     return List::create(
@@ -532,7 +537,7 @@ List fit_constrained_binomial_with_var_cpp_impl(const Eigen::Ref<const Eigen::Ma
     _["b"] = beta,
     _["ssq_b_j"] = ssq_b_j,
     _["converged"] = true,
-    _["fisher_information"] = weighted_crossprod(X, w),
+    _["fisher_information"] = fisher_information,
     _["neg_ll"] = -loglik_constrained_binomial(X, y, beta, link_type),
     _["logLik"] = loglik_constrained_binomial(X, y, beta, link_type)
   );

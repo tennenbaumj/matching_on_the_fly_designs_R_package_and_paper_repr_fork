@@ -19,26 +19,32 @@ inline Eigen::ArrayXd plogis_array_clamped(const Eigen::ArrayXd& eta) {
 struct ContinuationRatioObjective {
     const Eigen::Ref<const MatrixXd> X_aug;
     const Eigen::Ref<const VectorXd> z;
+    VectorXd eta;
+    VectorXd mu;
+    VectorXd work;
+    ArrayXd log_mu;
+    ArrayXd log_one_minus_mu;
 
     ContinuationRatioObjective(const Eigen::Ref<const MatrixXd>& X_aug, const Eigen::Ref<const VectorXd>& z) :
-        X_aug(X_aug), z(z) {}
+        X_aug(X_aug), z(z), eta(X_aug.rows()), mu(X_aug.rows()), work(X_aug.rows()),
+        log_mu(X_aug.rows()), log_one_minus_mu(X_aug.rows()) {}
 
-    double operator()(const VectorXd& beta, VectorXd& grad) const {
-        VectorXd eta = X_aug * beta;
-        VectorXd mu = plogis_array_clamped(eta.array()).matrix();
-        grad = X_aug.transpose() * (mu - z); // Negative log-likelihood gradient
+    double operator()(const VectorXd& beta, VectorXd& grad) {
+        eta.noalias() = X_aug * beta;
+        mu = plogis_array_clamped(eta.array()).matrix();
+        work.noalias() = mu - z;
+        grad.noalias() = X_aug.transpose() * work; // Negative log-likelihood gradient
 
-        const Eigen::ArrayXd mu_arr = mu.array();
-        const Eigen::ArrayXd log_mu = mu_arr.max(1e-12).log();
-        const Eigen::ArrayXd log_one_minus_mu = (1.0 - mu_arr).max(1e-12).log();
+        log_mu = mu.array().max(1e-12).log();
+        log_one_minus_mu = (1.0 - mu.array()).max(1e-12).log();
         return -(z.array() * log_mu + (1.0 - z.array()) * log_one_minus_mu).sum();
     }
 
-    MatrixXd hessian(const VectorXd& beta) const {
-        VectorXd eta = X_aug * beta;
-        VectorXd mu = plogis_array_clamped(eta.array()).matrix();
-        VectorXd w = mu.array() * (1.0 - mu.array());
-        return weighted_crossprod(X_aug, w);
+    MatrixXd hessian(const VectorXd& beta) {
+        eta.noalias() = X_aug * beta;
+        mu = plogis_array_clamped(eta.array()).matrix();
+        work = (mu.array() * (1.0 - mu.array())).matrix();
+        return weighted_crossprod(X_aug, work);
     }
 };
 

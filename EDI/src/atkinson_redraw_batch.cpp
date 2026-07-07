@@ -8,8 +8,12 @@ using namespace Rcpp;
 using namespace Eigen;
 
 // Helper: Find which columns have variation in rows 0..(n-1)
-static std::vector<int> which_cols_vary_subset(const MatrixXd& X, int n_rows) {
-	std::vector<int> varying_cols;
+static void which_cols_vary_subset(
+	const MatrixXd& X,
+	int n_rows,
+	std::vector<int>& varying_cols
+) {
+	varying_cols.clear();
 	int p = X.cols();
 
 	for (int j = 0; j < p; ++j) {
@@ -21,61 +25,47 @@ static std::vector<int> which_cols_vary_subset(const MatrixXd& X, int n_rows) {
 			}
 		}
 	}
-	return varying_cols;
-}
-
-// Helper: Extract submatrix with specific rows and columns
-static MatrixXd extract_submatrix(const MatrixXd& X, int n_rows, const std::vector<int>& cols) {
-	if (cols.empty() || n_rows == 0) {
-		return MatrixXd(n_rows, 0);
-	}
-	MatrixXd result(n_rows, cols.size());
-	for (int i = 0; i < n_rows; ++i) {
-		for (size_t j = 0; j < cols.size(); ++j) {
-			result(i, j) = X(i, cols[j]);
-		}
-	}
-	return result;
-}
-
-// Helper: Extract row with specific columns
-static VectorXd extract_row_cols(const MatrixXd& X, int row, const std::vector<int>& cols) {
-	VectorXd result(cols.size());
-	for (size_t j = 0; j < cols.size(); ++j) {
-		result(j) = X(row, cols[j]);
-	}
-	return result;
 }
 
 // Helper: Find linearly independent columns via QR with column pivoting
-static std::vector<int> find_independent_cols(const MatrixXd& M, double tol = 1e-12) {
+template <typename Derived>
+static void find_independent_cols(
+	const Eigen::MatrixBase<Derived>& M,
+	ColPivHouseholderQR<MatrixXd>& qr,
+	std::vector<int>& indep_cols,
+	double tol = 1e-12
+) {
+	indep_cols.clear();
 	if (M.cols() == 0 || M.rows() == 0) {
-		return std::vector<int>();
+		return;
 	}
 
-	ColPivHouseholderQR<MatrixXd> qr(M);
+	qr.compute(M);
 	qr.setThreshold(tol);
 	int rank = qr.rank();
 
-	std::vector<int> indep_cols;
 	const auto& pivot = qr.colsPermutation().indices();
 	for (int i = 0; i < rank; ++i) {
 		indep_cols.push_back(pivot(i));
 	}
 	std::sort(indep_cols.begin(), indep_cols.end());
-	return indep_cols;
 }
 
 // Helper: Compute single Atkinson weight for subject t (0-indexed)
 // Returns the probability used for assignment (not the actual 0/1 assignment)
 static double compute_atkinson_weight(
-	const VectorXd& w_prev,      // Previous weights (length t)
-	const MatrixXd& X_prev,      // Previous subjects' processed covariates (t x rank)
-	const VectorXd& xt,          // Current subject's processed covariates (length rank)
+	const double* w_prev,
+	int rows,
+	const MatrixXd& X_prev_workspace,
+	const VectorXd& xt_prev_workspace,
 	int rank_prev,
-	int t                        // 1-indexed subject number
+	int t,
+	FullPivLU<MatrixXd>& lu,
+	MatrixXd& design_workspace,
+	MatrixXd& crossprod_workspace,
+	MatrixXd& inverse_workspace,
+	VectorXd& xt_workspace
 ) {
-	int rows = w_prev.size();
 	int cols = rank_prev + 2;
 
 	if (rows == 0 || cols < 2) {
@@ -83,38 +73,34 @@ static double compute_atkinson_weight(
 	}
 
 	// Build design matrix [w, 1, X_prev]
-	MatrixXd XprevWT(rows, cols);
+	auto XprevWT = design_workspace.topLeftCorner(rows, cols);
 	for (int i = 0; i < rows; ++i) {
-		XprevWT(i, 0) = w_prev(i);
+		XprevWT(i, 0) = w_prev[i];
 		XprevWT(i, 1) = 1.0;
 		for (int j = 0; j < rank_prev; ++j) {
-			XprevWT(i, j + 2) = X_prev(i, j);
+			XprevWT(i, j + 2) = X_prev_workspace(i, j);
 		}
 	}
 
 	// Compute (X'X)^-1
-	MatrixXd XwtXw = XprevWT.transpose() * XprevWT;
-	FullPivLU<MatrixXd> lu(XwtXw);
+	auto XwtXw = crossprod_workspace.topLeftCorner(cols, cols);
+	XwtXw.noalias() = XprevWT.transpose() * XprevWT;
+	lu.compute(XwtXw);
 	if (!lu.isInvertible()) {
 		return 0.5;  // Will use Bernoulli
 	}
 
-	MatrixXd M = static_cast<double>(t - 1) * lu.inverse();
-
-	// Extract row segment for computation
-	VectorXd row_segment(rank_prev + 1);
-	for (int j = 0; j < rank_prev + 1; ++j) {
-		row_segment(j) = M(0, j + 1);
-	}
+	auto M = inverse_workspace.topLeftCorner(cols, cols);
+	M.noalias() = static_cast<double>(t - 1) * lu.inverse();
 
 	// Build xt vector with intercept
-	VectorXd xt_full(rank_prev + 1);
+	auto xt_full = xt_workspace.head(rank_prev + 1);
 	xt_full(0) = 1.0;
 	for (int j = 0; j < rank_prev; ++j) {
-		xt_full(j + 1) = xt(j);
+		xt_full(j + 1) = xt_prev_workspace(j);
 	}
 
-	double A = row_segment.dot(xt_full);
+	double A = M.row(0).segment(1, rank_prev + 1).dot(xt_full);
 	if (A == 0 || !std::isfinite(A)) {
 		return 0.5;  // Will use Bernoulli
 	}
@@ -138,6 +124,22 @@ NumericVector atkinson_redraw_batch_cpp(
 	Eigen::Map<const Eigen::MatrixXd> X(X_r.begin(), X_r.nrow(), X_r.ncol());
 	std::vector<double> results_vec(n);
     double* w_ptr = results_vec.data();
+	const int p = X.cols();
+	const int max_cols = p + 2;
+
+	std::vector<int> var_cols;
+	std::vector<int> indep_cols;
+	var_cols.reserve(p);
+	indep_cols.reserve(p);
+	MatrixXd X_var_workspace(n, p);
+	MatrixXd X_prev_workspace(n, p);
+	VectorXd xt_prev_workspace(p);
+	MatrixXd design_workspace(n, max_cols);
+	MatrixXd crossprod_workspace(max_cols, max_cols);
+	MatrixXd inverse_workspace(max_cols, max_cols);
+	VectorXd xt_workspace(p + 1);
+	ColPivHouseholderQR<MatrixXd> qr_workspace(n, p);
+	FullPivLU<MatrixXd> lu_workspace(max_cols, max_cols);
 
 	// Threshold for using Bernoulli (early subjects)
 	int bernoulli_threshold = p_raw + 2 + 1;
@@ -150,7 +152,7 @@ NumericVector atkinson_redraw_batch_cpp(
 		}
 
 		// Find which columns vary in rows 0..(t-1)
-		std::vector<int> var_cols = which_cols_vary_subset(X, t);
+		which_cols_vary_subset(X, t, var_cols);
 
 		if (var_cols.empty()) {
 			w_ptr[t - 1] = (R::unif_rand() < prob_T) ? 1.0 : 0.0;
@@ -158,10 +160,15 @@ NumericVector atkinson_redraw_batch_cpp(
 		}
 
 		// Extract submatrix for rows 0..(t-2) with varying columns
-		MatrixXd X_var = extract_submatrix(X, t - 1, var_cols);
+		auto X_var = X_var_workspace.topLeftCorner(t - 1, static_cast<int>(var_cols.size()));
+		for (int i = 0; i < t - 1; ++i) {
+			for (std::size_t j = 0; j < var_cols.size(); ++j) {
+				X_var(i, static_cast<int>(j)) = X(i, var_cols[j]);
+			}
+		}
 
 		// Find linearly independent columns
-		std::vector<int> indep_cols = find_independent_cols(X_var);
+		find_independent_cols(X_var, qr_workspace, indep_cols);
 
 		if (indep_cols.empty()) {
 			w_ptr[t - 1] = (R::unif_rand() < prob_T) ? 1.0 : 0.0;
@@ -169,30 +176,25 @@ NumericVector atkinson_redraw_batch_cpp(
 		}
 
 		// Extract final processed matrix and vector
-		MatrixXd X_prev(t - 1, indep_cols.size());
+		auto X_prev = X_prev_workspace.topLeftCorner(t - 1, static_cast<int>(indep_cols.size()));
 		for (int i = 0; i < t - 1; ++i) {
 			for (size_t j = 0; j < indep_cols.size(); ++j) {
-				X_prev(i, j) = X_var(i, indep_cols[j]);
+				X_prev(i, static_cast<int>(j)) = X_var(i, indep_cols[j]);
 			}
 		}
 
 		// Get xt_prev (current subject's row with same column processing)
-		VectorXd xt_var = extract_row_cols(X, t - 1, var_cols);
-		VectorXd xt_prev(indep_cols.size());
 		for (size_t j = 0; j < indep_cols.size(); ++j) {
-			xt_prev(j) = xt_var(indep_cols[j]);
+			xt_prev_workspace(static_cast<int>(j)) = X(t - 1, var_cols[indep_cols[j]]);
 		}
 
-		// Get previous weights
-		VectorXd w_prev(t - 1);
-		for (int i = 0; i < t - 1; ++i) {
-			w_prev(i) = w_ptr[i];
-		}
-
-		int rank_prev = X_prev.cols();
+		int rank_prev = static_cast<int>(indep_cols.size());
 
 		// Compute Atkinson probability
-		double prob = compute_atkinson_weight(w_prev, X_prev, xt_prev, rank_prev, t);
+		double prob = compute_atkinson_weight(
+			w_ptr, t - 1, X_prev_workspace, xt_prev_workspace, rank_prev, t,
+			lu_workspace, design_workspace, crossprod_workspace,
+			inverse_workspace, xt_workspace);
 
 		// Draw assignment
 		w_ptr[t - 1] = (R::unif_rand() < prob) ? 1.0 : 0.0;

@@ -83,4 +83,17 @@ inline double dnorm_fast(double x) {
     return k1_Sqrt2Pi * std::exp(-0.5 * x * x);
 }
 
+// Log standard normal CDF: log(Phi(x)); avoids R::pnorm dispatch overhead.
+inline double fast_log_pnorm(double x) {
+    if (x >= 8.0)  return -6.661e-16;        // log(1 - 6e-16)
+    if (x <= -8.0) return -35.0496;           // log(6e-16)
+    return std::log(0.5 * fast_erfc(-x * kSqrt1_2));
+}
+
+// Log standard normal PDF: log(phi(x)) = -x^2/2 - log(sqrt(2*pi)).
+inline double fast_log_dnorm(double x) {
+    constexpr double kLnSqrt2Pi = 0.9189385332046728;
+    return -0.5 * x * x - kLnSqrt2Pi;
+}
+
 #endif // EDI_FAST_ERFC_H

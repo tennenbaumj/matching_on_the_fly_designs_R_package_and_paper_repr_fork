@@ -534,30 +534,6 @@ fast_hurdle_negbin_with_var_cpp <- function(X_r, y_r, X_hurdle_r, j = 2L, warm_s
     .Call(`_EDI_fast_hurdle_negbin_with_var_cpp`, X_r, y_r, X_hurdle_r, j, warm_start_params, smart_cold_start, maxit, tol, fixed_idx, fixed_values, optimization_alg, warm_start_fisher_info, warm_start_hurdle_fisher_info)
 }
 
-#' Fit a zero-truncated negative binomial count model
-#'
-#' @param X_r Design matrix (n x p, intercept column included).
-#' @param y_r Integer response vector of positive counts (zero-truncated; all values must be >= 1).
-#' @param warm_start_params Optional numeric vector of length \code{ncol(X_r) + 1} giving starting
-#'   values for \code{(beta, log_theta)}. Validated on entry; an out-of-range \code{log_theta}
-#'   (outside \[-20, 20\]) triggers an error.
-#' @param smart_cold_start If \code{TRUE} (default) and \code{warm_start_params} is \code{NULL},
-#'   uses data-driven heuristics to choose a starting point.
-#' @param estimate_only If \code{TRUE}, skips Fisher information computation and returns only
-#'   the point estimate. Default \code{FALSE}.
-#' @param maxit Maximum number of optimizer iterations. Default 1000.
-#' @param tol Convergence tolerance. Default 1e-8.
-#' @param fixed_idx Optional integer vector of 1-based parameter indices to hold fixed.
-#' @param fixed_values Optional numeric vector of values for the fixed parameters (same length as
-#'   \code{fixed_idx}).
-#' @param optimization_alg Optimizer to use. One of \code{"lbfgs"} (default) or \code{"bfgs"}.
-#' @param warm_start_fisher_info Optional square numeric matrix of size \code{ncol(X_r) + 1}
-#'   giving a starting Fisher information matrix.
-#' @return A named list with elements \code{converged} (logical), \code{params} (numeric vector of
-#'   length \code{ncol(X_r) + 1}), \code{b} (the regression coefficients without \code{log_theta}),
-#'   \code{neg_ll} (the negative log-likelihood), and \code{fisher_information} (the estimated
-#'   Fisher information matrix, or \code{NULL} when \code{estimate_only = TRUE}).
-#' @export
 fast_truncated_negbin_count_cpp <- function(X_r, y_r, warm_start_params = NULL, smart_cold_start = TRUE, estimate_only = FALSE, maxit = 1000L, tol = 1e-8, fixed_idx = NULL, fixed_values = NULL, optimization_alg = "lbfgs", warm_start_fisher_info = NULL) {
     .Call(`_EDI_fast_truncated_negbin_count_cpp`, X_r, y_r, warm_start_params, smart_cold_start, estimate_only, maxit, tol, fixed_idx, fixed_values, optimization_alg, warm_start_fisher_info)
 }
@@ -945,6 +921,10 @@ fast_ols_with_var_cpp <- function(X_sexp, y_sexp, j = 2L, fixed_idx = NULL, fixe
     .Call(`_EDI_fast_ols_with_var_cpp`, X_sexp, y_sexp, j, fixed_idx, fixed_values)
 }
 
+fast_atan_cauchit_cpp <- function(x) {
+    .Call(`_EDI_fast_atan_cauchit_cpp`, x)
+}
+
 get_ordinal_cauchit_regression_score_cpp <- function(X, y, params, fixed_idx = NULL, fixed_values = NULL) {
     .Call(`_EDI_get_ordinal_cauchit_regression_score_cpp`, X, y, params, fixed_idx, fixed_values)
 }
@@ -991,6 +971,10 @@ fast_ordinal_cauchit_regression_with_var_cpp <- function(X, y, warm_start_params
 
 fast_ordinal_clmm_cpp <- function(X, y, group_id, K, j_T, link = "logit", estimate_only = FALSE, n_gh = 20L, max_abs_log_sigma = 8.0, maxit = 300L, eps_g = 1e-6, warm_start_params = NULL, optimization_alg = "lbfgs", fixed_idx = NULL, fixed_values = NULL, warm_start_fisher_info = NULL) {
     .Call(`_EDI_fast_ordinal_clmm_cpp`, X, y, group_id, K, j_T, link, estimate_only, n_gh, max_abs_log_sigma, maxit, eps_g, warm_start_params, optimization_alg, fixed_idx, fixed_values, warm_start_fisher_info)
+}
+
+fast_cloglog_link_eval_cpp <- function(x) {
+    .Call(`_EDI_fast_cloglog_link_eval_cpp`, x)
 }
 
 get_ordinal_cloglog_regression_score_cpp <- function(X, y, params, fixed_idx = NULL, fixed_values = NULL) {
@@ -2276,3 +2260,4 @@ compute_zhang_match_data_cpp <- function(X, y, w, m_vec) {
 compute_matching_wy_stats_cpp <- function(w, y, m_vec) {
     .Call(`_EDI_compute_matching_wy_stats_cpp`, w, y, m_vec)
 }
+

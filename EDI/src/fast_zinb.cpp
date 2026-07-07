@@ -142,7 +142,6 @@ public:
             }
         }
 
-        grad.resize(m_pc + m_pz + 1);
         grad.head(m_pc).noalias()          = m_Xc.transpose() * m_w_c;
         grad.segment(m_pc, m_pz).noalias() = m_Xz.transpose() * m_w_z;
         grad[m_pc + m_pz]                  = d_log_theta;

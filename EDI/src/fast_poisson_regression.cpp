@@ -171,6 +171,8 @@ ModelResult fast_poisson_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
 	res.b = VectorXd::Zero(p);
     VectorXd mu(n);
     VectorXd eta(n);
+    VectorXd eta_try(n);
+    VectorXd delta_eta(n);
     MatrixXd XtWX_free = MatrixXd::Zero(p_free, p_free);
     VectorXd score_free(p_free);
 
@@ -179,6 +181,17 @@ ModelResult fast_poisson_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
         double nll = 0.0;
         for (int i = 0; i < n; ++i) {
             double ei = clamp_eta_for_exp(e[i]);
+            double mui = std::exp(ei);
+            double wi = use_weights ? weights[i] : 1.0;
+            nll += wi * (mui - y[i] * ei);
+        }
+        return nll;
+    };
+
+    auto compute_neg_loglik_from_eta = [&](const VectorXd& e_full) {
+        double nll = 0.0;
+        for (int i = 0; i < n; ++i) {
+            double ei = clamp_eta_for_exp(e_full[i]);
             double mui = std::exp(ei);
             double wi = use_weights ? weights[i] : 1.0;
             nll += wi * (mui - y[i] * ei);
@@ -217,14 +230,14 @@ ModelResult fast_poisson_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
                 if (info_full.rows() == p && info_full.cols() == p) {
                     XtWX_free = subset_matrix(info_full, fixed_spec.free_idx, fixed_spec.free_idx);
                 } else {
-                    XtWX_free.noalias() = X_f.transpose() * w_tmp.asDiagonal() * X_f;
+                    XtWX_free = weighted_crossprod(X_f, w_tmp);
                 }
             } else {
                 Eigen::MatrixXd H_full = edi_opt::poisson_smart_hessian(X, beta_start);
                 XtWX_free = subset_matrix(H_full, fixed_spec.free_idx, fixed_spec.free_idx);
             }
         } else {
-            XtWX_free.noalias() = X_f.transpose() * w_tmp.asDiagonal() * X_f;
+            XtWX_free = weighted_crossprod(X_f, w_tmp);
         }
         
 		Eigen::LDLT<MatrixXd> ldlt(XtWX_free);
@@ -232,14 +245,15 @@ ModelResult fast_poisson_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
         VectorXd step = ldlt.solve(score_free);
 		if (!step.allFinite()) break;
 
-        // Step-halving
+        // Step-halving: delta_eta cached so each probe is O(n) not O(n·p)
+        delta_eta.noalias() = X_f * step;
         double step_size = 1.0;
         bool step_ok = false;
         for (int s = 0; s < 10; ++s) {
-            VectorXd beta_try = beta_free + step_size * step;
-            double try_nll = compute_neg_loglik(beta_try);
+            eta_try.noalias() = eta + step_size * delta_eta;
+            double try_nll = compute_neg_loglik_from_eta(eta_try);
             if (try_nll < current_nll + 1e-10) {
-                beta_free = beta_try;
+                beta_free.noalias() += step_size * step;
                 current_nll = try_nll;
                 step_ok = true;
                 break;
@@ -267,7 +281,7 @@ ModelResult fast_poisson_internal(const Eigen::Ref<const Eigen::MatrixXd>& X,
         
         res.neg_ll = current_nll;
         MatrixXd info_free(p_free, p_free);
-        info_free.noalias() = X_f.transpose() * w_final.asDiagonal() * X_f;
+        info_free = weighted_crossprod(X_f, w_final);
         res.XtWX = expand_free_covariance(p, fixed_spec, info_free, false);
         
         VectorXd final_diff = y - res.mu;

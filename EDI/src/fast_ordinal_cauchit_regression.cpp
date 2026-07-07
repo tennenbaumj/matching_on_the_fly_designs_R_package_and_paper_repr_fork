@@ -40,6 +40,15 @@ public:
 };
 
 // [[Rcpp::export]]
+NumericVector fast_atan_cauchit_cpp(const NumericVector& x) {
+    NumericVector result(no_init(x.size()));
+    for (R_xlen_t i = 0; i < x.size(); ++i) {
+        result[i] = edi_ordinal::fast_atan(x[i]);
+    }
+    return result;
+}
+
+// [[Rcpp::export]]
 SEXP get_ordinal_cauchit_regression_score_cpp(const Rcpp::NumericMatrix& X,
 														 const Rcpp::NumericVector& y,
 														 const Rcpp::NumericVector& params,
