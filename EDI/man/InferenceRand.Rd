@@ -19,6 +19,7 @@ Abstract class for randomization-based inference.
 \subsection{Public methods}{
 \itemize{
 \item \href{#method-InferenceRand-set_custom_randomization_statistic_function}{\code{InferenceRand$set_custom_randomization_statistic_function()}}
+\item \href{#method-InferenceRand-set_custom_randomization_statistic_cpp}{\code{InferenceRand$set_custom_randomization_statistic_cpp()}}
 \item \href{#method-InferenceRand-approximate_randomization_distribution_beta_hat_T}{\code{InferenceRand$approximate_randomization_distribution_beta_hat_T()}}
 \item \href{#method-InferenceRand-compute_rand_two_sided_pval}{\code{InferenceRand$compute_rand_two_sided_pval()}}
 \item \href{#method-InferenceRand-clone}{\code{InferenceRand$clone()}}
@@ -65,6 +66,27 @@ Set Custom Randomization Statistic Computation
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{custom_randomization_statistic_function}}{A function that returns a scalar value.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceRand-set_custom_randomization_statistic_cpp"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceRand-set_custom_randomization_statistic_cpp}{}}}
+\subsection{Method \code{set_custom_randomization_statistic_cpp()}}{
+Set Custom Randomization Statistic as a Pre-Compiled Rcpp Function
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceRand$set_custom_randomization_statistic_cpp(fn)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{fn}}{A compiled Rcpp function returning a scalar \code{double}. Must accept
+either \code{(NumericVector y, IntegerVector w)} or
+\code{(NumericVector y, IntegerVector w, IntegerVector dead)} as arguments.
+Compile with \code{Rcpp::cppFunction()} before passing. Pass \code{NULL} to clear.
+Cannot be combined with \code{set_custom_randomization_statistic_function}.}
 }
 \if{html}{\out{</div>}}
 }

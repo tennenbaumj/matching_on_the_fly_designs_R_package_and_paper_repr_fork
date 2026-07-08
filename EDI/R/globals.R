@@ -270,7 +270,30 @@ weighted_weibull_bootstrap_surrogate_fit = function(time, dead, X, row_weights, 
 # Creates a fork cluster and caps OMP/BLAS threads on each worker to 1.
 # Returns the cluster without storing it — callers decide where it lives.
 make_configured_fork_cluster = function(n_cores) {
-  cl = parallel::makeForkCluster(n_cores)
+  default_port = tryCatch(parallel:::getClusterOption("port"), error = function(e) NA_integer_)
+  candidate_ports = unique(as.integer(c(default_port, sample.int(20000L, 20L) + 10000L)))
+  candidate_ports = candidate_ports[is.finite(candidate_ports) & candidate_ports > 0L & candidate_ports <= 65535L]
+  last_error = NULL
+  cl = NULL
+  for (port in candidate_ports) {
+    cl = tryCatch(
+      parallel::makeForkCluster(n_cores, port = port),
+      error = function(e) {
+        last_error <<- e
+        NULL
+      }
+    )
+    if (!is.null(cl)) break
+  }
+  if (is.null(cl)) {
+    stop(
+      "Could not create fork cluster after trying ",
+      length(candidate_ports),
+      " ports",
+      if (!is.null(last_error)) paste0(": ", conditionMessage(last_error)) else ".",
+      call. = FALSE
+    )
+  }
   tryCatch(
     parallel::clusterCall(cl, function() {
       Sys.setenv(

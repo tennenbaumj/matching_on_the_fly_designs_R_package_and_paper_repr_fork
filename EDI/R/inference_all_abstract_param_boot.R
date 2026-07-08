@@ -195,7 +195,10 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 				used_reusable_worker = isTRUE(use_worker_path),
 				used_deterministic_mode = isTRUE(deterministic_mode)
 			)
-			if (n_finite < as.integer(min_number_usable_samples)) return(NA_real_)
+			if (n_finite < as.integer(min_number_usable_samples)) {
+				private$cache_nonestimable_se("lik_ratio_bootstrap_too_few_converged_samples")
+				return(NA_real_)
+			}
 			n_exceed = sum(finite_lr >= lr_obs)
 			(1 + n_exceed) / (1 + n_finite)
 		},
@@ -322,8 +325,11 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 				lower = min(est, outer)
 				upper = max(est, outer)
 				root_fn = function(d) pval_fn(d) - alpha
+				f.lower = if (isTRUE(all.equal(lower, outer))) f_outer else f_est
+				f.upper = if (isTRUE(all.equal(upper, outer))) f_outer else f_est
 				as.numeric(tryCatch(
-					suppressWarnings(stats::uniroot(root_fn, lower = lower, upper = upper, tol = 1e-6)$root),
+					suppressWarnings(stats::uniroot(root_fn, lower = lower, upper = upper,
+						f.lower = f.lower, f.upper = f.upper, tol = 1e-6)$root),
 					error = function(e) NA_real_
 				))
 			}

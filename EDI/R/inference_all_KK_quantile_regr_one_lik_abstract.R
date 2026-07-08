@@ -66,15 +66,20 @@ InferenceAbstractKKQuantileRegrOneLik = R6::R6Class("InferenceAbstractKKQuantile
 		compute_estimate_with_bootstrap_weights = function(subject_or_block_weights, estimate_only = FALSE){
 			row_weights = private$expand_subject_or_block_weights_to_row_weights(subject_or_block_weights)
 			if (weights_are_effectively_constant(row_weights)) {
-				beta_hat_T = as.numeric(self$compute_estimate(estimate_only = TRUE))[1L]
+				self$compute_estimate(estimate_only = estimate_only)
+				beta_hat_T = as.numeric(private$cached_values$beta_hat_T)[1L]
 				if (is.finite(beta_hat_T)) {
-					private$cached_values$beta_hat_T = beta_hat_T
-					private$cached_values$s_beta_hat_T = NA_real_
 					return(private$cached_values$beta_hat_T)
 				}
 			}
-			private$cached_values$beta_hat_T = private$compute_weighted_combined_estimate(row_weights)
-			private$cached_values$s_beta_hat_T = NA_real_
+			result = private$compute_weighted_combined_estimate(row_weights, estimate_only = estimate_only)
+			if (is.list(result)) {
+				private$cached_values$beta_hat_T = result$beta
+				private$cached_values$s_beta_hat_T = result$se
+			} else {
+				private$cached_values$beta_hat_T = result
+				private$cached_values$s_beta_hat_T = NA_real_
+			}
 			private$cached_values$beta_hat_T
 		},
 		#' @description Compute an asymptotic confidence interval.
@@ -188,8 +193,7 @@ InferenceAbstractKKQuantileRegrOneLik = R6::R6Class("InferenceAbstractKKQuantile
 				j_beta_T = 2L
 			}
 			if (is.null(X_stack)){
-				private$cached_values$beta_hat_T   = NA_real_
-				if (!estimate_only) private$cached_values$s_beta_hat_T = NA_real_
+				private$cache_nonestimable_estimate("no_usable_matched_or_reservoir_data")
 				return(invisible(NULL))
 			}
 			# QR-reduce to full rank, preserving beta_T column
@@ -199,8 +203,7 @@ InferenceAbstractKKQuantileRegrOneLik = R6::R6Class("InferenceAbstractKKQuantile
 			n_total  = nrow(X_stack)
 			n_params = ncol(X_stack)
 			if (n_total <= n_params){
-				private$cached_values$beta_hat_T   = NA_real_
-				if (!estimate_only) private$cached_values$s_beta_hat_T = NA_real_
+				private$cache_nonestimable_estimate("insufficient_data_for_quantile_regr")
 				return(invisible(NULL))
 			}
 			cn = paste0("x", seq_len(n_params))
@@ -213,12 +216,15 @@ InferenceAbstractKKQuantileRegrOneLik = R6::R6Class("InferenceAbstractKKQuantile
 				error = function(e) NULL
 			)
 			if (is.null(fit)){
-				private$cached_values$beta_hat_T   = NA_real_
-				if (!estimate_only) private$cached_values$s_beta_hat_T = NA_real_
+				private$cache_nonestimable_estimate("quantile_regr_fit_unavailable")
 				return(invisible(NULL))
 			}
 			beta = tryCatch(coef(fit)[["trt__"]], error = function(e) NA_real_)
-			private$cached_values$beta_hat_T   = if (is.finite(beta)) beta else NA_real_
+			if (!is.finite(beta)) {
+				private$cache_nonestimable_estimate("quantile_regr_nonfinite_coef")
+				return(invisible(NULL))
+			}
+			private$cached_values$beta_hat_T   = beta
 			if (!estimate_only) {
 				se = private$extract_se_from_rq(fit, "trt__")
 				private$cached_values$s_beta_hat_T = if (!is.na(se)) se else NA_real_
@@ -232,7 +238,7 @@ InferenceAbstractKKQuantileRegrOneLik = R6::R6Class("InferenceAbstractKKQuantile
 		extract_se_from_rq = function(fit, coef_name){
 			.extract_se_from_rq_fit(fit, coef_name)
 		},
-		compute_weighted_combined_estimate = function(row_weights){
+		compute_weighted_combined_estimate = function(row_weights, estimate_only = TRUE){
 			if (is.null(private$cached_values$KKstats)){
 				private$compute_basic_match_data()
 			}
@@ -300,9 +306,12 @@ InferenceAbstractKKQuantileRegrOneLik = R6::R6Class("InferenceAbstractKKQuantile
 				suppressWarnings(quantreg::rq(y_stack__ ~ . - 1, tau = tau, data = dat, weights = w_stack)),
 				error = function(e) NULL
 			)
-			if (is.null(fit)) return(NA_real_)
+			if (is.null(fit)) return(if (estimate_only) NA_real_ else list(beta = NA_real_, se = NA_real_))
 			beta = tryCatch(coef(fit)[["trt__"]], error = function(e) NA_real_)
-			if (is.finite(beta)) as.numeric(beta) else NA_real_
+			beta = if (is.finite(beta)) as.numeric(beta) else NA_real_
+			if (estimate_only) return(beta)
+			se = tryCatch(private$extract_se_from_rq(fit, "trt__"), error = function(e) NA_real_)
+			list(beta = beta, se = if (!is.na(se) && se > 0) se else NA_real_)
 		}
 	)
 )

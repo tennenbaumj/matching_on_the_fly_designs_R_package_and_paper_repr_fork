@@ -19,7 +19,7 @@
 #     response_type    = "continuous",
 #     design_classes_and_params = designs,
 #     inference_classes_and_params = inf_cls,
-#     n = 100, p = 5, cond_exp_func_model = "linear", Nrep = 50, betaT = 1,
+#     n = 100, p = 5, cond_exp_func_model = "linear", Nrep_W = 50L, betaT = 1,
 #     inference_types_and_params = list(asymp_pval = list(delta = 0))
 #   )
 #   sim$run()
@@ -222,7 +222,7 @@ get_r6_init_fn = function(r6gen) {
 #'     InferenceContinOLS = list(),
 #'     InferenceContinKKOLSIVWC = list()
 #'   ),
-#'   n = 100, p = 5, Nrep = 10, betaT = 1
+#'   n = 100, p = 5, Nrep_W = 10L, betaT = 1
 #' )
 #' sim$run()
 #' report = SimulationFrameworkReport$new(sim)
@@ -308,8 +308,16 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     #'   }
     #'   Default \code{"linear"}.
     #'
-    #' @param Nrep Positive integer.  Number of Monte Carlo replications.
-    #'   Default \code{100}.
+    #' @param Nrep_W Positive integer.  Number of treatment-assignment draws (w-reps).
+    #'   Each w-rep generates a fresh covariate matrix \code{X} and a new treatment
+    #'   assignment vector \code{w}.  Default \code{100L}.
+    #'
+    #' @param Nrep_Y_w Positive integer.  Number of draws of the response per draw
+    #'   of \code{w}, the allocation vector.  For each \code{w}-rep,
+    #'   \code{Nrep_Y_w} independent response vectors \code{y} are drawn from the
+    #'   same \code{(X, w)}.  The effective total number of replications recorded is
+    #'   \code{Nrep_W * Nrep_Y_w}.  Default \code{1} (standard behaviour: one
+    #'   outcome draw per allocation-vector draw).
     #'
     #' @param betaT Numeric scalar or vector.  True treatment effect added to treated
     #'   subjects' outcomes.  The scale is response-type specific: additive for
@@ -553,7 +561,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       n                     = 100L,
       p                     = 5L,
       cond_exp_func_model   = "linear",
-      Nrep                  = 100L,
+      Nrep_W                = 100L,
+      Nrep_Y_w              = 1L,
       betaT                 = 1,
       alpha                 = 0.05,
       B_boot                = 201L,
@@ -647,7 +656,13 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       private$n_values         = n_values
       private$p_values         = p_values
       private$cond_exp_func_model_values = cond_exp_func_model_values
-      private$Nrep             = as.integer(Nrep)
+      Nrep_W_val = as.integer(Nrep_W)
+      Nrep_Y_w_val = as.integer(Nrep_Y_w)
+      if (Nrep_W_val < 1L) stop("Nrep_W must be a positive integer")
+      if (Nrep_Y_w_val < 1L) stop("Nrep_Y_w must be a positive integer")
+      private$Nrep_W           = Nrep_W_val
+      private$Nrep_Y_w           = Nrep_Y_w_val
+      private$Nrep             = Nrep_W_val * Nrep_Y_w_val
       private$betaT_values     = betaT_values
       private$alpha            = alpha
       private$B_boot           = as.integer(B_boot)
@@ -694,6 +709,10 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       if (as.integer(num_cores) > 1L && keep_all_intermediate_data) {
         stop("Multithreading (num_cores > 1) is incompatible with 'keep_all_intermediate_data = TRUE'.")
       }
+      if (Nrep_Y_w_val > 1L && !is.null(custom_dgp))
+        stop("Nrep_Y_w > 1 is not supported with custom_dgp.")
+      if (Nrep_Y_w_val > 1L && keep_all_intermediate_data)
+        stop("Nrep_Y_w > 1 is not supported with keep_all_intermediate_data = TRUE.")
       
       private$keep_all_intermediate_data = keep_all_intermediate_data
       private$results_filename     = results_filename
@@ -897,14 +916,18 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       private$error_log            = list()
       private$pending_file_rows    = list()
       if (isTRUE(private$verbose)) {
+        nrep_str = if (private$Nrep_Y_w > 1L)
+          sprintf("%d (Nrep_W=%d x Nrep_Y_w=%d)", private$Nrep, private$Nrep_W, private$Nrep_Y_w)
+        else
+          as.character(private$Nrep_W)
         message(sprintf(
-          "simulations: CEF_mod=%s  n=%s  p=%s  Nrep=%d  betaT=%s designs=%d inferences=%d num_cores=%d",
+          "simulations: CEF_mod=%s  n=%s  p=%s  Nrep=%s  betaT=%s designs=%d inferences=%d num_cores=%d",
           private$.format_values(private$cond_exp_func_model_values),
           private$.format_values(private$n_values),
           private$.format_values(private$p_values),
-          private$Nrep,
-          private$.format_values(private$betaT_values), 
-          n_des, 
+          nrep_str,
+          private$.format_values(private$betaT_values),
+          n_des,
           n_inf,
           num_cores
         ))
@@ -971,37 +994,48 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         n_combos = length(cell_combos)
         cell_tasks_count[cell_idx] = n_combos
         
-        # Identify missing replications for this specific cell
-        reps_to_run = seq_len(private$Nrep)
+        # Identify missing w-replications for this specific cell.
+        # Each w-rep covers Nrep_Y_w y-reps with rep indices
+        # (wri-1)*Nrep_Y_w+1 .. wri*Nrep_Y_w.  A w-rep is needed when any
+        # of its y-reps is missing for any combo.
+        Nrep_Y_w_i = private$Nrep_Y_w
+        reps_to_run = seq_len(private$Nrep_W)
         if (n_existing > 0L && n_combos > 0L) {
-          # Use batches for safety with extremely large Nrep
-          rep_batch_size = max(100L, 500000L %/% n_combos)
-          rep_batches = split(seq_len(private$Nrep), (seq_len(private$Nrep) - 1) %/% rep_batch_size)
-          
+          rep_batch_size = max(100L, 500000L %/% max(1L, n_combos * Nrep_Y_w_i))
+          rep_batches = split(seq_len(private$Nrep_W), (seq_len(private$Nrep_W) - 1L) %/% rep_batch_size)
+
           c_des  = vapply(cell_combos, `[[`, "", "design")
           c_inf  = vapply(cell_combos, `[[`, "", "inference")
           c_type = vapply(cell_combos, `[[`, "", "inference_type")
-          
-          cell_req = rep(TRUE, private$Nrep)
-          for (b_reps in rep_batches) {
-            nb = length(b_reps)
+
+          cell_req = rep(TRUE, private$Nrep_W)
+          for (b_wreps in rep_batches) {
+            nw = length(b_wreps)
+            # Expand each w-rep to its Nrep_Y_w y-rep indices
+            y_rep_vals = as.integer(rep((b_wreps - 1L) * Nrep_Y_w_i, each = Nrep_Y_w_i) +
+                                    rep(seq_len(Nrep_Y_w_i), nw))
+            ny = nw * Nrep_Y_w_i
             all_exists = check_in_result_key_store_cpp(
-              rep(rt_i, nb * n_combos),
-              rep(dt_i, nb * n_combos),
-              rep(as.integer(n_i), nb * n_combos),
-              rep(as.integer(p_i), nb * n_combos),
-              rep(as.numeric(bt_i), nb * n_combos),
-              rep(as.integer(b_reps), each = n_combos),
-              rep(c_des, nb),
-              rep(c_inf, nb),
-              rep(c_type, nb)
+              rep(rt_i, ny * n_combos),
+              rep(dt_i, ny * n_combos),
+              rep(as.integer(n_i), ny * n_combos),
+              rep(as.integer(p_i), ny * n_combos),
+              rep(as.numeric(bt_i), ny * n_combos),
+              rep(y_rep_vals, each = n_combos),
+              rep(c_des, ny),
+              rep(c_inf, ny),
+              rep(c_type, ny)
             )
             total_existing_planned_tasks = total_existing_planned_tasks + sum(all_exists)
+            # Rows = n_combos, cols = ny (nw * Nrep_Y_w_i)
             exists_mat = matrix(all_exists, nrow = n_combos)
-            cell_req[b_reps] = colSums(exists_mat) < n_combos
+            # Each w-rep is done only when ALL Nrep_Y_w y-reps have ALL combos present
+            all_combos_complete = colSums(exists_mat) == n_combos  # length ny
+            wrep_done = apply(matrix(all_combos_complete, nrow = Nrep_Y_w_i), 2L, all)  # length nw
+            cell_req[b_wreps] = !wrep_done
           }
           if (!private$keep_all_intermediate_data) {
-             reps_to_run = which(cell_req)
+            reps_to_run = which(cell_req)
           }
         }
         cell_reps_to_run[[cell_idx]] = reps_to_run
@@ -1098,7 +1132,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         rt_ci = private$param_grid$response_type[[cell_idx]]
 
         reps_to_run_ci = cell_reps_to_run[[cell_idx]]
-        run_req_ci = rep(FALSE, private$Nrep)
+        run_req_ci = rep(FALSE, private$Nrep_W)
         run_req_ci[reps_to_run_ci] = TRUE
         all_run_required_v[[cell_idx]] = run_req_ci
 
@@ -1132,7 +1166,9 @@ SimulationFramework = R6::R6Class("SimulationFramework",
           inference_type_params = private$inference_type_params,
           cell_key_prefix = cell_key_prefix_ci,
           valid_combo_keys = cell_valid_combo_keys_ci,
-          stop_on_error = private$stop_on_error
+          stop_on_error = private$stop_on_error,
+          Nrep_W = private$Nrep_W,
+          Nrep_Y_w = private$Nrep_Y_w
         )
         all_cell_states[[cell_idx]] = cs
       }
@@ -1372,7 +1408,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       if (isTRUE(private$verbose)) {
         private$use_progress_bar = TRUE
         first_active_rep = NA_integer_
-        for (r_init in seq_len(private$Nrep)) {
+        for (r_init in seq_len(private$Nrep_W)) {
           if (any(vapply(cell_reps_to_run, function(v) r_init %in% v, FALSE))) {
             first_active_rep = r_init; break
           }
@@ -1384,7 +1420,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
           private$tasks_per_rep    = cell_tasks_count[[first_active_cell_init]]
           private$current_task_in_rep_idx = 0L
         } else {
-          private$current_rep_idx  = private$Nrep
+          private$current_rep_idx  = private$Nrep_W
           private$current_cell_idx = n_cells
           private$tasks_per_rep    = if (length(cell_tasks_count) > 0L) cell_tasks_count[[length(cell_tasks_count)]] else 0L
           private$current_task_in_rep_idx = private$tasks_per_rep
@@ -1398,8 +1434,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         private$.draw_progress()
       }
 
-      # ── Main simulation loop: outer = rep, inner = DGP cell ──────────────────
-      private$rep_elapsed_times        = numeric(private$Nrep)
+      # ── Main simulation loop: outer = w-rep, inner = DGP cell ───────────────
+      private$rep_elapsed_times        = numeric(private$Nrep_W)
       private$rep_elapsed_idx          = 0L
       private$session_work_units_done  = 0L
       private$session_start_time       = as.numeric(Sys.time())
@@ -1460,12 +1496,12 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       # all_run_required_v via copy-on-write at fork time — no serialization.
       if (use_fork_cluster) {
         private$current_task_label = "Rep"
-        rep_chunks = split(seq_len(private$Nrep),
-                           (seq_len(private$Nrep) - 1L) %/% num_cores_to_use)
+        rep_chunks = split(seq_len(private$Nrep_W),
+                           (seq_len(private$Nrep_W) - 1L) %/% num_cores_to_use)
         for (rep_chunk in rep_chunks) {
-          chunk_items = lapply(rep_chunk, function(rep_i) {
-            rep_seed = if (!is.null(seed_val)) seed_val + rep_i else NULL
-            list(rep_i = rep_i, rep_seed = rep_seed)
+          chunk_items = lapply(rep_chunk, function(w_rep_i) {
+            rep_seed = if (!is.null(seed_val)) seed_val + w_rep_i else NULL
+            list(rep_i = w_rep_i, rep_seed = rep_seed)
           })
           chunk_iter_start   = as.numeric(Sys.time())
           chunk_results_list = parallel::clusterApply(cl_rep, chunk_items, fork_rep_worker_fn)
@@ -1490,7 +1526,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
               private$current_cell_idx = n_cells
               private$current_task_in_rep_idx = if (n_cells > 0L) cell_tasks_count[[n_cells]] else 0L
               private$tasks_per_rep = private$current_task_in_rep_idx
-              if (rep %% 100L == 0L || rep == private$Nrep) private$.draw_progress()
+              if (rep %% 100L == 0L || rep == private$Nrep_W) private$.draw_progress()
               next
             }
 
@@ -1565,17 +1601,17 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       }
 
       # ── Mirai / serial path ───────────────────────────────────────────────────
-      if (!use_fork_cluster) for (rep in seq_len(private$Nrep)) {
-        # Determine which cells need work for this rep.
+      if (!use_fork_cluster) for (rep in seq_len(private$Nrep_W)) {
+        # Determine which cells need work for this w-rep.
         active_cells = which(vapply(all_run_required_v, `[[`, FALSE, rep))
 
-        # Fast-forward progress for fully-skipped reps (all cells already done).
+        # Fast-forward progress for fully-skipped w-reps (all cells already done).
         if (length(active_cells) == 0L) {
           private$current_rep_idx = rep
           private$current_cell_idx = n_cells
           private$current_task_in_rep_idx = if (n_cells > 0L) cell_tasks_count[[n_cells]] else 0L
           private$tasks_per_rep = private$current_task_in_rep_idx
-          if (rep %% 100L == 0L || rep == private$Nrep) private$.draw_progress()
+          if (rep %% 100L == 0L || rep == private$Nrep_W) private$.draw_progress()
           next
         }
 
@@ -1674,7 +1710,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
             private$current_betaT     = cell_state$betaT
             private$current_cond_exp_func_model = cell_state$cond_exp_func_model
             private$current_response_type       = cell_state$response_type
-            private$tasks_per_rep     = cell_tasks_count[[cell_idx]]
+            private$tasks_per_rep     = cell_tasks_count[[cell_idx]] * private$Nrep_Y_w
             private$current_task_in_rep_idx = 0L
             private$last_progress_draw_time = 0
             private$.draw_progress()
@@ -1729,7 +1765,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         # NEXT rep's inter_rep_start measurement rather than being dead space.
         private$current_rep_idx = rep
         private$current_cell_idx = n_cells
-        private$current_task_in_rep_idx = if (n_cells > 0L) cell_tasks_count[[n_cells]] else 0L
+        private$current_task_in_rep_idx = if (n_cells > 0L) cell_tasks_count[[n_cells]] * private$Nrep_Y_w else 0L
         private$tasks_per_rep = private$current_task_in_rep_idx
         private$.draw_progress()
         if (rep %% private$save_to_disk_every_n_rep == 0L) private$.flush_pending_to_disk()
@@ -1781,7 +1817,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       clear_result_key_store_cpp() # Free memory
       if (isTRUE(private$use_progress_bar)) {
         private$current_cell_idx = private$total_cells
-        private$current_rep_idx = private$Nrep
+        private$current_rep_idx = private$Nrep_W
         private$current_task_in_rep_idx = private$tasks_per_rep
         private$.draw_simulation_progress_bars()
         cat("\n", file = stderr())
@@ -1794,6 +1830,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     p_values         = NULL,
     cond_exp_func_model_values = NULL,
     Nrep             = NULL,
+    Nrep_W           = NULL,
+    Nrep_Y_w           = NULL,
     betaT_values     = NULL,
     alpha            = NULL,
     B_boot           = NULL,
@@ -2239,7 +2277,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         n = as.integer(cs$n),
         p = as.integer(cs$p),
         betaT = as.numeric(cs$betaT),
-        Nrep = as.integer(private$Nrep),
+        Nrep_W = as.integer(private$Nrep_W),
         seed = private$seed,
         random_X_draws = private$random_X_draws,
         shared_X = cs$shared_X,
@@ -2639,7 +2677,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       }
       combos
     },
-    .run_single_replication_in_worker = function(rep_i, state, progress_cb = NULL, is_forked = FALSE) {
+    .run_single_replication_in_worker = function(w_rep_i, state, progress_cb = NULL, is_forked = FALSE) {
       # This runs in a worker process. It must be self-contained.
       # 1. Cap threads and nested parallelism to avoid N*M oversubscription.
       # Use loadNamespace to ensure EDI is loaded and functions are accessible,
@@ -2650,7 +2688,11 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       if (is_forked) {
         ns_edi$unset_num_cores() # Clear any inherited clusters
       }
-      
+      # current_rep_i is the true 1..Nrep index used in result records and key lookups.
+      # For Nrep_Y_w == 1 it equals w_rep_i; for Nrep_Y_w > 1 it is updated inside the
+      # y-rep loop to (w_rep_i - 1) * Nrep_Y_w + y_rep.
+      current_rep_i = w_rep_i
+
       error_records = list()
       make_error = function(stage, design = NA_character_, design_params = NULL,
                             inference = NA_character_, inference_params = NULL,
@@ -2662,7 +2704,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
           n = as.integer(state$n),
           p = as.integer(state$p),
           betaT = as.numeric(state$betaT),
-          rep = as.integer(rep_i),
+          rep = as.integer(current_rep_i),
           design = design %||% NA_character_,
           design_params = design_params,
           inference = inference %||% NA_character_,
@@ -2688,7 +2730,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         NULL
       }
       state_for_rep = function() {
-        state$rep = rep_i
+        state$rep = current_rep_i
         state
       }
       validate_custom_replication_data = function(data) {
@@ -2737,7 +2779,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       # 1. Generate data
       data = tryCatch(
         if (!is.null(state$custom_replication_data_generator)) {
-          validate_custom_replication_data(state$custom_replication_data_generator(state_for_rep(), rep_i))
+          validate_custom_replication_data(state$custom_replication_data_generator(state_for_rep(), w_rep_i))
         } else {
           generate_covariate_dataset(
             n                    = state$n,
@@ -2829,9 +2871,9 @@ SimulationFramework = R6::R6Class("SimulationFramework",
             dgp_fn = state$custom_dgp
             dgp_fn_args = names(formals(dgp_fn))
             obs_out = if ("state" %in% dgp_fn_args || "..." %in% dgp_fn_args) {
-              dgp_fn(state$n, state$p, rep_i, state_for_rep())
+              dgp_fn(state$n, state$p, w_rep_i, state_for_rep())
             } else {
-              dgp_fn(state$n, state$p, rep_i)
+              dgp_fn(state$n, state$p, w_rep_i)
             }
             if (!is.list(obs_out) || is.null(obs_out$X) || is.null(obs_out$w) || is.null(obs_out$y))
               stop("custom_dgp must return a list with 'X', 'w', and 'y'")
@@ -2854,7 +2896,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
             precomp_w = NULL
             if (!is.null(state$design_w_cache) && !is.null(state$design_w_cache[[design_name]])) {
               cache = state$design_w_cache[[design_name]]
-              col_j = cache$rep_to_col[as.character(rep_i)]
+              col_j = cache$rep_to_col[as.character(w_rep_i)]
               if (!is.na(col_j)) precomp_w = cache$ws[, col_j]
             }
             if (!is.null(precomp_w)) {
@@ -2907,8 +2949,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         if (is.list(des_obj) && !is.null(des_obj$fatal_error)) return(des_obj)
 
         if (is.null(des_obj)) next
-        # Per-design true estimand: make_estimand_fn (Mode 2) or custom_dgp$true_estimand (Mode 3)
-        # These override the pre-rep default and apply to ALL inference class types.
+        # Per-design true estimand: make_estimand_fn (Mode 2) or custom_dgp$true_estimand (Mode 3).
+        # Computed once per w-rep (X and w are fixed across y-reps).
         if (!is.null(state$make_estimand_fn)) {
           fn_cte = state$make_estimand_fn(state$betaT)
           fn_cte_args = names(formals(fn_cte))
@@ -2922,6 +2964,17 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         } else if (!is.null(obs_out) && !is.null(obs_out$true_estimand)) {
           true_mean_diff_ate = as.numeric(obs_out$true_estimand)[1L]
         }
+        # Extract signed w once; used to regenerate y for y-reps 2..Nrep_Y_w.
+        w_signed_for_yrep = 2L * as.integer(des_obj$get_w()) - 1L
+        # Y-rep loop: for each w-rep draw Nrep_Y_w independent outcome vectors.
+        for (y_rep in seq_len(state$Nrep_Y_w)) {
+          current_rep_i = (w_rep_i - 1L) * state$Nrep_Y_w + y_rep
+          # For y-rep 2+: regenerate responses on the existing design object.
+          # (X and w are unchanged; only y is redrawn.)
+          if (y_rep > 1L) {
+            out_y = apply_treatment_and_noise(y_linear_model, w_signed_for_yrep, rep_data)
+            des_obj$add_all_subject_responses(out_y$y, out_y$dead)
+          }
         for (ii in seq_along(state$inference_classes)) {
           inf_gen  = state$inference_classes[[ii]]
           inf_name = state$inference_labels[[ii]]
@@ -2993,7 +3046,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
             rep(state$n, length(valid_inference_types)),
             rep(state$p, length(valid_inference_types)),
             rep(state$betaT, length(valid_inference_types)),
-            rep(rep_i, length(valid_inference_types)),
+            rep(current_rep_i, length(valid_inference_types)),
             rep(design_name, length(valid_inference_types)),
             rep(inf_name, length(valid_inference_types)),
             valid_inference_types
@@ -3045,7 +3098,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
             )
             results[[length(results) + 1L]] <<- list(
               response_type = state$response_type,
-              rep           = rep_i,
+              rep           = current_rep_i,
               cond_exp_func_model = state$cond_exp_func_model,
               n             = as.integer(state$n),
               p             = as.integer(state$p),
@@ -3281,7 +3334,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
             }
           }
         }
-      }
+        }  # end y_rep loop
+      }  # end design loop
       # Return results as a data.table for efficiency in master loop
       list(
         results_dt = if (length(results) > 0L) data.table::rbindlist(results) else NULL,
@@ -3387,7 +3441,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     .draw_simulation_progress_bars = function() {
       now = as.numeric(Sys.time())
       # Throttle: only redraw if 100ms have passed OR we are at 100%
-      is_done = private$current_rep_idx == private$Nrep &&
+      is_done = private$current_rep_idx == private$Nrep_W &&
                 private$current_cell_idx == private$total_cells &&
                 private$current_task_in_rep_idx == private$tasks_per_rep
       if (!is_done && (now - private$last_progress_draw_time) < 0.1) return(invisible(NULL))
@@ -3399,7 +3453,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       # Outer loop is rep; inner is cell; innermost is task.
       task_in_progress_prop = max(0, min(1, if (task_total_display > 0) private$current_task_in_rep_idx / task_total_display else 0))
       cell_in_progress_prop = max(0, min(1, if (private$total_cells > 0) (max(0, private$current_cell_idx - 1) + task_in_progress_prop) / private$total_cells else 0))
-      rep_in_progress_prop  = max(0, min(1, if (private$Nrep > 0) (max(0, private$current_rep_idx - 1) + cell_in_progress_prop) / private$Nrep else 0))
+      rep_in_progress_prop  = max(0, min(1, if (private$Nrep_W > 0) (max(0, private$current_rep_idx - 1) + cell_in_progress_prop) / private$Nrep_W else 0))
       # overall_prop accounts for work done before this session started.
       # Force to 1.0 when all reps/cells/tasks are complete to avoid showing < 100%
       # due to deduplication reducing progress_count increments.
@@ -3469,7 +3523,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       }
       total_elapsed = private$prior_elapsed_secs + (now - private$simulation_start_time)
       line5 = paste0("Time elapsed: ", .fmt_secs(total_elapsed))
-      line1 = make_bar_line(sprintf("Rep %d/%d Overall", private$current_rep_idx, private$Nrep), overall_prop, width, digits = 1)
+      line1 = make_bar_line(sprintf("W-Rep %d/%d Overall", private$current_rep_idx, private$Nrep_W), overall_prop, width, digits = 1)
       # Use \r and \033[2K on EACH line for maximum robustness.
       # Under fork parallelism workers return whole reps at once, so DGP/Task bars
       # always read 100% and are suppressed; only the Rep bar is meaningful.

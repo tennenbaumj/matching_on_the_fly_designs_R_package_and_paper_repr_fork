@@ -20,18 +20,22 @@ InferenceMixinKKGLMMShared = list(
 		compute_estimate_with_bootstrap_weights = function(subject_or_block_weights, estimate_only = FALSE){
 			row_weights = private$expand_subject_or_block_weights_to_row_weights(subject_or_block_weights)
 			if (weights_are_effectively_constant(row_weights)) {
-				beta_hat_T = as.numeric(self$compute_estimate(estimate_only = TRUE))[1L]
+				self$compute_estimate(estimate_only = estimate_only)
+				beta_hat_T = as.numeric(private$cached_values$beta_hat_T)[1L]
 				if (is.finite(beta_hat_T)) {
-					private$cached_values$beta_hat_T = beta_hat_T
-					private$cached_values$s_beta_hat_T = NA_real_
 					private$cached_values$df = Inf
 					private$cached_values$summary_table = NULL
 					return(private$cached_values$beta_hat_T)
 				}
 			}
-			beta_hat_T = private$compute_weighted_glmm_bootstrap_estimate(row_weights)
-			private$cached_values$beta_hat_T = as.numeric(beta_hat_T)[1L]
-			private$cached_values$s_beta_hat_T = NA_real_
+			result = private$compute_weighted_glmm_bootstrap_estimate(row_weights, estimate_only = estimate_only)
+			if (is.list(result)) {
+				private$cached_values$beta_hat_T = result$beta
+				private$cached_values$s_beta_hat_T = result$se
+			} else {
+				private$cached_values$beta_hat_T = as.numeric(result)[1L]
+				private$cached_values$s_beta_hat_T = NA_real_
+			}
 			private$cached_values$df = Inf
 			private$cached_values$summary_table = NULL
 			private$cached_values$beta_hat_T
@@ -258,16 +262,25 @@ InferenceMixinKKGLMMShared = list(
 			}
 			NULL
 		},
-		compute_weighted_glmm_bootstrap_estimate = function(row_weights){
+		compute_weighted_glmm_bootstrap_estimate = function(row_weights, estimate_only = TRUE){
 			for (predictors_df in private$glmm_predictors_df_candidates()) {
-				mod = private$fit_weighted_glmm_on_data(predictors_df, row_weights = row_weights, se = FALSE)
+				mod = private$fit_weighted_glmm_on_data(predictors_df, row_weights = row_weights, se = !estimate_only)
 				if (!private$.is_usable_glmm_fit(mod, se = FALSE)) next
 				beta = tryCatch(glmmTMB::fixef(mod)$cond, error = function(e) NULL)
 				if (!is.null(beta) && "w" %in% names(beta) && is.finite(beta["w"])) {
-					return(as.numeric(beta["w"]))
+					beta_val = as.numeric(beta["w"])
+					if (estimate_only) return(beta_val)
+					se = tryCatch({
+						ct = summary(mod)$coefficients$cond
+						if (!is.null(ct) && "w" %in% rownames(ct)) {
+							se_val = suppressWarnings(as.numeric(ct["w", "Std. Error"]))
+							if (is.finite(se_val) && se_val > 0) se_val else NA_real_
+						} else NA_real_
+					}, error = function(e) NA_real_)
+					return(list(beta = beta_val, se = se))
 				}
 			}
-			NA_real_
+			if (estimate_only) NA_real_ else list(beta = NA_real_, se = NA_real_)
 		},
 		.is_usable_glmm_fit = function(mod, se){
 			if (is.null(mod)) return(FALSE)

@@ -18,8 +18,11 @@ run_likelihood_method_smoke_suite <- function(response_type_filter = NA_characte
 		is_unsupported_method_error <- function(err){
 			msg = conditionMessage(err)
 			grepl("does not expose a likelihood-test specification", msg, fixed = TRUE) ||
+				grepl("does not support score p-values", msg, fixed = TRUE) ||
 				grepl("does not support score confidence intervals", msg, fixed = TRUE) ||
+				grepl("does not support gradient p-values", msg, fixed = TRUE) ||
 				grepl("does not support gradient confidence intervals", msg, fixed = TRUE) ||
+				grepl("does not support likelihood-ratio p-values", msg, fixed = TRUE) ||
 				grepl("does not support likelihood-ratio confidence intervals", msg, fixed = TRUE) ||
 				grepl("does not support parametric-bootstrap LR calibration", msg, fixed = TRUE)
 		}

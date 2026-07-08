@@ -14,6 +14,28 @@ repo_path = function(...) file.path(repo_root, ...)
 pacman::p_load(doParallel, PTE, datasets, qgam, mlbench, AppliedPredictiveModeling, dplyr, ggplot2, gridExtra, profvis, data.table, profvis, devtools)
 suppressPackageStartupMessages(library(EDI))
 
+welch_t_stat_cpp = Rcpp::cppFunction('
+	double welch_t_stat(NumericVector y, IntegerVector w) {
+		int n = y.size();
+		double sum_t = 0, sum_c = 0;
+		int n_t = 0, n_c = 0;
+		for (int i = 0; i < n; i++) {
+			if (w[i] == 1) { sum_t += y[i]; n_t++; }
+			else           { sum_c += y[i]; n_c++; }
+		}
+		double mean_t = sum_t / n_t;
+		double mean_c = sum_c / n_c;
+		double var_t = 0, var_c = 0;
+		for (int i = 0; i < n; i++) {
+			if (w[i] == 1) { double d = y[i] - mean_t; var_t += d * d; }
+			else           { double d = y[i] - mean_c; var_c += d * d; }
+		}
+		var_t /= (n_t - 1);
+		var_c /= (n_c - 1);
+		return (mean_t - mean_c) / sqrt(var_t / n_t + var_c / n_c);
+	}
+')
+
 source(repo_path("EDI", "tests", "testthat", "helper-likelihood-method-smoke.R"))
 
 max_n_dataset = 148 #needs to be divisible by 4 for some blocking designs
@@ -44,9 +66,17 @@ if (!is.na(DESIGN_TYPE_FILTER) && !(DESIGN_TYPE_FILTER %in% ALL_DESIGN_TYPES)) {
 		paste(ALL_DESIGN_TYPES, collapse = ", ")
 	)
 }
+INFERENCE_CLASS_FILTER = if (length(args) >= 5 && args[5] != "NA") as.character(args[5]) else NA_character_
+DATASET_FILTER = if (length(args) >= 6 && args[6] != "NA") as.character(args[6]) else NA_character_
+BETA_T_FILTER = if (length(args) >= 7 && args[7] != "NA") as.numeric(args[7]) else NA_real_
+REP_FILTER = if (length(args) >= 8 && args[8] != "NA") as.integer(args[8]) else NA_integer_
 set_num_cores(NUM_CORES)
 toggle_asserts(FALSE)
-run_likelihood_method_smoke_suite(RESPONSE_TYPE_FILTER)
+if (is.na(INFERENCE_CLASS_FILTER)) {
+	run_likelihood_method_smoke_suite(RESPONSE_TYPE_FILTER)
+} else {
+	message("Skipping likelihood method smoke suite because INFERENCE_CLASS_FILTER is set.")
+}
 
 prob_censoring = 0.15
 r = 351
@@ -274,6 +304,10 @@ log_progress = function(msg){
 	flush.console()
 }
 
+should_run_inference_label = function(inference_label){
+	is.na(INFERENCE_CLASS_FILTER) || grepl(INFERENCE_CLASS_FILTER, inference_label)
+}
+
 inference_banner = function(inf_name, mf = NULL){
 	if (is.null(mf)) {
 		mf = if (exists("model_formula", envir = .GlobalEnv)) get("model_formula", envir = .GlobalEnv) else NULL
@@ -351,15 +385,44 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 
 run_inference_checks_both_paths = function(class_gen, class_name, des_obj, response_type, design_type, dataset_name, n_rows, n_cols, model_formula = NULL, ...){
 	# Univariate path
-	inference_banner(paste0(class_name, " (Univ)"), mf = ~ 1)
-	run_inference_checks(class_gen$new(des_obj, model_formula = ~ 1, ...), response_type, design_type, dataset_name, n_rows, n_cols)
+	univ_label = paste0(class_name, " (Univ)")
+	if (should_run_inference_label(univ_label)) {
+		inference_banner(univ_label, mf = ~ 1)
+		run_inference_checks(
+			class_gen$new(des_obj, model_formula = ~ 1, ...),
+			response_type, design_type, dataset_name, n_rows, n_cols,
+			inference_label = univ_label
+		)
+	}
 	
 	# Multivariate path
-	inference_banner(paste0(class_name, " (Multi)"), mf = ~ .)
-	run_inference_checks(class_gen$new(des_obj, model_formula = ~ ., ...), response_type, design_type, dataset_name, n_rows, n_cols)
+	multi_label = paste0(class_name, " (Multi)")
+	if (should_run_inference_label(multi_label)) {
+		inference_banner(multi_label, mf = ~ .)
+		run_inference_checks(
+			class_gen$new(des_obj, model_formula = ~ ., ...),
+			response_type, design_type, dataset_name, n_rows, n_cols,
+			inference_label = multi_label
+		)
+	}
 }
 
-run_inference_checks = function(seq_des_inf, response_type, design_type, dataset_name, dataset_n_rows, dataset_n_cols, exhaustive_sweep = FALSE){
+run_inference_checks = function(seq_des_inf, response_type, design_type, dataset_name, dataset_n_rows, dataset_n_cols, exhaustive_sweep = FALSE, inference_label = NULL){
+	inference_base_label = if (!is.null(inference_label) && nzchar(inference_label)) {
+		inference_label
+	} else {
+		class(seq_des_inf)[1]
+	}
+	design_formula_suffix = if (exists(".comprehensive_current_model_formula", envir = .GlobalEnv, inherits = FALSE)) {
+		current_model_formula = get(".comprehensive_current_model_formula", envir = .GlobalEnv)
+		paste0(" [design_formula=", paste(deparse(current_model_formula), collapse = " "), "]")
+	} else {
+		""
+	}
+	inference_result_label = paste0(inference_base_label, design_formula_suffix)
+	if (!should_run_inference_label(inference_result_label)) {
+		return(invisible(NULL))
+	}
 	skip_slow = exhaustive_sweep
 	B_debug = min(51L, as.integer(r))
 	r_debug = min(51L, as.integer(r))
@@ -424,7 +487,6 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 			seq_des_inf$.__enclos_env__$private$supports_lik_ratio_param_bootstrap(),
 			error = function(e) FALSE
 		))
-	exposes_parametric_bootstrap_surface = is(seq_des_inf, "InferenceParamBootstrap")
 	skip_rand      = is(seq_des_inf, "InferenceAbstractKKGEE") || is(seq_des_inf, "InferenceAbstractKKGLMM") || is(seq_des_inf, "InferenceIncidExactZhangAbstract") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalPairedSignTest") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalCloglogRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr")
 	skip_mle_pval  = is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyOneLik")
 	skip_rand_pval = is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyOneLik") || is(seq_des_inf, "InferenceContinMultGLS") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is_any_inference_class(c(
@@ -525,9 +587,15 @@ supports_direct_testing_type = function(testing_type){
 		}
 		if (identical(stage, "estimate")) return(TRUE)
 		if (identical(stage, "se")) {
-			# Only studentized variants genuinely require per-replicate SE; block those.
-			# Everything else runs naturally and produces its own result or NA.
-			return(grepl("studentized", label, fixed = TRUE))
+			# These methods require an original or per-replicate standard error.
+			# If the inference object explicitly marked the SE unavailable, a
+			# missing result is expected rather than a numerical-output failure.
+			return(
+				grepl("studentized", label, fixed = TRUE) ||
+				grepl("wald", label, ignore.case = TRUE) ||
+				grepl("asymp", label, ignore.case = TRUE) ||
+				grepl("lik_ratio_bootstrap", label, fixed = TRUE)
+			)
 		}
 		TRUE
 	}
@@ -555,13 +623,13 @@ safe_call = function(label, expr){
 	if (is_row_completed(
 		rep_curr,
 		beta_T,
-		dataset_name,
-		response_type,
-		design_type,
-		class(seq_des_inf)[1],
-		label
-	)) {
-		return(invisible(NULL))
+			dataset_name,
+			response_type,
+			design_type,
+			inference_result_label,
+			label
+		)) {
+			return(invisible(NULL))
 	}
 	
 	if (!is.null(pending_rep_header)) { message(pending_rep_header); pending_rep_header <<- NULL }
@@ -575,46 +643,47 @@ safe_call = function(label, expr){
 	}
 
 	message("          Calling ", label, "()")
-	start_elapsed = unname(proc.time()[["elapsed"]])
-	tryCatch({
-		result <- expr
+		start_elapsed = unname(proc.time()[["elapsed"]])
+		tryCatch({
+			result <- expr
 			if (should_record_nonestimable_as_missing(seq_des_inf, label, result)) {
 				msg = nonestimable_error_message(seq_des_inf, label)
 				message("Recording missing output for ", label, " as ok (explicitly non-estimable).")
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, class(seq_des_inf)[1], label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = NA_character_)
+				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
 				return(invisible(NULL))
 			}
 			if (is_allowed_missing_output(label, result)) {
 				message("Recording missing output for ", label, " as ok (ordinal asymptotic p-value not estimable).")
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, class(seq_des_inf)[1], label, NA_character_, status = "ok", duration_time_sec = duration_time_sec)
+				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec)
 				return(invisible(NULL))
 			}
 			if (has_invalid_numeric(result)) {
 				msg = paste0("Invalid output detected (NA/NaN/Inf) in ", label)
 				message("Skipping ", label, " (non-fatal): ", msg)
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, class(seq_des_inf)[1], label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
+				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
 				return(invisible(NULL))
 			}
 			if (is_zero_zero_confidence_interval(label, result)) {
 				msg = paste0("Degenerate confidence interval [0, 0] detected in ", label)
 				message("Skipping ", label, " (non-fatal): ", msg)
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, class(seq_des_inf)[1], label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
+				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
 				return(invisible(NULL))
 			}
 			result = snap_small_numeric_to_zero(result)
 			cat("            ", paste(format(result, digits = 3), collapse = " "), "\n")
 			duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
 			cat(sprintf("              (Duration: %.3gs)\n", duration_time_sec))
-			record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, class(seq_des_inf)[1], label, result, status = "ok", duration_time_sec = duration_time_sec)
+			record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, result, status = "ok", duration_time_sec = duration_time_sec)
 			result
 		}, error = function(e){
 			if (should_record_nonestimable_as_missing(seq_des_inf, label)) {
+				msg = nonestimable_error_message(seq_des_inf, label)
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, class(seq_des_inf)[1], label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = NA_character_)
+				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
 				return(invisible(NULL))
 			}
 			msg = if (length(e$message) == 0L) "" else e$message
@@ -677,7 +746,7 @@ safe_call = function(label, expr){
 						 													  										if (isTRUE(is_non_fatal)){
 				message("Skipping ", label, " (non-fatal): ", e$message)
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, class(seq_des_inf)[1], label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = e$message)
+				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = e$message)
 			} else {
 				stop(e$message)
 			}
@@ -721,21 +790,24 @@ if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
 		safe_call("compute_exact_two_sided_pval_for_treatment_effect", seq_des_inf$compute_exact_two_sided_pval_for_treatment_effect())
 		safe_call("compute_exact_confidence_interval", seq_des_inf$compute_exact_confidence_interval(args_for_type = list(Zhang = list(combination_method = "Fisher", pval_epsilon = pval_epsilon))))
 	}
+	skip_asymp = is(seq_des_inf, "InferenceExact") &&
+		!is(seq_des_inf, "InferenceAsymp") &&
+		!is(seq_des_inf, "InferenceAsympLik")
 
 	safe_call("compute_estimate", seq_des_inf$compute_estimate())
-	if (!skip_mle_pval){
+	if (!skip_asymp && !skip_mle_pval){
 		if ("compute_asymp_log_rank_two_sided_pval_for_treatment_effect" %in% names(seq_des_inf)) {
 			safe_call("compute_asymp_log_rank_two_sided_pval_for_treatment_effect", seq_des_inf$compute_asymp_log_rank_two_sided_pval_for_treatment_effect())
 		}
 		if ("compute_asymp_two_sided_pval" %in% names(seq_des_inf)) {
 			safe_call("compute_asymp_two_sided_pval", seq_des_inf$compute_asymp_two_sided_pval())
+			}
+			call_direct_asymp("compute_wald_two_sided_pval", "wald")
+			call_direct_asymp("compute_score_two_sided_pval", "score")
+			call_direct_asymp("compute_lik_ratio_two_sided_pval", "lik_ratio")
+			call_direct_asymp("compute_gradient_two_sided_pval", "gradient")
 		}
-		call_direct_asymp("compute_wald_two_sided_pval", "wald")
-		call_direct_asymp("compute_score_two_sided_pval", "score")
-		call_direct_asymp("compute_lik_ratio_two_sided_pval", "lik_ratio")
-		call_direct_asymp("compute_gradient_two_sided_pval", "gradient")
-	}
-	if (!skip_ci){
+	if (!skip_asymp && !skip_ci){
 		safe_call("compute_asymp_confidence_interval", seq_des_inf$compute_asymp_confidence_interval(0.05))
 		call_direct_asymp("compute_wald_confidence_interval", "wald", 0.05)
 		call_direct_asymp("compute_score_confidence_interval", "score", 0.05)
@@ -743,7 +815,7 @@ if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
 		call_direct_asymp("compute_gradient_confidence_interval", "gradient", 0.05)
 	}
 	safe_call_debug = function(label, expr) {
-		if (is_row_completed(rep_curr, beta_T, dataset_name, response_type, design_type, class(seq_des_inf)[1], label)) {
+		if (is_row_completed(rep_curr, beta_T, dataset_name, response_type, design_type, inference_result_label, label)) {
 			return(invisible(NULL))
 		}
 		if (!is.null(pending_rep_header)) { message(pending_rep_header); pending_rep_header <<- NULL }
@@ -757,7 +829,7 @@ if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
 		debug_result = tryCatch(expr, error = function(e) {
 			dur = unname(proc.time()[["elapsed"]]) - start_elapsed
 			record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type,
-						  class(seq_des_inf)[1], label, NA_character_, status = "error",
+						  inference_result_label, label, NA_character_, status = "error",
 						  duration_time_sec = dur, error_message = e$message)
 			NULL
 		})
@@ -782,7 +854,7 @@ if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
 		}
 		cat(sprintf("              (Duration: %.3gs)\n", duration_time_sec))
 		record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type,
-					  class(seq_des_inf)[1], label, stats_vec, status = "ok",
+					  inference_result_label, label, stats_vec, status = "ok",
 					  duration_time_sec = duration_time_sec)
 	}
 
@@ -826,10 +898,10 @@ if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
 					  seq_des_inf$compute_bayesian_bootstrap_two_sided_pval(B = r, type = bayes_pval_type, na.rm = TRUE, show_progress = FALSE))
 		}
 	}
-	if (!skip_slow && exposes_parametric_bootstrap_surface){
+	if (!skip_slow && supports_parametric_bootstrap){
 		safe_call("compute_lik_ratio_bootstrap_two_sided_pval", seq_des_inf$compute_lik_ratio_bootstrap_two_sided_pval(B = r, show_progress = FALSE))
 	}
-	if (!skip_slow && !skip_ci && exposes_parametric_bootstrap_surface){
+	if (!skip_slow && !skip_ci && supports_parametric_bootstrap){
 		safe_call("compute_lik_ratio_bootstrap_confidence_interval", seq_des_inf$compute_lik_ratio_bootstrap_confidence_interval(B = r, show_progress = FALSE))
 	}
 	if (!skip_slow && supports_jackknife){
@@ -860,19 +932,7 @@ if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
 		safe_call("compute_rand_confidence_interval", seq_des_inf$compute_rand_confidence_interval(r = r, pval_epsilon = pval_epsilon, show_progress = FALSE))
 	}
 	if (response_type != "incidence"){
-		custom_stat_fn = function(){
-			priv = if (exists("inf_priv", envir = parent.frame(), inherits = TRUE)) {
-				get("inf_priv", envir = parent.frame(), inherits = TRUE)
-			} else {
-				get("private", envir = parent.frame(), inherits = TRUE)
-			}
-			des_priv = priv$des_obj_priv_int
-			yTs = des_priv$y[des_priv$w == 1]
-			yCs = des_priv$y[des_priv$w == 0]
-			(mean(yTs) - mean(yCs)) / sqrt(var(yTs) / length(yTs) + var(yCs) / length(yCs))
-		}
-		environment(custom_stat_fn) = .GlobalEnv
-		seq_des_inf$set_custom_randomization_statistic_function(custom_stat_fn)
+		seq_des_inf$set_custom_randomization_statistic_cpp(welch_t_stat_cpp)
 		if (!skip_slow && !skip_rand_pval){
 			safe_call("compute_rand_two_sided_pval(custom)", seq_des_inf$compute_rand_two_sided_pval(r = r, show_progress = FALSE))
 		}
@@ -883,12 +943,13 @@ if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
 				message("    Skipping compute_rand_confidence_interval(custom) (too slow)")
 			}
 		}
-		seq_des_inf$set_custom_randomization_statistic_function(NULL)
+		seq_des_inf$set_custom_randomization_statistic_cpp(NULL)
 	}
 }
 
 instantiate_inference_generator = function(class_gen, des_obj, model_formula = NULL){
-	init_formals = tryCatch(names(formals(class_gen$public_methods$initialize)), error = function(e) character())
+	init_fn = class_gen$public_methods$initialize
+	init_formals = if (is.function(init_fn)) names(formals(init_fn)) else character()
 	candidate_arg_sets = list(
 		list(des_obj = des_obj, model_formula = model_formula, verbose = FALSE),
 		list(des_obj = des_obj, model_formula = model_formula),
@@ -922,6 +983,7 @@ run_exhaustive_remaining_inference_classes = function(des_obj, response_type, de
 		"InferenceCustomAsymp",
 		"InferenceCustomBoot",
 		"InferenceCustomRand",
+		"InferenceIncidKKCondLogitPlusGLMMOneLik",
 		"InferenceRandCI",
 		"InferenceQuantileRandCI"
 	))
@@ -959,6 +1021,12 @@ run_exhaustive_remaining_inference_classes = function(des_obj, response_type, de
 }
 
 run_tests_for_response = function(response_type, design_type, dataset_name, model_formula = NULL){
+	.comprehensive_current_model_formula <<- model_formula
+	on.exit({
+		if (exists(".comprehensive_current_model_formula", envir = .GlobalEnv, inherits = FALSE)) {
+			rm(".comprehensive_current_model_formula", envir = .GlobalEnv)
+		}
+	}, add = TRUE)
 	apply_treatment_effect_and_noise = function(y_t, w_t, response_type){
 		eps = rnorm(1, 0, SD_NOISE)
 		bt = ifelse(w_t == 1, beta_T, 0)
@@ -1398,11 +1466,20 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 
 
 for (rep_curr in 1:Nrep) {
+	if (!is.na(REP_FILTER) && !identical(as.integer(rep_curr), REP_FILTER)) {
+		next
+	}
 	pending_rep_header <<- paste0("\n\n====== REPETITION ", rep_curr, " OF ", Nrep, " ======\n")
 	for (beta_T_iter_curr in seq_along(beta_T_values)){
 		beta_T = beta_T_values[beta_T_iter_curr]
+		if (!is.na(BETA_T_FILTER) && !identical(as.numeric(beta_T), BETA_T_FILTER)) {
+			next
+		}
 		pending_beta_header <<- paste0("  === beta_T = [", beta_T, "] ===")
 		for (dataset_name in names(datasets_and_response_models)){
+			if (!is.na(DATASET_FILTER) && !identical(dataset_name, DATASET_FILTER)) {
+				next
+			}
 			pending_dataset_header <<- paste0("    === dataset: ", dataset_name, " ===")
 			for (response_type in ALL_RESPONSE_TYPES) {
 				if (!is.na(RESPONSE_TYPE_FILTER) && !identical(response_type, RESPONSE_TYPE_FILTER)) {

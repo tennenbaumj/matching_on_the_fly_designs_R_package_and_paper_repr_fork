@@ -128,7 +128,8 @@ double neg_ll_and_grad(const LMMData& dat,
             Q += r[j] * r[j];
         }
 
-        const double W      = Q - (v_b / a) * S * S;
+        const double vb_over_a = v_b / a;   // ∈ [0, 1]: avoids v_e*a underflow below
+        const double W      = Q - vb_over_a * S * S;
         const double inv_a  = 1.0 / a;
 
         // --- neg_ll contribution ---
@@ -136,7 +137,9 @@ double neg_ll_and_grad(const LMMData& dat,
         neg_ll += W / (2.0 * v_e);                              // quadratic term
 
         // --- gradient for β ---
-        const double coeff_S = (v_b / (v_e * a)) * S;
+        // Use (v_b/a)/v_e instead of v_b/(v_e*a) to avoid v_e*a underflowing to 0
+        // which would produce Inf, and then Inf*0 = NaN when S≈0.
+        const double coeff_S = (vb_over_a / v_e) * S;
         for (int j = s; j < s + m; ++j) {
             const double w_j = -r[j] / v_e + coeff_S;
             // grad_beta -= w_j * x_j  (remember: neg_ll, so ∂neg_ll/∂β = -score)
@@ -148,11 +151,12 @@ double neg_ll_and_grad(const LMMData& dat,
         // Derivation: ∂/∂lse of [(m-1)·lse + ½log(a) + W/(2v_e)]
         //   det:  (m-1) + v_e/a   (chain ∂v_e/∂lse = 2v_e)
         //   quad: v_b·S²/a²  (from ∂W/∂lse through a) − W/v_e
-        d_lse += (m - 1) + v_e * inv_a + v_b * (S * S) * (inv_a * inv_a) - W / v_e;
+        // Use vb_over_a*S^2*inv_a instead of v_b*S^2*inv_a^2 to avoid inv_a^2 overflowing.
+        d_lse += (m - 1) + v_e * inv_a + vb_over_a * (S * S) * inv_a / v_e - W / v_e;
 
         // --- gradient for log σ_b ---
         // ∂neg_ll/∂lsb = Σ_g(m·v_b/a) - v_b·Σ_g(S²/a²)
-        d_lsb += (m * v_b * inv_a) - v_b * (S * S) * (inv_a * inv_a);
+        d_lsb += (m * v_b * inv_a) - vb_over_a * (S * S) * inv_a;
     }
 
     grad.head(p) = -grad_beta;
@@ -518,6 +522,12 @@ NumericVector get_gaussian_lmm_score_cpp(
     neg_ll_and_grad(dat, par, grad);
     // score = -grad of neg_ll
     Eigen::VectorXd score = -grad;
+    // Safety net: if any component is non-finite, return all-NA.
+    for (int i = 0; i < k; ++i) {
+        if (!std::isfinite(score[i])) {
+            return NumericVector(k, NA_REAL);
+        }
+    }
     return wrap(score);
 }
 

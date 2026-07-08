@@ -766,13 +766,14 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				if (!is.null(block_ids)) {
 					block_ids = as.integer(block_ids)
 					unique_blocks = sort(unique(block_ids[is.finite(block_ids) & block_ids > 0L]))
-					if (length(unique_blocks) > 0L) {
+					if (length(unique_blocks) >= 2L) {
 						return(lapply(unique_blocks, function(block_id) {
 							keep_idx = all_idx[block_ids != block_id]
 							list(i_b = keep_idx, m_vec_b = NULL)
 						}))
 					}
 				}
+				unit = "observation"
 			}
 			if (unit == "observation") {
 				return(lapply(all_idx, function(i) all_idx[all_idx != i]))
@@ -1041,7 +1042,12 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			alpha_vec = c(alpha / 2, 1 - alpha / 2)
 			z_alpha = stats::qnorm(alpha_vec)
 			adj = stats::pnorm(z0 + (z0 + z_alpha) / pmax(.Machine$double.eps, 1 - a * (z0 + z_alpha)))
-			adj = pmin(1, pmax(0, adj))
+			prob_eps = 1 / (length(boot_distr) + 1)
+			adj = pmin(1 - prob_eps, pmax(prob_eps, adj))
+			adj = sort(adj)
+			if (diff(adj) < prob_eps) {
+				return(stats::quantile(boot_distr, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8))
+			}
 			stats::quantile(boot_distr, probs = adj, names = FALSE, type = 8)
 		},
 		ci_calibrated_bootstrap = function(alpha, B, type, est, show_progress = TRUE, na.rm = TRUE){
@@ -1132,7 +1138,8 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			if (!is.finite(denom) || abs(denom) < .Machine$double.eps) return(NA_real_)
 			adj_z = s / denom - z0
 			if (!is.finite(adj_z)) return(NA_real_)
-			min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
+			p_raw = min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
+			min(1, max(1 / length(boot_distr), p_raw))
 		}
 	)
 )

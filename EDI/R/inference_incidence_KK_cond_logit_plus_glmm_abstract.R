@@ -13,17 +13,19 @@ InferenceAbstractKKCondLogitPlusGLMM = R6::R6Class("InferenceAbstractKKCondLogit
 		#' @param des_obj A completed \code{Design} object with an incidence or proportion response.
 		#' @param model_formula Optional formula for covariate adjustment.
 		#' @param max_abs_reasonable_coef Cap for reasonable coefficient estimates.
+		#' @param max_abs_reasonable_se Cap for reasonable treatment standard errors.
 		#' @param max_abs_log_sigma Cap for reasonable log random effect variance.
 		#' @param verbose Logical. Whether to print progress messages.
 		#' @param smart_cold_start_default Logical. Whether to use smart starting values for the optimizer.
 		#' @param optimization_alg Character. Optimization algorithm (default "lbfgs").
-		initialize = function(des_obj, model_formula = NULL, max_abs_reasonable_coef = 1e4, max_abs_log_sigma = 8, verbose = FALSE, smart_cold_start_default = NULL, optimization_alg = NULL){
+		initialize = function(des_obj, model_formula = NULL, max_abs_reasonable_coef = 50, max_abs_reasonable_se = 10, max_abs_log_sigma = 8, verbose = FALSE, smart_cold_start_default = NULL, optimization_alg = NULL){
 			if (should_run_asserts()) {
 				assertResponseType(des_obj$get_response_type(), c("incidence", "proportion"))
 			}
 			self$set_optimization_alg(optimization_alg, allow_irls = FALSE, default = "lbfgs")
 			super$initialize(des_obj, verbose = verbose, model_formula = model_formula, smart_cold_start_default = smart_cold_start_default)
 			private$max_abs_reasonable_coef = max_abs_reasonable_coef
+			private$max_abs_reasonable_se = max_abs_reasonable_se
 			private$max_abs_log_sigma = max_abs_log_sigma
 			if (should_run_asserts()) {
 				assertNoCensoring(private$any_censoring)
@@ -112,7 +114,8 @@ InferenceAbstractKKCondLogitPlusGLMM = R6::R6Class("InferenceAbstractKKCondLogit
 		}
 	))),
 	private = as.list(modifyList(as.list(InferenceMixinKKPassThrough$private), list(
-		max_abs_reasonable_coef = 1e4,
+		max_abs_reasonable_coef = 50,
+		max_abs_reasonable_se = 10,
 		max_abs_log_sigma = 8,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		shared = function(estimate_only = FALSE){
@@ -154,11 +157,18 @@ InferenceAbstractKKCondLogitPlusGLMM = R6::R6Class("InferenceAbstractKKCondLogit
 			# If has_concordant is false, shared beta starts at par[0], so treatment is par[0].
 			j_T = if (d$has_concordant) 2L else 1L
 			
-			beta_hat_T = as.numeric(fit$params[j_T])
-			if (!is.finite(beta_hat_T) || abs(beta_hat_T) > private$max_abs_reasonable_coef) {
+			params = as.numeric(fit$params)
+			coef_params = if (length(params) > 1L) params[-length(params)] else params
+			if (any(!is.finite(coef_params)) || any(abs(coef_params) > private$max_abs_reasonable_coef)) {
 				private$cache_nonestimable_estimate("joint_likelihood_nonestimable")
 				return(invisible(NULL))
 			}
+			log_sigma = if (length(params) > 1L) params[length(params)] else NA_real_
+			if (!is.finite(log_sigma) || abs(log_sigma) > private$max_abs_log_sigma) {
+				private$cache_nonestimable_estimate("joint_likelihood_nonestimable")
+				return(invisible(NULL))
+			}
+			beta_hat_T = as.numeric(params[j_T])
 			
 			private$cached_mod = fit
 			private$set_fit_warm_start(as.numeric(fit$params), "params", fisher = fit$fisher_information)
@@ -171,7 +181,12 @@ InferenceAbstractKKCondLogitPlusGLMM = R6::R6Class("InferenceAbstractKKCondLogit
 			private$cached_values$df   = Inf
 			if (estimate_only) return(invisible(NULL))
 			ssq = fit$ssq_b_j 
-			private$cached_values$s_beta_hat_T = if (!is.null(ssq) && is.finite(ssq) && ssq > 0) sqrt(ssq) else NA_real_
+			se = if (!is.null(ssq) && is.finite(ssq) && ssq > 0) sqrt(ssq) else NA_real_
+			if (!is.finite(se) || se <= 0 || se > private$max_abs_reasonable_se) {
+				private$cache_nonestimable_se("joint_likelihood_standard_error_unavailable")
+				return(invisible(NULL))
+			}
+			private$cached_values$s_beta_hat_T = se
 		},
 		get_likelihood_test_spec = function(){
 			private$shared(estimate_only = FALSE)

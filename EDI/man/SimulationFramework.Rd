@@ -61,7 +61,7 @@ sim = SimulationFramework$new(
     InferenceContinOLS = list(),
     InferenceContinKKOLSIVWC = list()
   ),
-  n = 100, p = 5, Nrep = 10, betaT = 1
+  n = 100, p = 5, Nrep_W = 10L, betaT = 1
 )
 sim$run()
 report = SimulationFrameworkReport$new(sim)
@@ -91,7 +91,8 @@ Create a new \code{SimulationFramework}.
   n = 100L,
   p = 5L,
   cond_exp_func_model = "linear",
-  Nrep = 100L,
+  Nrep_W = 100L,
+  Nrep_Y_w = 1L,
   betaT = 1,
   alpha = 0.05,
   B_boot = 201L,
@@ -211,8 +212,16 @@ constructed before transformation to the \code{response_type} scale.
 }
 Default \code{"linear"}.}
 
-\item{\code{Nrep}}{Positive integer.  Number of Monte Carlo replications.
-Default \code{100}.}
+\item{\code{Nrep_W}}{Positive integer.  Number of treatment-assignment draws (w-reps).
+Each w-rep generates a fresh covariate matrix \code{X} and a new treatment
+assignment vector \code{w}.  Default \code{100L}.}
+
+\item{\code{Nrep_Y_w}}{Positive integer.  Number of draws of the response per draw
+of \code{w}, the allocation vector.  For each \code{w}-rep,
+\code{Nrep_Y_w} independent response vectors \code{y} are drawn from the
+same \code{(X, w)}.  The effective total number of replications recorded is
+\code{Nrep_W * Nrep_Y_w}.  Default \code{1} (standard behaviour: one
+outcome draw per allocation-vector draw).}
 
 \item{\code{betaT}}{Numeric scalar or vector.  True treatment effect added to treated
 subjects' outcomes.  The scale is response-type specific: additive for

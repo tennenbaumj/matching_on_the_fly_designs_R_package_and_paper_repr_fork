@@ -1,7 +1,7 @@
 #' Count Composite Likelihood Inference Base
 #'
-#' Shared branch for count models that use a companion likelihood for testing
-#' while the reported estimator may be robust or quasi-likelihood based.
+#' Shared branch for count models whose reported estimator is robust or
+#' quasi-likelihood based.
 #'
 #' @keywords internal
 InferenceCountCompositeLikelihood = R6::R6Class("InferenceCountCompositeLikelihood",
@@ -109,11 +109,39 @@ InferenceCountCompositeLikelihood = R6::R6Class("InferenceCountCompositeLikeliho
 		},
 
 		supports_likelihood_tests = function(){
-			TRUE
+			FALSE
 		},
 
 		supports_lik_ratio_param_bootstrap = function(){
-			TRUE
+			FALSE
+		},
+
+		get_supported_testing_types_impl = function(){
+			"wald"
+		},
+
+		compute_score_two_sided_pval_impl = function(delta){
+			stop(class(self)[1], " does not support score p-values.", call. = FALSE)
+		},
+
+		compute_score_confidence_interval_impl = function(alpha){
+			stop(class(self)[1], " does not support score confidence intervals.", call. = FALSE)
+		},
+
+		compute_gradient_two_sided_pval_impl = function(delta){
+			stop(class(self)[1], " does not support gradient p-values.", call. = FALSE)
+		},
+
+		compute_gradient_confidence_interval_impl = function(alpha){
+			stop(class(self)[1], " does not support gradient confidence intervals.", call. = FALSE)
+		},
+
+		compute_lik_ratio_two_sided_pval_impl = function(delta){
+			stop(class(self)[1], " does not support likelihood-ratio p-values.", call. = FALSE)
+		},
+
+		compute_lik_ratio_confidence_interval_impl = function(alpha){
+			stop(class(self)[1], " does not support likelihood-ratio confidence intervals.", call. = FALSE)
 		},
 
 		simulate_under_lik_null = function(spec, delta, null_fit){
@@ -152,69 +180,7 @@ InferenceCountCompositeLikelihood = R6::R6Class("InferenceCountCompositeLikeliho
 		},
 
 		get_likelihood_test_spec = function(){
-			private$shared(estimate_only = FALSE)
-			ctx = private$cached_values$likelihood_test_context
-			if (is.null(ctx)) return(NULL)
-			
-			X_fit = ctx$X
-			y = as.numeric(private$y)
-			j_treat = as.integer(ctx$j_treat)
-			
-			# Companion Poisson fit for testing
-			companion_fit = tryCatch(
-				fast_poisson_regression_with_var_cpp(
-					X = X_fit,
-					y = y,
-					j = j_treat,
-					warm_start_beta = private$get_fit_warm_start_for_length("beta", ncol(X_fit)),
-					smart_cold_start = private$smart_cold_start_default,
-					warm_start_fisher_info = private$get_fit_warm_start_fisher(ncol(X_fit))
-				),
-				error = function(e) NULL
-			)
-			if (is.null(companion_fit) || is.null(companion_fit$b) || length(companion_fit$b) < 2L || !is.finite(companion_fit$b[2])) return(NULL)
-
-			list(
-				X = X_fit,
-				y = y,
-				j = j_treat,
-				full_fit = companion_fit,
-				fit_null = function(delta, start = NULL){
-					if (!is.null(start) && length(start) == 0L) start = NULL
-					fallback = private$get_fit_warm_start_for_length("beta", ncol(X_fit))
-					final_warm = start %||% fallback
-					fast_poisson_regression_with_var_cpp(
-						X = X_fit,
-						y = y,
-						j = j_treat,
-						warm_start_beta = final_warm,
-						warm_start_fisher_info = private$get_fit_warm_start_fisher(ncol(X_fit)),
-						fixed_idx = j_treat,
-						fixed_values = delta,
-						smart_cold_start = private$smart_cold_start_default,
-						optimization_alg = private$optimization_alg %||% "lbfgs"
-					)
-				},
-				extract_start = function(fit){
-					as.numeric(fit$b)
-				},
-				score = function(fit){
-					as.numeric(fit$score %||% get_poisson_regression_score_cpp(X_fit, y, as.numeric(fit$b)))
-				},
-				observed_information = function(fit){
-					-get_poisson_regression_hessian_cpp(X_fit, as.numeric(fit$b))
-				},
-				fisher_information = function(fit){
-					-get_poisson_regression_hessian_cpp(X_fit, as.numeric(fit$b))
-				},
-				information = function(fit){
-					-get_poisson_regression_hessian_cpp(X_fit, as.numeric(fit$b))
-				},
-				neg_loglik = function(fit){
-					eta = as.numeric(X_fit %*% as.numeric(fit$b))
-					-sum(y * eta - exp(eta) - lgamma(y + 1))
-				}
-			)
+			NULL
 		}
 	)
 )

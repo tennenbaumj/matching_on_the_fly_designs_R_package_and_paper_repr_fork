@@ -99,7 +99,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 			jack_summary = private$compute_jackknife_summary(unit = unit)
 			se_j = jack_summary$std_error
 			if (!is.finite(jack_summary$estimate)) {
-				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("jackknife_estimate_unavailable")
+				if (isTRUE(private$harden)) private$cache_nonestimable_se("jackknife_estimate_unavailable")
 				return(NA_real_)
 			}
 			if (!is.finite(se_j) || se_j <= 0) {
@@ -134,7 +134,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 			ci = c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			if (!is.finite(jack_summary$estimate)) {
-				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("jackknife_estimate_unavailable")
+				if (isTRUE(private$harden)) private$cache_nonestimable_se("jackknife_estimate_unavailable")
 				return(ci)
 			}
 			if (!is.finite(se_j) || se_j <= 0) {

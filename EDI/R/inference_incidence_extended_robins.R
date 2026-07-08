@@ -60,9 +60,17 @@ InferenceIncidExtendedRobins = R6::R6Class("InferenceIncidExtendedRobins",
 		}
 	),
 	private = list(
+		supports_lik_ratio_param_bootstrap = function() FALSE,
+		supports_likelihood_tests = function() FALSE,
+		get_supported_testing_types_impl = function(){
+			"wald"
+		},
 		get_standard_error = function(){
 			if (!is.null(private$cached_values$robins_s_beta_hat_T)) {
-				return(private$cached_values$robins_s_beta_hat_T)
+				se = private$cached_values$robins_s_beta_hat_T
+				if (is.finite(se) && se > 0) return(se)
+				private$cache_nonestimable_se("extended_robins_standard_error_unavailable")
+				return(NA_real_)
 			}
 			private$cached_values$robins_s_beta_hat_T = compute_extended_robins_block_se_cpp(
 				private$des_obj_priv_int$y,
@@ -70,6 +78,11 @@ InferenceIncidExtendedRobins = R6::R6Class("InferenceIncidExtendedRobins",
 				private$des_obj$get_block_ids(),
 				private$des_obj_priv_int$n
 			)
+			if (!is.finite(private$cached_values$robins_s_beta_hat_T) || private$cached_values$robins_s_beta_hat_T <= 0) {
+				private$cached_values$robins_s_beta_hat_T = NA_real_
+				private$cache_nonestimable_se("extended_robins_standard_error_unavailable")
+				return(NA_real_)
+			}
 			private$cached_values$s_beta_hat_T = private$cached_values$robins_s_beta_hat_T
 			private$cached_values$df = NA_real_
 			private$cached_values$robins_s_beta_hat_T

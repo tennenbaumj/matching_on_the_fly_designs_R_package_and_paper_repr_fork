@@ -200,10 +200,10 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 				full_fit = list(b = c(mean(private$y - beta_hl * private$w), beta_hl), vt = var(yT), vc = var(yC))
 			)
 		},
-		supports_lik_ratio_param_bootstrap = function() TRUE,
-		supports_likelihood_tests = function() TRUE,
+		supports_lik_ratio_param_bootstrap = function() FALSE,
+		supports_likelihood_tests = function() FALSE,
 		get_supported_testing_types_impl = function(){
-			c("wald", "lik_ratio")
+			"wald"
 		},
 		simulate_under_lik_null = function(spec, delta, null_fit){
 			b_null = as.numeric(null_fit$b)
@@ -227,22 +227,7 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 			)
 		},
 		get_likelihood_test_spec = function(){
-			private$shared(estimate_only = FALSE)
-			ctx = private$cached_values$likelihood_test_context
-			if (is.null(ctx)) return(NULL)
-			y = as.numeric(private$y); w = ctx$X[, 2]
-			list(
-				X = ctx$X, y = y, j = 2L,
-				full_fit = ctx$full_fit,
-				fit_null = function(delta, start = NULL){
-					m0 = mean(y - w * delta)
-					list(b = c(m0, delta))
-				},
-				neg_loglik = function(fit){
-					mu = fit$b[1] + fit$b[2]*w
-					sum((y - mu)^2)
-				}
-			)
+			NULL
 		}
 	)
 )

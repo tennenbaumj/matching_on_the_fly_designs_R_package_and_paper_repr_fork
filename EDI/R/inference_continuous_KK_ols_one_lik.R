@@ -58,15 +58,20 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 		compute_estimate_with_bootstrap_weights = function(subject_or_block_weights, estimate_only = FALSE){
 			row_weights = private$expand_subject_or_block_weights_to_row_weights(subject_or_block_weights)
 			if (weights_are_effectively_constant(row_weights)) {
-				beta_hat_T = as.numeric(self$compute_estimate(estimate_only = TRUE))[1L]
+				self$compute_estimate(estimate_only = estimate_only)
+				beta_hat_T = as.numeric(private$cached_values$beta_hat_T)[1L]
 				if (is.finite(beta_hat_T)) {
-					private$cached_values$beta_hat_T = beta_hat_T
-					private$cached_values$s_beta_hat_T = NA_real_
 					return(private$cached_values$beta_hat_T)
 				}
 			}
-			private$cached_values$beta_hat_T = private$fit_weighted_combined(row_weights)
-			private$cached_values$s_beta_hat_T = NA_real_
+			result = private$fit_weighted_combined(row_weights, estimate_only = estimate_only)
+			if (is.list(result)) {
+				private$cached_values$beta_hat_T = result$beta
+				private$cached_values$s_beta_hat_T = result$se
+			} else {
+				private$cached_values$beta_hat_T = result
+				private$cached_values$s_beta_hat_T = NA_real_
+			}
 			private$cached_values$beta_hat_T
 		},
 		#' @description Computes the approximate confidence interval.
@@ -330,8 +335,7 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 				y_comb = KKstats$y_reservoir
 				j_treat = 2L
 			} else {
-				private$cached_values$beta_hat_T   = NA_real_
-				if (!estimate_only) private$cached_values$s_beta_hat_T = NA_real_
+				private$cache_nonestimable_estimate("no_usable_matched_or_reservoir_data")
 				return(invisible(NULL))
 			}
 			reduced = private$reduce_design_matrix_once(
@@ -343,8 +347,7 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 			j_treat = reduced$j_treat
 			fit = private$fit_ols(X_comb, y_comb, j_treat, estimate_only = estimate_only)
 			if (is.null(fit)){
-				private$cached_values$beta_hat_T   = NA_real_
-				if (!estimate_only) private$cached_values$s_beta_hat_T = NA_real_
+				private$cache_nonestimable_estimate("ols_fit_unavailable")
 				private$cached_values$likelihood_test_context = NULL
 				return(invisible(NULL))
 			}
@@ -365,7 +368,7 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 			}
 			invisible(NULL)
 		},
-		fit_weighted_combined = function(row_weights){
+		fit_weighted_combined = function(row_weights, estimate_only = TRUE){
 			KKstats = private$cached_values$KKstats
 			if (is.null(KKstats)){
 				private$compute_basic_match_data()
@@ -417,8 +420,25 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 			j_treat = reduced$j_treat
 			fit = tryCatch(stats::lm.wfit(x = X_comb, y = y_comb, w = w_comb), error = function(e) NULL)
 			coef_vec = if (is.null(fit)) NULL else as.numeric(fit$coefficients)
-			if (is.null(coef_vec) || length(coef_vec) < j_treat || !is.finite(coef_vec[j_treat])) return(NA_real_)
-			as.numeric(coef_vec[j_treat])
+			if (is.null(coef_vec) || length(coef_vec) < j_treat || !is.finite(coef_vec[j_treat])) {
+				return(if (estimate_only) NA_real_ else list(beta = NA_real_, se = NA_real_))
+			}
+			beta = coef_vec[j_treat]
+			if (estimate_only) return(beta)
+			df = nrow(X_comb) - ncol(X_comb)
+			se = NA_real_
+			if (df > 0) {
+				sw = sqrt(w_comb)
+				post_fit = tryCatch(
+					ols_hc2_post_fit_cpp(X_comb * sw, as.numeric(y_comb * sw), coef_vec, j_treat),
+					error = function(e) NULL
+				)
+				if (!is.null(post_fit)) {
+					se_val = as.numeric(post_fit$std_err[j_treat])
+					if (is.finite(se_val) && se_val > 0) se = se_val
+				}
+			}
+			list(beta = beta, se = se)
 		}
 	)
 )

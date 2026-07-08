@@ -82,9 +82,17 @@ InferenceIncidCMH = R6::R6Class("InferenceIncidCMH",
 	),
 	private = list(
 		se_est_num_vectors = NULL,
+		supports_lik_ratio_param_bootstrap = function() FALSE,
+		supports_likelihood_tests = function() FALSE,
+		get_supported_testing_types_impl = function(){
+			"wald"
+		},
 		get_standard_error = function(){
 			if (!is.null(private$cached_values$cmh_s_beta_hat_T)) {
-				return(private$cached_values$cmh_s_beta_hat_T)
+				se = private$cached_values$cmh_s_beta_hat_T
+				if (is.finite(se) && se > 0) return(se)
+				private$cache_nonestimable_se("cmh_standard_error_unavailable")
+				return(NA_real_)
 			}
 			if (private$des_obj$is_blocking_design()) {
 				private$cached_values$cmh_s_beta_hat_T = compute_cmh_block_se_cpp(
@@ -101,6 +109,11 @@ InferenceIncidCMH = R6::R6Class("InferenceIncidCMH",
 				# estimator uses K (not K-1) in the denominator.
 				K        = length(ytw)
 				private$cached_values$cmh_s_beta_hat_T = 2 / private$n * sqrt(max(0, sum(ytw^2) / K))
+			}
+			if (!is.finite(private$cached_values$cmh_s_beta_hat_T) || private$cached_values$cmh_s_beta_hat_T <= 0) {
+				private$cached_values$cmh_s_beta_hat_T = NA_real_
+				private$cache_nonestimable_se("cmh_standard_error_unavailable")
+				return(NA_real_)
 			}
 			private$cached_values$s_beta_hat_T = private$cached_values$cmh_s_beta_hat_T
 			private$cached_values$df = NA_real_

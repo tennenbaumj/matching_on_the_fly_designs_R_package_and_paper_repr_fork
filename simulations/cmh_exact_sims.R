@@ -1,12 +1,12 @@
 suppressPackageStartupMessages(library(EDI))
 suppressPackageStartupMessages(library(data.table))
 
-Nrep = 10003L   # Monte Carlo replications per cell
+Nrep_W = 10003L   # Monte Carlo w-assignment draws per cell
 
 sim = SimulationFramework$new(
-        Nrep                          = Nrep,
+        Nrep_W                        = Nrep_W,
         num_cores                     = 46L,
-        results_filename              = sprintf("simulations/cmh_exact_sims_plus_greedy_results_high_signal_Nrep_%d.csv.bz2", Nrep),
+        results_filename              = sprintf("simulations/cmh_exact_sims_plus_greedy_results_high_signal_Nrep_%d.csv.bz2", Nrep_W),
         continue_from_last_result_row = TRUE,
         response_type                 = "incidence",
         n                             = c(64L, 128L, 256L),

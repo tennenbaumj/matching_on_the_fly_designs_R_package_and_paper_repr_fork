@@ -271,9 +271,15 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				ok = is.finite(boot_stats$theta) & is.finite(boot_stats$se) & boot_stats$se > 0
 				t_boot = abs(boot_stats$theta[ok] - est) / boot_stats$se[ok]
 				t_boot = t_boot[is.finite(t_boot)]
-				if (length(t_boot) < as.integer(min_number_usable_samples)) return(NA_real_)
+				if (length(t_boot) < as.integer(min_number_usable_samples)) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_too_few_finite_standard_errors")
+					return(NA_real_)
+				}
 				se_hat = tryCatch(private$infer_original_se(), error = function(e) NA_real_)
-				if (!is.finite(se_hat) || se_hat <= 0) return(NA_real_)
+				if (!is.finite(se_hat) || se_hat <= 0) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_original_standard_error_unavailable")
+					return(NA_real_)
+				}
 				t_obs = abs(est - delta) / se_hat
 				return(min(1, max(1 / length(t_boot), mean(t_boot >= t_obs))))
 			}
@@ -352,8 +358,16 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 					require_se = TRUE, weighting_unit_type = weighting_unit_type
 				)
 				ok = is.finite(boot_stats$theta) & is.finite(boot_stats$se) & boot_stats$se > 0
-				if (sum(ok) < as.integer(min_number_usable_samples)) return(ci)
-				ci[] = tryCatch(private$ci_studentized(boot_stats, alpha, est), error = function(e) c(NA_real_, NA_real_))
+				if (sum(ok) < as.integer(min_number_usable_samples)) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_too_few_finite_standard_errors", stage = "se"))
+				}
+				ci[] = tryCatch(
+					private$ci_studentized(boot_stats, alpha, est),
+					error = function(e) private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_ci_unavailable", stage = "se")
+				)
+				if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_ci_unavailable", stage = "se"))
+				}
 				return(ci)
 			}
 			boot_distr = self$approximate_bayesian_bootstrap_distribution_beta_hat_T(
@@ -589,7 +603,12 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			a = if (is.finite(den) && den > 0) num / den else 0
 			z_alpha = stats::qnorm(c(alpha / 2, 1 - alpha / 2))
 			adj = stats::pnorm(z0 + (z0 + z_alpha) / pmax(.Machine$double.eps, 1 - a * (z0 + z_alpha)))
-			adj = pmin(1, pmax(0, adj))
+			prob_eps = 1 / (length(boot_distr) + 1)
+			adj = pmin(1 - prob_eps, pmax(prob_eps, adj))
+			adj = sort(adj)
+			if (diff(adj) < prob_eps) {
+				return(stats::quantile(boot_distr, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8))
+			}
 			stats::quantile(boot_distr, probs = adj, names = FALSE, type = 8)
 		},
 		pval_bayesian_bca = function(boot_distr, est, delta, weighting_unit_type = NULL) {
@@ -611,7 +630,8 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			if (!is.finite(denom) || abs(denom) < .Machine$double.eps) return(NA_real_)
 			adj_z = s / denom - z0
 			if (!is.finite(adj_z)) return(NA_real_)
-			min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
+			p_raw = min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
+			min(1, max(1 / length(boot_distr), p_raw))
 		},
 		compute_bayesian_bootstrap_distribution_with_reused_workers = function(draws, actual_cores, show_progress = FALSE){
 			B = length(draws)
