@@ -73,8 +73,10 @@ SimulationFrameworkReport = R6::R6Class("SimulationFrameworkReport",
     #'   inference_type) combination.  Columns include \code{MSE},
     #'   \code{coverage}, \code{ci_length} (when CI types were run),
     #'   \code{power} (when betaT != 0 and p-value types were run),
-    #'   \code{size} (when betaT == 0 and p-value types were run), and
-    #'   parameter annotation strings.
+    #'   \code{size} and \code{size_pval} (when betaT == 0 and p-value types
+    #'   were run; \code{size_pval} is the exact two-sided binomial test
+    #'   p-value of H0: true size = alpha, suitable for multiplicity-corrected
+    #'   calibration checks across settings), and parameter annotation strings.
     summarize = function() {
       if (length(private$valid_combos) == 0L) {
         message("No results."); return(invisible(NULL))
@@ -142,6 +144,11 @@ SimulationFrameworkReport = R6::R6Class("SimulationFrameworkReport",
             m_row$n_pow  = sum(pv_fin_nonzero)
             m_row$size   = if (any(pv_fin_zero)) mean(pval[pv_fin_zero] < alpha) else NA_real_
             m_row$n_size = sum(pv_fin_zero)
+            # Exact two-sided binomial test of H0: true size = alpha, so users
+            # can flag miscalibrated tests across settings (e.g. with Bonferroni)
+            m_row$size_pval = if (any(pv_fin_zero)) {
+              stats::binom.test(sum(pval[pv_fin_zero] < alpha), sum(pv_fin_zero), p = alpha)$p.value
+            } else NA_real_
           }
           m_row
         }, by = by_cols]
@@ -254,7 +261,7 @@ SimulationFrameworkReport = R6::R6Class("SimulationFrameworkReport",
       if (nrow(dt) > 0L) {
         combo_cols = intersect(
           c("response_type", "cond_exp_func_model", "n", "p", "betaT",
-            "design", "inference", "inference_type"),
+            "design", "inference", "inference_type", "simulation_mode"),
           names(dt)
         )
         combos_dt = unique(dt[, combo_cols, with = FALSE])
