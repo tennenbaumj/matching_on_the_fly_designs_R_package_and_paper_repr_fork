@@ -307,9 +307,14 @@ In this case, \code{cov_draw_method} must be \code{NULL}.}
   performance, run on a Unix/Linux machine and set \code{num_cores} to
   the number of physical cores available.
 
-  \strong{Non-Unix (Windows/macOS):} \pkg{mirai} is used when available
-  (parallelism at the DGP-cell level within each replication), otherwise
-  execution falls back to serial with a warning.  Default \code{1}.}
+  \strong{Non-Unix (Windows/macOS):} \pkg{mirai} daemons are used when
+  available.  Every active (replication, DGP-cell) pair is one work unit
+  and \code{num_cores} units are kept in flight continuously, so all
+  cores stay subscribed even when the grid has fewer DGP cells than
+  cores.  Cell state is pushed to the daemons once at \code{run()}
+  start rather than re-serialized per dispatch.  If \pkg{mirai} is not
+  installed, execution falls back to serial with a warning.
+  Default \code{1}.}
 
 \item{\code{seed}}{Integer or \code{NULL} (default).  Random seed for the
 entire simulation run.}

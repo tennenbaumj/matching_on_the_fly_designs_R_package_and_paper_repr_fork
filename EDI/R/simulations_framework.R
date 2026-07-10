@@ -489,9 +489,14 @@ SimulationFramework = R6::R6Class("SimulationFramework",
     #'   performance, run on a Unix/Linux machine and set \code{num_cores} to
     #'   the number of physical cores available.
     #'
-    #'   \strong{Non-Unix (Windows/macOS):} \pkg{mirai} is used when available
-    #'   (parallelism at the DGP-cell level within each replication), otherwise
-    #'   execution falls back to serial with a warning.  Default \code{1}.
+    #'   \strong{Non-Unix (Windows/macOS):} \pkg{mirai} daemons are used when
+    #'   available.  Every active (replication, DGP-cell) pair is one work unit
+    #'   and \code{num_cores} units are kept in flight continuously, so all
+    #'   cores stay subscribed even when the grid has fewer DGP cells than
+    #'   cores.  Cell state is pushed to the daemons once at \code{run()}
+    #'   start rather than re-serialized per dispatch.  If \pkg{mirai} is not
+    #'   installed, execution falls back to serial with a warning.
+    #'   Default \code{1}.
     #'
     #' @param results_filename Character scalar. The filename for the results
     #'   file. Supported extensions are \code{.csv} and \code{.csv.bz2}.
@@ -831,6 +836,9 @@ SimulationFramework = R6::R6Class("SimulationFramework",
             )
           }
         } else {
+          # Mirai workers also return whole cell-reps, and cells complete out of
+          # order across reps; drop the DGP/Task bars just like the fork path.
+          private$n_progress_lines = 3L
           private$.ensure_mirai_daemons(num_cores)
           on.exit({
             if (!is.null(prev_global_mirai_cores)) {
@@ -1404,6 +1412,42 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         cl_rep = parallel::makeForkCluster(num_cores)
       }
 
+      # ── Push cell state to mirai daemons (AFTER cell states + caches are populated) ──
+      # Daemons keep all_cell_states and the run function in their global env for
+      # the whole run — the mirai analogue of the fork path's copy-on-write
+      # globals — so per-job payloads are tiny (rep_i + ci + rep_seed) and cell
+      # states (design matrices, w caches) are not re-serialized on every dispatch.
+      if (use_mirai_backend) {
+        RUN_REP_DETACHED_G = private$.run_single_replication_in_worker
+        environment(RUN_REP_DETACHED_G) = asNamespace("EDI")
+        push_tasks = tryCatch(
+          mirai::everywhere({
+            assign(".edi_sim_cell_states", CELL_STATES__, envir = globalenv())
+            assign(".edi_sim_run_fn",      RUN_FN__,      envir = globalenv())
+            invisible(NULL)
+          }, CELL_STATES__ = all_cell_states, RUN_FN__ = RUN_REP_DETACHED_G),
+          error = function(e) NULL
+        )
+        if (!is.null(push_tasks)) {
+          tryCatch(mirai::collect_mirai(push_tasks), error = function(e) invisible(NULL))
+        }
+        on.exit({
+          cleanup_tasks = tryCatch(
+            mirai::everywhere({
+              suppressWarnings(rm(list = intersect(
+                c(".edi_sim_cell_states", ".edi_sim_run_fn", "CELL_STATES__", "RUN_FN__"),
+                ls(envir = globalenv(), all.names = TRUE)
+              ), envir = globalenv()))
+              invisible(NULL)
+            }),
+            error = function(e) NULL
+          )
+          if (!is.null(cleanup_tasks)) {
+            tryCatch(mirai::collect_mirai(cleanup_tasks), error = function(e) invisible(NULL))
+          }
+        }, add = TRUE)
+      }
+
       # ── Set up and draw initial progress bar (after pregen, before main loop) ──
       if (isTRUE(private$verbose)) {
         private$use_progress_bar = TRUE
@@ -1600,8 +1644,117 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         }
       }
 
-      # ── Mirai / serial path ───────────────────────────────────────────────────
-      if (!use_fork_cluster) for (rep in seq_len(private$Nrep_W)) {
+      # ── Mirai path (Windows / force_mirai): rep × cell work-unit stream ──────
+      # Parallelism spans BOTH replications and DGP cells: every active
+      # (rep, cell) pair is one work unit and num_cores jobs are kept in flight
+      # continuously via a rolling window.  (The previous scheme chunked the
+      # cells of a single rep and waited for the whole chunk, which capped
+      # usable workers at the number of DGP cells and idled everyone at each
+      # rep boundary — on a small grid most cores never received work.)
+      if (use_mirai_backend) {
+        private$current_task_label = "Rep x Cell"
+        req_mat = if (n_cells > 0L) do.call(cbind, all_run_required_v) else
+          matrix(FALSE, nrow = private$Nrep_W, ncol = 0L)
+        units = which(req_mat, arr.ind = TRUE)                          # col 1 = rep, col 2 = cell
+        units = units[order(units[, 1L], units[, 2L]), , drop = FALSE]  # rep-major
+        n_units = nrow(units)
+        active_cells_per_rep = as.integer(rowSums(req_mat))
+
+        submit_unit = function(u) {
+          rep_u = units[[u, 1L]]
+          ci_u  = units[[u, 2L]]
+          rep_seed = if (!is.null(seed_val)) seed_val + rep_u else NULL
+          mirai::mirai({
+            if (!is.null(rep_seed)) set.seed(rep_seed)
+            RUN_FN = get(".edi_sim_run_fn",      envir = globalenv())
+            STATES = get(".edi_sim_cell_states", envir = globalenv())
+            RUN_FN(rep_i, STATES[[ci]], progress_cb = NULL, is_forked = FALSE)
+          }, rep_i = rep_u, ci = ci_u, rep_seed = rep_seed)
+        }
+
+        # Modest oversubscription keeps every daemon busy while the main
+        # process records results and redraws progress between polls.
+        window_size = 2L * num_cores_to_use
+        in_flight = list()
+        next_unit = 1L
+        completed_units = 0L
+        cells_done_per_rep = integer(private$Nrep_W)
+        frontier_rep = 0L      # contiguous fully-done reps from rep 1 (display only)
+        active_reps_done = 0L
+        last_rep_done_time = as.numeric(Sys.time())
+        stop_in_flight = function() {
+          invisible(lapply(in_flight, function(job) try(mirai::stop_mirai(job), silent = TRUE)))
+        }
+        advance_frontier = function() {
+          while (frontier_rep < private$Nrep_W) {
+            nxt = frontier_rep + 1L
+            if (active_cells_per_rep[[nxt]] > 0L &&
+                cells_done_per_rep[[nxt]] < active_cells_per_rep[[nxt]]) break
+            frontier_rep <<- nxt
+          }
+        }
+        advance_frontier()
+
+        while (completed_units < n_units) {
+          while (length(in_flight) < window_size && next_unit <= n_units) {
+            in_flight[[as.character(next_unit)]] = submit_unit(next_unit)
+            next_unit = next_unit + 1L
+          }
+          ready = names(in_flight)[!vapply(in_flight, mirai::unresolved, logical(1L))]
+          if (length(ready) == 0L) { Sys.sleep(0.05); next }
+          for (nm in ready) {
+            u = as.integer(nm)
+            rep_u = units[[u, 1L]]
+            ci_u  = units[[u, 2L]]
+            job_res = tryCatch(in_flight[[nm]][], error = function(e) e)
+            completed_units = completed_units + 1L
+            private$session_work_units_done = private$session_work_units_done + 1L
+            if (is_mirai_failed(job_res)) {
+              failed_error = private$.make_error_record(
+                stage = "worker_execution", rep = rep_u,
+                design = NA_character_, design_params = NULL,
+                inference = NA_character_, inference_params = NULL,
+                inference_type = NA_character_, inference_type_params = NULL,
+                message = mirai_err_msg(job_res),
+                metadata = list(cell_index = ci_u, rep = rep_u, backend = "mirai")
+              )
+              private$.append_errors(list(failed_error))
+              if (isTRUE(private$stop_on_error)) {
+                stop_in_flight()
+                private$.abort_from_error_record(failed_error)
+              }
+              private$progress_count = private$progress_count + cell_tasks_count[[ci_u]]
+            } else {
+              private$.append_errors(job_res$errors)
+              if (!is.null(job_res$fatal_error)) {
+                stop_in_flight()
+                private$.abort_from_error_record(job_res$fatal_error)
+              }
+              private$.record_batch(job_res$results_dt, job_res$skipped_count)
+            }
+            cells_done_per_rep[[rep_u]] = cells_done_per_rep[[rep_u]] + 1L
+            if (cells_done_per_rep[[rep_u]] == active_cells_per_rep[[rep_u]]) {
+              active_reps_done = active_reps_done + 1L
+              now_t = as.numeric(Sys.time())
+              private$rep_elapsed_idx = private$rep_elapsed_idx + 1L
+              private$rep_elapsed_times[[private$rep_elapsed_idx]] = now_t - last_rep_done_time
+              last_rep_done_time = now_t
+              private$rep_start_capture = now_t
+              if (active_reps_done %% private$save_to_disk_every_n_rep == 0L) {
+                private$.flush_pending_to_disk()
+              }
+            }
+          }
+          in_flight[ready] = NULL
+          advance_frontier()
+          private$current_rep_idx = min(private$Nrep_W, frontier_rep + 1L)
+          private$.draw_progress()
+        }
+        private$current_rep_idx = private$Nrep_W
+      }
+
+      # ── Serial path ───────────────────────────────────────────────────────────
+      if (!use_fork_cluster && !use_mirai_backend) for (rep in seq_len(private$Nrep_W)) {
         # Determine which cells need work for this w-rep.
         active_cells = which(vapply(all_run_required_v, `[[`, FALSE, rep))
 
@@ -1619,89 +1772,7 @@ SimulationFramework = R6::R6Class("SimulationFramework",
         private$current_rep_idx = rep
         private$current_cell_idx = active_cells[[1L]]
 
-        if (use_mirai_backend) {
-            private$current_task_label = "Chunk Cells"
-            chunk_size = num_cores_to_use
-            cell_chunks = split(active_cells, (seq_along(active_cells) - 1L) %/% chunk_size)
-            for (chunk_cells in cell_chunks) {
-              private$current_cell_idx = chunk_cells[[1L]]
-              private$tasks_per_rep    = length(chunk_cells)
-              private$current_task_in_rep_idx = 0L
-              private$last_progress_draw_time = 0
-              private$.draw_progress()
-
-              RUN_REP_DETACHED = private$.run_single_replication_in_worker
-              environment(RUN_REP_DETACHED) = asNamespace("EDI")
-
-              jobs = lapply(chunk_cells, function(ci) {
-                cs_i = all_cell_states[[ci]]
-                RUN_REP_ci = function(rep_i) RUN_REP_DETACHED(rep_i, cs_i, progress_cb = NULL, is_forked = FALSE)
-                rep_seed = if (!is.null(seed_val)) seed_val + rep else NULL
-                mirai::mirai({
-                  if (!is.null(rep_seed)) set.seed(rep_seed)
-                  RUN_REP_ci(rep_i)
-                }, RUN_REP_ci = RUN_REP_ci, rep_i = rep, rep_seed = rep_seed)
-              })
-              names(jobs) = as.character(chunk_cells)
-              chunk_results = vector("list", length(chunk_cells))
-              names(chunk_results) = as.character(chunk_cells)
-              completed_in_chunk = 0L
-              while (completed_in_chunk < length(chunk_cells)) {
-                ready = names(jobs)[!vapply(jobs, mirai::unresolved, logical(1L))]
-                if (length(ready) == 0L) { Sys.sleep(0.1); next }
-                for (nm in ready) {
-                  if (is.null(chunk_results[[nm]])) {
-                    job_res = tryCatch(jobs[[nm]][], error = function(e) e)
-                    chunk_results[[nm]] = job_res
-                    if (!is_mirai_failed(job_res) && !is.null(job_res$fatal_error)) {
-                      pending_jobs = jobs[setdiff(names(jobs), ready)]
-                      if (length(pending_jobs) > 0L)
-                        invisible(lapply(pending_jobs, function(job) try(mirai::stop_mirai(job), silent = TRUE)))
-                    }
-                    completed_in_chunk = completed_in_chunk + 1L
-                    private$session_work_units_done = private$session_work_units_done + 1L
-                  }
-                }
-                jobs[ready] = NULL
-                private$current_cell_idx = chunk_cells[[min(length(chunk_cells), completed_in_chunk + 1L)]]
-                private$current_task_in_rep_idx = completed_in_chunk
-                private$.draw_progress()
-              }
-              chunk_results_ok = chunk_results[!vapply(chunk_results, is_mirai_failed, logical(1L))]
-              if (length(chunk_results_ok) > 0L) {
-                all_chunk_dt = data.table::rbindlist(lapply(chunk_results_ok, function(w) w$results_dt), use.names = TRUE, fill = TRUE)
-                all_chunk_skipped = sum(vapply(chunk_results_ok, function(w) w$skipped_count, 0L))
-                private$.append_errors(unlist(lapply(chunk_results_ok, `[[`, "errors"), recursive = FALSE))
-                private$current_cell_idx = chunk_cells[[length(chunk_cells)]]
-                private$current_task_in_rep_idx = length(chunk_cells)
-                private$.record_batch(all_chunk_dt, all_chunk_skipped)
-              }
-              fatal_errors = unlist(lapply(chunk_results_ok, function(x) {
-                if (is.null(x$fatal_error)) list() else list(x$fatal_error)
-              }), recursive = FALSE)
-              if (length(fatal_errors) > 0L) private$.abort_from_error_record(fatal_errors[[1L]])
-              failed_indices = which(vapply(chunk_results, is_mirai_failed, logical(1L)))
-              if (length(failed_indices) > 0L) {
-                failed_errors = lapply(failed_indices, function(idx) {
-                  ci = chunk_cells[[idx]]
-                  private$.make_error_record(
-                    stage = "worker_execution", rep = rep,
-                    design = NA_character_, design_params = NULL,
-                    inference = NA_character_, inference_params = NULL,
-                    inference_type = NA_character_, inference_type_params = NULL,
-                    message = mirai_err_msg(chunk_results[[idx]]),
-                    metadata = list(cell_index = ci, rep = rep, backend = "mirai")
-                  )
-                })
-                private$.append_errors(failed_errors)
-                if (isTRUE(private$stop_on_error)) private$.abort_from_error_record(failed_errors[[1L]])
-                private$progress_count = private$progress_count + length(failed_indices)
-                private$.draw_progress()
-              }
-            }
-        } else {
-          # ── Serial path ───────────────────────────────────────────────────────
-          private$current_task_label = "Des/Inf"
+        private$current_task_label = "Des/Inf"
           for (cell_idx in active_cells) {
             cell_state = all_cell_states[[cell_idx]]
             private$current_cell_idx  = cell_idx
@@ -1758,7 +1829,6 @@ SimulationFramework = R6::R6Class("SimulationFramework",
               private$.draw_progress()
             }
           }
-        }
 
         # Record elapsed time for this rep and update ETA.
         # flush and draw_progress happen AFTER recording so they're included in the

@@ -71,7 +71,9 @@ SimulationFrameworkReport = R6::R6Class("SimulationFrameworkReport",
     #' @return A \code{data.table} with one row per unique
     #'   (response_type, cond_exp_func_model, n, p, betaT, design, inference,
     #'   inference_type) combination.  Columns include \code{MSE},
-    #'   \code{coverage}, \code{ci_length} (when CI types were run),
+    #'   \code{coverage}, \code{ci_length}, and \code{coverage_pval} (when CI
+    #'   types were run; \code{coverage_pval} is the exact two-sided binomial
+    #'   test p-value of H0: true coverage = 1 - alpha),
     #'   \code{power} (when betaT != 0 and p-value types were run),
     #'   \code{size} and \code{size_pval} (when betaT == 0 and p-value types
     #'   were run; \code{size_pval} is the exact two-sided binomial test
@@ -126,6 +128,14 @@ SimulationFrameworkReport = R6::R6Class("SimulationFrameworkReport",
             m_row$coverage  = if (any(ci_fin)) mean(ci_lo[ci_fin] <= true_estimand[ci_fin] & true_estimand[ci_fin] <= ci_hi[ci_fin]) else NA_real_
             m_row$n_cov     = sum(ci_fin)
             m_row$ci_length = if (any(ci_fin)) mean(ci_hi[ci_fin] - ci_lo[ci_fin]) else NA_real_
+            # Exact two-sided binomial test of H0: true coverage = 1 - alpha,
+            # the CI analogue of size_pval below
+            m_row$coverage_pval = if (any(ci_fin)) {
+              stats::binom.test(
+                sum(ci_lo[ci_fin] <= true_estimand[ci_fin] & true_estimand[ci_fin] <= ci_hi[ci_fin]),
+                sum(ci_fin), p = 1 - alpha
+              )$p.value
+            } else NA_real_
           }
           if (report_pow) {
             pv_fin = is.finite(pval)
