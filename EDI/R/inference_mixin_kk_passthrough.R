@@ -112,10 +112,11 @@ InferenceMixinKKPassThrough = list(
 									boot_inf_obj$.__enclos_env__$private$y = y[i_b]
 									boot_inf_obj$.__enclos_env__$private$y_temp = boot_inf_obj$.__enclos_env__$private$y
 									boot_inf_obj$.__enclos_env__$private$dead = dead[i_b]
-									boot_inf_obj$.__enclos_env__$private$w = w[i_b]
-									boot_inf_obj$.__enclos_env__$private$X = X[i_b, , drop = FALSE]
-									boot_inf_obj$.__enclos_env__$private$m = m_vec_b
-									boot_inf_obj$.__enclos_env__$private$cached_values = list(
+										boot_inf_obj$.__enclos_env__$private$w = w[i_b]
+										boot_inf_obj$.__enclos_env__$private$X = X[i_b, , drop = FALSE]
+										private$clear_kk_bootstrap_worker_design_caches(boot_inf_obj$.__enclos_env__$private)
+										boot_inf_obj$.__enclos_env__$private$m = m_vec_b
+										boot_inf_obj$.__enclos_env__$private$cached_values = list(
 										KKstats = compute_bootstrap_matching_stats_cpp(
 											X = X, y = y, w = w, i_b = i_b, n_reservoir = n_reservoir
 										)
@@ -154,10 +155,11 @@ InferenceMixinKKPassThrough = list(
 									boot_inf_obj$.__enclos_env__$private$y = y[i_b]
 									boot_inf_obj$.__enclos_env__$private$y_temp = boot_inf_obj$.__enclos_env__$private$y
 									boot_inf_obj$.__enclos_env__$private$dead = dead[i_b]
-									boot_inf_obj$.__enclos_env__$private$w = w[i_b]
-									boot_inf_obj$.__enclos_env__$private$X = X[i_b, , drop = FALSE]
-									boot_inf_obj$.__enclos_env__$private$m = m_vec_b
-									boot_inf_obj$.__enclos_env__$private$cached_values = list(
+										boot_inf_obj$.__enclos_env__$private$w = w[i_b]
+										boot_inf_obj$.__enclos_env__$private$X = X[i_b, , drop = FALSE]
+										private$clear_kk_bootstrap_worker_design_caches(boot_inf_obj$.__enclos_env__$private)
+										boot_inf_obj$.__enclos_env__$private$m = m_vec_b
+										boot_inf_obj$.__enclos_env__$private$cached_values = list(
 										KKstats = compute_bootstrap_matching_stats_cpp(
 											X = X, y = y, w = w, i_b = i_b, n_reservoir = n_reservoir
 										)
@@ -178,10 +180,11 @@ InferenceMixinKKPassThrough = list(
 								boot_inf_obj$.__enclos_env__$private$y = y[i_b]
 								boot_inf_obj$.__enclos_env__$private$y_temp = boot_inf_obj$.__enclos_env__$private$y
 								boot_inf_obj$.__enclos_env__$private$dead = dead[i_b]
-								boot_inf_obj$.__enclos_env__$private$w = w[i_b]
-								boot_inf_obj$.__enclos_env__$private$X = X[i_b, , drop = FALSE]
-								boot_inf_obj$.__enclos_env__$private$m = m_vec_b
-								boot_inf_obj$.__enclos_env__$private$cached_values = list(
+									boot_inf_obj$.__enclos_env__$private$w = w[i_b]
+									boot_inf_obj$.__enclos_env__$private$X = X[i_b, , drop = FALSE]
+									private$clear_kk_bootstrap_worker_design_caches(boot_inf_obj$.__enclos_env__$private)
+									boot_inf_obj$.__enclos_env__$private$m = m_vec_b
+									boot_inf_obj$.__enclos_env__$private$cached_values = list(
 									KKstats = compute_bootstrap_matching_stats_cpp(
 										X = X, y = y, w = w, i_b = i_b, n_reservoir = n_reservoir
 									)
@@ -318,15 +321,16 @@ InferenceMixinKKPassThrough = list(
 				has_res_stat = private$object_has_private_method(worker, "compute_reservoir_and_match_statistics")
 			)
 		},
-		load_kk_bootstrap_sample_into_worker = function(worker_state, sample_info){
-			worker_priv = worker_state$worker_priv
-			i_b = sample_info$i_b
+			load_kk_bootstrap_sample_into_worker = function(worker_state, sample_info){
+				worker_priv = worker_state$worker_priv
+				i_b = sample_info$i_b
 			worker_priv$y = worker_state$base_y[i_b]
 			worker_priv$y_temp = worker_priv$y
-			worker_priv$dead = worker_state$base_dead[i_b]
-			worker_priv$w = worker_state$base_w[i_b]
-			worker_priv$X = worker_state$base_X[i_b, , drop = FALSE]
-			worker_priv$cached_values = list(
+				worker_priv$dead = worker_state$base_dead[i_b]
+				worker_priv$w = worker_state$base_w[i_b]
+				worker_priv$X = worker_state$base_X[i_b, , drop = FALSE]
+				private$clear_kk_bootstrap_worker_design_caches(worker_priv)
+				worker_priv$cached_values = list(
 				KKstats = compute_bootstrap_matching_stats_cpp(
 					X = worker_state$base_X,
 					y = worker_state$base_y,
@@ -340,13 +344,26 @@ InferenceMixinKKPassThrough = list(
 			worker_priv$fit_warm_coefficients = NULL
 			worker_priv$cached_mod = NULL
 			worker_priv$m = sample_info$m_vec_b
-			if (isTRUE(worker_state$has_res_stat)) {
-				worker_priv$compute_reservoir_and_match_statistics()
-			}
-		},
-		compute_kk_bootstrap_worker_estimate = function(worker_state){
-			as.numeric(worker_state$worker$compute_estimate(estimate_only = TRUE))[1L]
-		},
+				if (isTRUE(worker_state$has_res_stat)) {
+					worker_priv$compute_reservoir_and_match_statistics()
+				}
+			},
+			clear_kk_bootstrap_worker_design_caches = function(worker_priv){
+				worker_priv$cached_design_matrix = NULL
+				worker_priv$cached_w_for_design_matrix = NULL
+				worker_priv$cached_harden_for_design_matrix = NULL
+				worker_priv$cached_hardened_X_cov = NULL
+				worker_priv$cached_reduced_X = NULL
+				worker_priv$cached_X_full_for_reduced = NULL
+				worker_priv$cached_keep_for_reduced = NULL
+				worker_priv$cached_j_treat_for_reduced = NULL
+				worker_priv$reduced_design_keep_cache = NULL
+				worker_priv$fixed_covariate_keep_cache = NULL
+				invisible(NULL)
+			},
+			compute_kk_bootstrap_worker_estimate = function(worker_state){
+				as.numeric(worker_state$worker$compute_estimate(estimate_only = TRUE))[1L]
+			},
 		compute_kk_bootstrap_debug_with_reused_worker = function(kk_boot_draws, kk_boot_context){
 			B = length(kk_boot_draws)
 			worker_state = private$create_kk_bootstrap_worker_state(kk_boot_context)

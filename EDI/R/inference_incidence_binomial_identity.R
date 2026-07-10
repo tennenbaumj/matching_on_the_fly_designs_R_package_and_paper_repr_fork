@@ -41,37 +41,82 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 		#' @param estimate_only If TRUE, skip variance calculations.
 		compute_estimate_with_bootstrap_weights = function(subject_or_block_weights, estimate_only = FALSE){
 			row_weights = private$expand_subject_or_block_weights_to_row_weights(subject_or_block_weights)
-			X_data = private$get_X()
-			X = if (is.null(X_data) || ncol(X_data) == 0) {
-				cbind(`(Intercept)` = 1, treatment = private$w)
-			} else {
-				cbind(`(Intercept)` = 1, treatment = private$w, X_data)
-			}
-			res = tryCatch(
-				fast_identity_binomial_regression_weighted_cpp(
-					X = X,
-					y = as.numeric(private$y),
-					weights = as.numeric(row_weights),
-					warm_start_beta = private$get_fit_warm_start_for_length("beta", ncol(X)),
-					warm_start_fisher_info = private$get_fit_warm_start_fisher(ncol(X))
-				),
-				error = function(e) NULL
+			X_full = private$build_design_matrix()
+			attempt = private$fit_with_hardened_qr_column_dropping(
+				X_full = X_full,
+				required_cols = 2L,
+				fit_fun = function(X_fit, keep){
+					j_treat = match(2L, keep)
+					res = tryCatch(
+						fast_identity_binomial_regression_weighted_cpp(
+							X = X_fit,
+							y = as.numeric(private$y),
+							weights = as.numeric(row_weights),
+							warm_start_beta = private$get_fit_warm_start_for_length("beta", ncol(X_fit)),
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(ncol(X_fit))
+						),
+						error = function(e) NULL
+					)
+					if (is.null(res)) return(NULL)
+					res$j_treat = j_treat
+					res$beta_hat_T = as.numeric(res$b[j_treat])
+					ssq_b_j = NA_real_
+					if (!estimate_only && !is.null(res$fisher_information) &&
+					    is.matrix(res$fisher_information) && nrow(res$fisher_information) >= j_treat) {
+						inv_fi = tryCatch(solve(res$fisher_information), error = function(e) NULL)
+						if (!is.null(inv_fi) && is.finite(inv_fi[j_treat, j_treat]) && inv_fi[j_treat, j_treat] > 0) {
+							ssq_b_j = inv_fi[j_treat, j_treat]
+						}
+					}
+					res$ssq_b_j = ssq_b_j
+					res$ssq_b_2 = ssq_b_j
+					res
+				},
+				fit_ok = function(mod, X_fit, keep){
+					j_treat = match(2L, keep)
+					if (!isTRUE(private$is_identity_binomial_fit_reasonable(mod, X_fit, j_treat))) return(FALSE)
+					if (estimate_only) return(TRUE)
+					is.finite(mod$ssq_b_j %||% mod$ssq_b_2)
+				}
 			)
-			if (is.null(res) || length(res$b) < 2L || !is.finite(res$b[2L])){
-				private$cached_values$beta_hat_T = NA_real_
-				private$cached_values$s_beta_hat_T = NA_real_
-				private$cached_values$df = NA_real_
+			private$cached_mod = attempt$fit
+			j_treat = match(2L, attempt$keep)
+			if (!isTRUE(private$is_identity_binomial_fit_reasonable(attempt$fit, attempt$X, j_treat))){
+				private$cache_nonestimable_estimate("binomial_identity_weighted_fit_unavailable")
 				return(NA_real_)
 			}
-			private$set_fit_warm_start(res$b, "beta", fisher = res$fisher_information)
-			private$cached_values$beta_hat_T = as.numeric(res$b[2L])
-			private$cached_values$s_beta_hat_T = NA_real_
+			private$set_fit_warm_start(attempt$fit$b, "beta", fisher = attempt$fit$fisher_information, force_pd = TRUE)
+			private$cached_values$beta_hat_T = as.numeric(attempt$fit$b[j_treat])
+			ssq = attempt$fit$ssq_b_j %||% attempt$fit$ssq_b_2
+			private$cached_values$s_beta_hat_T = if (!is.null(ssq) && is.finite(ssq) && ssq > 0) sqrt(ssq) else NA_real_
 			private$cached_values$df = NA_real_
 			private$cached_values$beta_hat_T
 		}
 	),
 	private = list(
 		best_X_colnames = NULL,
+		build_design_matrix = function(){
+			X_data = private$get_X()
+			if (is.null(X_data) || ncol(X_data) == 0) {
+				cbind(`(Intercept)` = 1, treatment = private$w)
+			} else {
+				cbind(`(Intercept)` = 1, treatment = private$w, X_data)
+			}
+		},
+		is_identity_binomial_fit_reasonable = function(mod, X_fit = NULL, j_treat = 2L){
+			if (is.null(mod) || is.null(mod$b)) return(FALSE)
+			j_treat = as.integer(j_treat %||% mod$j_treat %||% 2L)
+			if (length(j_treat) != 1L || !is.finite(j_treat) || j_treat < 1L) return(FALSE)
+			b = as.numeric(mod$b)
+			if (length(b) < j_treat || any(!is.finite(b))) return(FALSE)
+			if (!is.null(mod$converged) && !isTRUE(mod$converged)) return(FALSE)
+			if (!is.null(X_fit)) {
+				mu = tryCatch(as.numeric(as.matrix(X_fit) %*% b), error = function(e) NA_real_)
+				if (any(!is.finite(mu))) return(FALSE)
+				if (any(mu < -1e-8) || any(mu > 1 + 1e-8)) return(FALSE)
+			}
+			TRUE
+		},
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			if (is.null(private$best_X_colnames)){
 				private$shared(estimate_only = TRUE)
@@ -184,12 +229,7 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 			)
 		},
 		generate_mod = function(estimate_only = FALSE){
-			X_data = private$get_X()
-			X_full = if (is.null(X_data) || ncol(X_data) == 0) {
-				cbind(`(Intercept)` = 1, treatment = private$w)
-			} else {
-				cbind(`(Intercept)` = 1, treatment = private$w, X_data)
-			}
+			X_full = private$build_design_matrix()
 			attempt = private$fit_with_hardened_qr_column_dropping(
 				X_full = X_full,
 				required_cols = 2L,
@@ -207,7 +247,7 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 							error = function(e) NULL
 						)
 						if (is.null(res)) return(NULL)
-						list(b = res$b, ssq_b_j = NA_real_, j_treat = j_treat, fisher_information = res$fisher_information)
+						list(b = res$b, beta_hat_T = as.numeric(res$b[j_treat]), ssq_b_j = NA_real_, j_treat = j_treat, fisher_information = res$fisher_information)
 					} else {
 						res = tryCatch(
 							fast_identity_binomial_regression_with_var_cpp(
@@ -219,12 +259,13 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 						)
 						if (is.null(res)) return(NULL)
 						res$j_treat = j_treat
+						res$beta_hat_T = as.numeric(res$b[j_treat])
 						res
 					}
 				},
 				fit_ok = function(mod, X_fit, keep){
 					j_treat = mod$j_treat
-					if (is.null(mod) || length(mod$b) < j_treat || !is.finite(mod$b[j_treat])) return(FALSE)
+					if (!isTRUE(private$is_identity_binomial_fit_reasonable(mod, X_fit, j_treat))) return(FALSE)
 					if (estimate_only) return(TRUE)
 					is.finite(mod$ssq_b_j) && mod$ssq_b_j > 0
 				}

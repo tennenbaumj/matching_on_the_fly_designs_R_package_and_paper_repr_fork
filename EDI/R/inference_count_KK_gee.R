@@ -39,14 +39,12 @@ InferenceCountPoissonKKGEE = R6::R6Class("InferenceCountPoissonKKGEE",
 		#' @description Computes an approximate confidence interval.
 		#' @param alpha Confidence level.
 		compute_asymp_confidence_interval = function(alpha = 0.05){
-			private$shared_gee_dispatch(estimate_only = FALSE)
-			private$compute_z_or_t_ci_from_s_and_df(alpha)
+			private$compute_kk_gee_jackknife_wald_confidence_interval(alpha = alpha)
 		},
 		#' @description Computes an approximate two-sided p-value.
 		#' @param delta Null treatment effect value.
 		compute_asymp_two_sided_pval = function(delta = 0){
-			private$shared_gee_dispatch(estimate_only = FALSE)
-			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			private$compute_kk_gee_jackknife_wald_two_sided_pval(delta = delta)
 		},
 		#' @description Computes the treatment effect estimate for a bootstrap sample.
 		#' @param subject_or_block_weights Row weights for the bootstrap sample.

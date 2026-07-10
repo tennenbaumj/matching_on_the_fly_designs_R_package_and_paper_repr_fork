@@ -16,8 +16,17 @@ KK Hurdle Poisson Combined-Likelihood Inference for Count Responses
 \itemize{
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-new}{\code{InferenceCountKKHurdlePoissonOneLik$new()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_estimate}{\code{InferenceCountKKHurdlePoissonOneLik$compute_estimate()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_estimate_with_bootstrap_weights}{\code{InferenceCountKKHurdlePoissonOneLik$compute_estimate_with_bootstrap_weights()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_asymp_confidence_interval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_asymp_confidence_interval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_score_confidence_interval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_score_confidence_interval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_lik_ratio_confidence_interval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_lik_ratio_confidence_interval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_gradient_confidence_interval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_gradient_confidence_interval()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_asymp_two_sided_pval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_asymp_two_sided_pval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_score_two_sided_pval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_score_two_sided_pval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_lik_ratio_two_sided_pval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_lik_ratio_two_sided_pval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_gradient_two_sided_pval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_gradient_two_sided_pval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_wald_confidence_interval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_wald_confidence_interval()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_wald_two_sided_pval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_wald_two_sided_pval()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-approximate_bootstrap_distribution_beta_hat_T}{\code{InferenceCountKKHurdlePoissonOneLik$approximate_bootstrap_distribution_beta_hat_T()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-clone}{\code{InferenceCountKKHurdlePoissonOneLik$clone()}}
 }
@@ -51,7 +60,6 @@ KK Hurdle Poisson Combined-Likelihood Inference for Count Responses
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="approximate_bayesian_bootstrap_distribution_beta_hat_T"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-approximate_bayesian_bootstrap_distribution_beta_hat_T'><code>::InferenceBayesianBootstrap$approximate_bayesian_bootstrap_distribution_beta_hat_T()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_bayesian_bootstrap_confidence_interval"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_bayesian_bootstrap_confidence_interval'><code>::InferenceBayesianBootstrap$compute_bayesian_bootstrap_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_bayesian_bootstrap_two_sided_pval"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_bayesian_bootstrap_two_sided_pval'><code>::InferenceBayesianBootstrap$compute_bayesian_bootstrap_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_estimate_with_bootstrap_weights"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_estimate_with_bootstrap_weights'><code>::InferenceBayesianBootstrap$compute_estimate_with_bootstrap_weights()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="approximate_jackknife_distribution_beta_hat_T"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-approximate_jackknife_distribution_beta_hat_T'><code>::InferenceJackknife$approximate_jackknife_distribution_beta_hat_T()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_bias_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_bias_estimate'><code>::InferenceJackknife$compute_jackknife_bias_estimate()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_corrected_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_corrected_estimate'><code>::InferenceJackknife$compute_jackknife_corrected_estimate()</code></a></span></li>
@@ -60,16 +68,8 @@ KK Hurdle Poisson Combined-Likelihood Inference for Count Responses
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_std_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_std_error'><code>::InferenceJackknife$compute_jackknife_std_error()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_confidence_interval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_confidence_interval'><code>::InferenceJackknife$compute_jackknife_wald_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_two_sided_pval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_two_sided_pval'><code>::InferenceJackknife$compute_jackknife_wald_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_confidence_interval'><code>::InferenceAsymp$compute_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_two_sided_pval'><code>::InferenceAsympLik$compute_score_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_preference'><code>::InferenceAsympLik$get_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_source_used"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_source_used'><code>::InferenceAsympLik$get_information_source_used()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_supported_information_preferences"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_supported_information_preferences'><code>::InferenceAsympLik$get_supported_information_preferences()</code></a></span></li>
@@ -133,6 +133,31 @@ Compute treatment estimate
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_estimate_with_bootstrap_weights"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_estimate_with_bootstrap_weights}{}}}
+\subsection{Method \code{compute_estimate_with_bootstrap_weights()}}{
+Recomputes the combined hurdle-Poisson estimate under
+  Bayesian-bootstrap weights.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_estimate_with_bootstrap_weights(
+  subject_or_block_weights,
+  estimate_only = FALSE
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{subject_or_block_weights}}{Subject-, block-, cluster-, or matched-set
+bootstrap weights.}
+
+\item{\code{estimate_only}}{If \code{TRUE}, compute only the weighted point
+estimate.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_asymp_confidence_interval"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_asymp_confidence_interval}{}}}
 \subsection{Method \code{compute_asymp_confidence_interval()}}{
@@ -152,12 +177,156 @@ Compute asymp confidence interval
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_score_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_score_confidence_interval}{}}}
+\subsection{Method \code{compute_score_confidence_interval()}}{
+Computes a design-conservative score confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_score_confidence_interval(
+  alpha = 0.05
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_lik_ratio_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_lik_ratio_confidence_interval}{}}}
+\subsection{Method \code{compute_lik_ratio_confidence_interval()}}{
+Computes a design-conservative likelihood-ratio confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_lik_ratio_confidence_interval(
+  alpha = 0.05
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_gradient_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_gradient_confidence_interval}{}}}
+\subsection{Method \code{compute_gradient_confidence_interval()}}{
+Computes a design-conservative gradient confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_gradient_confidence_interval(
+  alpha = 0.05
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_asymp_two_sided_pval"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_asymp_two_sided_pval}{}}}
 \subsection{Method \code{compute_asymp_two_sided_pval()}}{
 Compute asymp two sided pval
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_asymp_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect value.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_score_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_score_two_sided_pval}{}}}
+\subsection{Method \code{compute_score_two_sided_pval()}}{
+Computes a design-conservative score p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_score_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect value.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_lik_ratio_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_lik_ratio_two_sided_pval}{}}}
+\subsection{Method \code{compute_lik_ratio_two_sided_pval()}}{
+Computes a design-conservative likelihood-ratio p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_lik_ratio_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect value.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_gradient_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_gradient_two_sided_pval}{}}}
+\subsection{Method \code{compute_gradient_two_sided_pval()}}{
+Computes a design-conservative gradient p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_gradient_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect value.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_wald_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_wald_confidence_interval}{}}}
+\subsection{Method \code{compute_wald_confidence_interval()}}{
+Compute asymp confidence interval
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_wald_confidence_interval(
+  alpha = 0.05
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Confidence level.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-compute_wald_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-compute_wald_two_sided_pval}{}}}
+\subsection{Method \code{compute_wald_two_sided_pval()}}{
+Compute Wald two sided pval
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$compute_wald_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{

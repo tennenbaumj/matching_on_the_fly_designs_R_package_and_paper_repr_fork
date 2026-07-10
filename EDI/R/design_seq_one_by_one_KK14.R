@@ -121,7 +121,9 @@ DesignSeqOneByOneKK14 = R6::R6Class("DesignSeqOneByOneKK14",
 			private$lambda
 		},
 		too_early_to_match = function(){
-			private$t <= private$t_0_pct * private$n | is.null(private$X)
+			private$t <= private$t_0_pct * private$n ||
+				is.null(private$X) ||
+				ncol(as.matrix(private$X)) == 0L
 		}
 	)
 )

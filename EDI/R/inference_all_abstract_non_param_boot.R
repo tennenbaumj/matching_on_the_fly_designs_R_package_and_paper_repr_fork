@@ -272,13 +272,12 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			if (should_run_asserts()) {
 				assertChoice(type, c("percentile", "symmetric", "studentized", "bootstrap-t", "bca"))
 			}
-			# Early exit: if the treatment estimate is already cached and non-finite,
-			# skip the expensive bootstrap computation entirely.
-			est_cached = private$cached_values$beta_hat_T
-			if (!is.null(est_cached) && length(est_cached) >= 1L && !is.finite(est_cached[1L])) {
+			est = as.numeric(self$compute_estimate())
+			if (length(est) == 0L || !is.finite(est[1])) {
 				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bootstrap_original_estimate_unavailable")
 				return(NA_real_)
 			}
+			est = est[1]
 			if (type %in% c("studentized", "bootstrap-t")) {
 				boot_stats = private$approximate_bootstrap_statistics_beta_hat_T(
 					B = B,
@@ -305,27 +304,31 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				return(NA_real_)
 			}
 			if (length(boot_distr) == 0L) return(NA_real_)
-			est = as.numeric(self$compute_estimate())
-			if (length(est) == 0L || !is.finite(est[1])) {
-				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bootstrap_original_estimate_unavailable")
-				return(NA_real_)
-			}
-			est = est[1]
 			if (type == "percentile") {
 				# Shift bootstrap distribution to be centred at delta (null hypothesis)
 				boot_null = boot_distr - mean(boot_distr) + delta
 				n_bs = length(boot_null)
-				min(1, max(2 / n_bs, 2 * min(
+				pval = min(1, max(2 / n_bs, 2 * min(
 					sum(boot_null >= est) / n_bs,
 					sum(boot_null <= est) / n_bs
 				)))
+				if (!is.finite(pval)) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bootstrap_pvalue_unavailable")
+					return(NA_real_)
+				}
+				pval
 			} else if (type == "symmetric") {
 				# Hall & Wilson (1991) symmetric test: pool both tails via absolute deviations.
 				# p = P(|T* - mean(T*)| >= |t_obs - delta|)
 				D_obs = abs(est - delta)
 				D_boot = abs(boot_distr - mean(boot_distr))
 				n_bs = length(D_boot)
-				min(1, max(1 / n_bs, mean(D_boot >= D_obs)))
+				pval = min(1, max(1 / n_bs, mean(D_boot >= D_obs)))
+				if (!is.finite(pval)) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bootstrap_pvalue_unavailable")
+					return(NA_real_)
+				}
+				pval
 			} else if (type %in% c("studentized", "bootstrap-t")) {
 				# Studentized (bootstrap-t) p-value: pivot by standard error.
 				# t_obs = (est - delta) / se_hat
@@ -338,15 +341,33 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				}
 				t_obs = abs(est - delta) / se_hat
 				se_boot = boot_stats$se
-				ok = is.finite(boot_distr) & is.finite(se_boot) & se_boot > 0
-				t_boot = abs(boot_distr[ok] - est) / se_boot[ok]
-				t_boot = t_boot[is.finite(t_boot)]
-				if (length(t_boot) < as.integer(min_number_usable_samples)) {
-					if (isTRUE(private$harden)) private$cache_nonestimable_se("bootstrap_too_few_finite_standard_errors")
-					return(NA_real_)
-				}
-				min(1, max(1 / length(t_boot), mean(t_boot >= t_obs)))
-			} else if (type == "bca") {
+				t_boot = tryCatch(
+					private$studentized_bootstrap_pivots(
+						theta = boot_distr,
+						se = se_boot,
+						est = est,
+						se_hat = se_hat,
+						min_number_usable_samples = min_number_usable_samples,
+						symmetric = TRUE
+					),
+					error = function(e) numeric(0)
+				)
+					if (length(t_boot) < as.integer(min_number_usable_samples)) {
+						if (isTRUE(private$harden)) private$cache_nonestimable_se("bootstrap_unstable_studentized_standard_errors")
+						return(NA_real_)
+					}
+					if (private$studentized_interval_scale_unstable(
+						theta = boot_distr,
+						se_hat = se_hat,
+						pivots = t_boot,
+						est = est,
+						alpha = 0.05
+					)) {
+						if (isTRUE(private$harden)) private$cache_nonestimable_se("bootstrap_unstable_studentized_standard_errors")
+						return(NA_real_)
+					}
+					min(1, max(1 / length(t_boot), mean(t_boot >= t_obs)))
+				} else if (type == "bca") {
 				# BCa p-value via closed-form CI inversion (Efron 1987; Efron & Tibshirani 1993).
 				pval = tryCatch(
 					private$pval_bca(boot_distr, est, delta),
@@ -359,7 +380,9 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 					}
 				)
 				if (!is.finite(pval) && isTRUE(private$harden)) {
-					private$cache_nonestimable_estimate("bootstrap_pvalue_unavailable")
+					if (!isTRUE(self$is_nonestimable())) {
+						private$cache_nonestimable_estimate("bootstrap_pvalue_unavailable")
+					}
 					return(NA_real_)
 				}
 				pval
@@ -445,9 +468,9 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				} else if (type == "basic") {
 					private$ci_from_boot_distribution(boot_distr, alpha, "basic", est = est)
 				} else if (type %in% c("studentized", "bootstrap-t")) {
-					private$ci_studentized(boot_stats, alpha, est)
+					private$ci_studentized(boot_stats, alpha, est, min_number_usable_samples = min_number_usable_samples)
 				} else if (type == "symmetric-percentile-t") {
-					private$ci_symmetric_studentized(boot_stats, alpha, est)
+					private$ci_symmetric_studentized(boot_stats, alpha, est, min_number_usable_samples = min_number_usable_samples)
 				} else if (type == "bca") {
 					private$ci_bca(boot_distr, alpha, est)
 				} else if (type %in% c("prepivoted", "double-bootstrap", "calibrated")) {
@@ -467,17 +490,32 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				}
 				stop(e)
 			})
-			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
-				if (isTRUE(private$harden)) {
-					stage = if (type %in% c("studentized", "bootstrap-t", "symmetric-percentile-t")) "se" else "estimate"
-					reason = if (identical(stage, "se")) "bootstrap_standard_error_ci_unavailable" else "bootstrap_ci_unavailable"
+				if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+					if (isTRUE(private$harden)) {
+						stage = if (type %in% c("studentized", "bootstrap-t", "symmetric-percentile-t", "bca")) "se" else "estimate"
+					reason = if (identical(stage, "se")) {
+						if (type == "bca" && private$jackknife_block_size_gt_one_unsupported(unit = "auto")) {
+							"jackknife_block_size_gt_one_not_supported"
+						} else {
+							"bootstrap_standard_error_ci_unavailable"
+						}
+					} else {
+						"bootstrap_ci_unavailable"
+					}
 					return(private$missing_bootstrap_ci(alpha, reason, stage = stage))
+					}
+					stop("Bootstrap confidence interval returned NA bounds")
 				}
-				stop("Bootstrap confidence interval returned NA bounds")
+				if (type %in% c("studentized", "bootstrap-t", "symmetric-percentile-t") &&
+				    private$studentized_interval_scale_unstable(theta = boot_stats$theta, ci = ci, est = est, alpha = alpha)) {
+					if (isTRUE(private$harden)) {
+						return(private$missing_bootstrap_ci(alpha, "bootstrap_unstable_studentized_interval", stage = "se"))
+					}
+					stop("Studentized bootstrap interval is numerically unstable.")
+				}
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+				ci
 			}
-			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
-			ci
-		}
 	),
 	private = list(
 		# Cache for bootstrap distributions
@@ -499,6 +537,45 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 		get_bootstrap_type = function(type) {
 			if (!is.null(type)) return(type)
 			edi_bootstrap_dispatch_policy(class(self), object = self)
+		},
+		resolve_jackknife_unit = function(unit = "auto"){
+			unit = private$normalize_jackknife_unit(unit)
+			if (unit != "auto") return(unit)
+			design_obj = private$des_obj
+			is_matching_design = is(design_obj, "DesignMatching") &&
+				isTRUE(tryCatch(design_obj$is_matching_design(), error = function(e) FALSE))
+			is_cluster_design = is(design_obj, "DesignFixedCluster") || is(design_obj, "DesignFixedBlockedCluster")
+			is_blocking_design = is(design_obj, "DesignBlocking") &&
+				isTRUE(tryCatch(design_obj$is_blocking_design(), error = function(e) FALSE))
+			if (is_matching_design) {
+				if (isTRUE(private$is_KK)) "matched_set" else "pair"
+			} else if (is_cluster_design) {
+				"cluster"
+			} else if (is_blocking_design) {
+				"block"
+			} else {
+				"observation"
+			}
+		},
+		jackknife_block_size_gt_one_unsupported = function(unit = "auto"){
+			resolved_unit = private$resolve_jackknife_unit(unit)
+			design_obj = private$des_obj
+			is_blocking_design = is(design_obj, "DesignBlocking") &&
+				isTRUE(tryCatch(design_obj$is_blocking_design(), error = function(e) FALSE))
+			if (resolved_unit %in% c("pair", "matched_set")) return(FALSE)
+			if (resolved_unit == "cluster" && !is_blocking_design) return(FALSE)
+			if (!is_blocking_design) return(FALSE)
+			block_ids = tryCatch(design_obj$get_block_ids(), error = function(e) NULL)
+			if (is.null(block_ids)) return(FALSE)
+			block_ids = as.integer(block_ids)
+			block_ids = block_ids[is.finite(block_ids) & block_ids > 0L]
+			if (!length(block_ids)) return(FALSE)
+			any(as.integer(table(block_ids)) > 1L)
+		},
+		mark_jackknife_nonestimable_if_block_unsupported = function(unit = "auto"){
+			if (!private$jackknife_block_size_gt_one_unsupported(unit = unit)) return(FALSE)
+			private$cache_nonestimable_se("jackknife_block_size_gt_one_not_supported")
+			TRUE
 		},
 		missing_bootstrap_ci = function(alpha, reason, stage = c("estimate", "se")){
 			stage = match.arg(stage)
@@ -957,6 +1034,9 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			private$active_resampling_operation = "jackknife"
 			on.exit(private$active_resampling_operation <- NULL, add = TRUE)
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) {
+				return(numeric(0))
+			}
 			deletion_draws = private$build_jackknife_deletion_draws(unit = unit)
 			n_draws = length(deletion_draws)
 			if (n_draws <= 1L) return(numeric(0))
@@ -988,7 +1068,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			private$cached_values$jack_distr_cache[[cache_key]] = jack
 			as.numeric(jack)
 		},
-		ci_from_boot_distribution = function(boot_distr, alpha, type, est = NULL){
+			ci_from_boot_distribution = function(boot_distr, alpha, type, est = NULL){
 			type = tolower(type)
 			if (should_run_asserts()) {
 				if (length(boot_distr) == 0L) stop("Bootstrap confidence interval returned NA bounds")
@@ -998,37 +1078,93 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				stats::quantile(boot_distr, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8)
 			} else {
 				2 * est - stats::quantile(boot_distr, probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
+				}
+			},
+			studentized_interval_scale_unstable = function(theta, ci = NULL, se_hat = NULL, pivots = NULL, est = 0, alpha = 0.05, max_width_ratio = 50){
+				theta = as.numeric(theta)
+				theta = theta[is.finite(theta)]
+				if (length(theta) < 5L) return(FALSE)
+				theta_width = diff(stats::quantile(theta, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8))
+				scale_ref = max(as.numeric(theta_width), 1e-8, 1e-3 * max(1, abs(as.numeric(est)[1L])), na.rm = TRUE)
+				if (!is.finite(scale_ref) || scale_ref <= 0) return(FALSE)
+				if (!is.null(ci)) {
+					ci = as.numeric(ci)
+					if (length(ci) < 2L || !all(is.finite(ci[1:2]))) return(FALSE)
+					width = abs(diff(ci[1:2]))
+				} else {
+					if (is.null(pivots) || !is.finite(se_hat) || se_hat <= 0) return(FALSE)
+					pivots = as.numeric(pivots)
+					pivots = pivots[is.finite(pivots)]
+					if (length(pivots) < 5L) return(FALSE)
+					width = 2 * stats::quantile(abs(pivots), probs = 1 - alpha / 2, names = FALSE, type = 8) * as.numeric(se_hat)[1L]
+				}
+				is.finite(width) && width > max_width_ratio * scale_ref
+			},
+			studentized_bootstrap_pivots = function(theta, se, est, se_hat, min_number_usable_samples = 10L, symmetric = FALSE){
+			se = as.numeric(se)
+			theta = as.numeric(theta)
+			min_number_usable_samples = as.integer(min_number_usable_samples)
+			se_pos = se[is.finite(se) & se > 0]
+			if (!length(se_pos) || !is.finite(se_hat) || se_hat <= 0) {
+				stop("Studentized bootstrap requires finite positive standard errors.")
 			}
+			se_ref = stats::median(se_pos)
+			se_floor = max(.Machine$double.eps, 1e-6 * as.numeric(se_hat), 1e-6 * as.numeric(se_ref))
+			ok = is.finite(theta) & is.finite(se) & se > se_floor
+			pivots = (theta[ok] - est) / se[ok]
+			pivots = pivots[is.finite(pivots)]
+			if (isTRUE(symmetric)) pivots = abs(pivots)
+			if (length(pivots) < min_number_usable_samples) {
+				stop("Studentized bootstrap returned too few stable standard errors.")
+			}
+			if (stats::quantile(abs(pivots), probs = 0.975, names = FALSE, type = 8) > 50) {
+				stop("Studentized bootstrap pivots are numerically unstable.")
+			}
+			pivots
 		},
-		ci_studentized = function(boot_stats, alpha, est){
+		ci_studentized = function(boot_stats, alpha, est, min_number_usable_samples = 10L){
 			se_hat = private$infer_original_se()
 			if (should_run_asserts()) {
 				if (!is.finite(se_hat) || se_hat <= 0) stop("Studentized bootstrap CI requires a finite standard error.")
 			}
-			t_vals = (boot_stats$theta - est) / boot_stats$se
-			t_vals = t_vals[is.finite(t_vals)]
-			if (should_run_asserts()) {
-				if (length(t_vals) < 10L) stop("Studentized bootstrap CI returned too few finite bootstrap draws.")
-			}
+			t_vals = private$studentized_bootstrap_pivots(
+				theta = boot_stats$theta,
+				se = boot_stats$se,
+				est = est,
+				se_hat = se_hat,
+				min_number_usable_samples = min_number_usable_samples
+			)
 			q = stats::quantile(t_vals, probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
 			c(est - q[1L] * se_hat, est - q[2L] * se_hat)
 		},
-		ci_symmetric_studentized = function(boot_stats, alpha, est){
+		ci_symmetric_studentized = function(boot_stats, alpha, est, min_number_usable_samples = 10L){
 			se_hat = private$infer_original_se()
 			if (should_run_asserts()) {
 				if (!is.finite(se_hat) || se_hat <= 0) stop("Symmetric percentile-t bootstrap CI requires a finite standard error.")
 			}
-			t_vals = (boot_stats$theta - est) / boot_stats$se
-			t_vals = abs(t_vals[is.finite(t_vals)])
-			if (should_run_asserts()) {
-				if (length(t_vals) < 10L) stop("Symmetric percentile-t bootstrap CI returned too few finite bootstrap draws.")
-			}
+			t_vals = private$studentized_bootstrap_pivots(
+				theta = boot_stats$theta,
+				se = boot_stats$se,
+				est = est,
+				se_hat = se_hat,
+				min_number_usable_samples = min_number_usable_samples,
+				symmetric = TRUE
+			)
 			q = stats::quantile(t_vals, probs = 1 - alpha, names = FALSE, type = 8)
 			c(est - q[1L] * se_hat, est + q[1L] * se_hat)
 		},
 		ci_bca = function(boot_distr, alpha, est){
 			jack = private$approximate_jackknife_distribution_beta_hat_T_private(unit = "auto")
 			jack = jack[is.finite(jack)]
+			if (length(jack) < 2L) {
+				reason = if (private$jackknife_block_size_gt_one_unsupported(unit = "auto")) {
+					"jackknife_block_size_gt_one_not_supported"
+				} else {
+					"bootstrap_bca_jackknife_unavailable"
+				}
+				private$cache_nonestimable_se(reason)
+				return(c(NA_real_, NA_real_))
+			}
 			if (should_run_asserts()) {
 				if (length(jack) < 2L) stop("BCa interval requires jackknife estimates.")
 			}
@@ -1039,12 +1175,25 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			num = sum((jack_bar - jack)^3)
 			den = 6 * (sum((jack_bar - jack)^2)^(3/2))
 			a = if (is.finite(den) && den > 0) num / den else 0
+			if (!is.finite(z0) || !is.finite(a) || abs(z0) > 2.5 || abs(a) > 1) {
+				private$cache_nonestimable_se("bootstrap_bca_unstable_bias_or_acceleration")
+				return(c(NA_real_, NA_real_))
+			}
 			alpha_vec = c(alpha / 2, 1 - alpha / 2)
 			z_alpha = stats::qnorm(alpha_vec)
-			adj = stats::pnorm(z0 + (z0 + z_alpha) / pmax(.Machine$double.eps, 1 - a * (z0 + z_alpha)))
+			denom = 1 - a * (z0 + z_alpha)
+			if (any(!is.finite(denom)) || any(abs(denom) < sqrt(.Machine$double.eps))) {
+				private$cache_nonestimable_se("bootstrap_bca_unstable_bias_or_acceleration")
+				return(c(NA_real_, NA_real_))
+			}
+			adj = stats::pnorm(z0 + (z0 + z_alpha) / denom)
 			prob_eps = 1 / (length(boot_distr) + 1)
 			adj = pmin(1 - prob_eps, pmax(prob_eps, adj))
 			adj = sort(adj)
+			if (any(adj <= 2 * prob_eps) || any(adj >= 1 - 2 * prob_eps)) {
+				private$cache_nonestimable_se("bootstrap_bca_adjustment_on_boundary")
+				return(c(NA_real_, NA_real_))
+			}
 			if (diff(adj) < prob_eps) {
 				return(stats::quantile(boot_distr, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8))
 			}
@@ -1103,10 +1252,14 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			}
 			private$ci_from_boot_distribution(boot_distr, alpha, "percentile", est = est)
 		},
-		infer_original_se = function(){
-			fresh = self$duplicate(verbose = FALSE, make_fork_cluster = FALSE)
-			fresh$.__enclos_env__$private$cached_values = list()
-			tryCatch({
+			infer_original_se = function(){
+				se_current = as.numeric(private$cached_values$s_beta_hat_T %||% NA_real_)[1L]
+				if (is.finite(se_current) && se_current > 0) {
+					return(se_current)
+				}
+				fresh = self$duplicate(verbose = FALSE, make_fork_cluster = FALSE)
+				fresh$.__enclos_env__$private$cached_values = list()
+				tryCatch({
 				fresh$compute_estimate(estimate_only = FALSE)
 				as.numeric(fresh$.__enclos_env__$private$cached_values$s_beta_hat_T)[1]
 			}, error = function(e) NA_real_)
@@ -1120,6 +1273,15 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 		pval_bca = function(boot_distr, est, delta){
 			jack = private$approximate_jackknife_distribution_beta_hat_T_private(unit = "auto")
 			jack = jack[is.finite(jack)]
+			if (length(jack) < 2L) {
+				reason = if (private$jackknife_block_size_gt_one_unsupported(unit = "auto")) {
+					"jackknife_block_size_gt_one_not_supported"
+				} else {
+					"bootstrap_bca_jackknife_unavailable"
+				}
+				private$cache_nonestimable_se(reason)
+				return(NA_real_)
+			}
 			if (should_run_asserts()) {
 				if (length(jack) < 2L) stop("BCa p-value requires jackknife estimates.")
 			}
@@ -1130,14 +1292,36 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			num = sum((jack_bar - jack)^3)
 			den = 6 * (sum((jack_bar - jack)^2)^(3/2))
 			a = if (is.finite(den) && den > 0) num / den else 0
+			if (!is.finite(z0) || !is.finite(a) || abs(z0) > 2.5 || abs(a) > 1) {
+				private$cache_nonestimable_se("bootstrap_bca_unstable_bias_or_acceleration")
+				return(NA_real_)
+			}
+			z_alpha = stats::qnorm(c(0.025, 0.975))
+			denom_ci = 1 - a * (z0 + z_alpha)
+			if (any(!is.finite(denom_ci)) || any(abs(denom_ci) < sqrt(.Machine$double.eps))) {
+				private$cache_nonestimable_se("bootstrap_bca_unstable_bias_or_acceleration")
+				return(NA_real_)
+			}
+			prob_eps = 1 / (length(boot_distr) + 1)
+			adj_ci = sort(stats::pnorm(z0 + (z0 + z_alpha) / denom_ci))
+			if (any(!is.finite(adj_ci)) || any(adj_ci <= 2 * prob_eps) || any(adj_ci >= 1 - 2 * prob_eps)) {
+				private$cache_nonestimable_se("bootstrap_bca_adjustment_on_boundary")
+				return(NA_real_)
+			}
 			p_delta = mean(boot_distr < delta)
 			p_delta = pmin(1 - .Machine$double.eps, pmax(.Machine$double.eps, p_delta))
 			z_delta = stats::qnorm(p_delta)
 			s = z_delta - z0
 			denom = 1 + a * s
-			if (!is.finite(denom) || abs(denom) < .Machine$double.eps) return(NA_real_)
+			if (!is.finite(denom) || abs(denom) < sqrt(.Machine$double.eps)) {
+				private$cache_nonestimable_se("bootstrap_bca_unstable_bias_or_acceleration")
+				return(NA_real_)
+			}
 			adj_z = s / denom - z0
-			if (!is.finite(adj_z)) return(NA_real_)
+			if (!is.finite(adj_z) || abs(adj_z) > 8) {
+				private$cache_nonestimable_se("bootstrap_bca_adjustment_on_boundary")
+				return(NA_real_)
+			}
 			p_raw = min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
 			min(1, max(1 / length(boot_distr), p_raw))
 		}

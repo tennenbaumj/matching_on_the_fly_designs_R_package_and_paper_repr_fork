@@ -36,6 +36,9 @@ InferenceMixinKKGEEShared = list(
 			if (should_run_asserts()) {
 				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
 			}
+			if (private$use_kk_gee_jackknife_wald_calibration()) {
+				return(private$compute_kk_gee_jackknife_wald_confidence_interval(alpha = alpha))
+			}
 			private$shared(estimate_only = FALSE)
 			if (should_run_asserts()) {
 				private$assert_finite_se()
@@ -45,6 +48,9 @@ InferenceMixinKKGEEShared = list(
 		compute_asymp_two_sided_pval = function(delta = 0){
 			if (should_run_asserts()) {
 				assertNumeric(delta)
+			}
+			if (private$use_kk_gee_jackknife_wald_calibration()) {
+				return(private$compute_kk_gee_jackknife_wald_two_sided_pval(delta = delta))
 			}
 			private$shared(estimate_only = FALSE)
 			if (should_run_asserts()) {
@@ -66,6 +72,47 @@ InferenceMixinKKGEEShared = list(
 		max_abs_reasonable_coef = 1e4,
 		kk_gee_engine = TRUE,
 		get_complexity_tier = function() "medium",
+		use_kk_gee_jackknife_wald_calibration = function(){
+			identical(private$gee_response_type(), "count")
+		},
+		compute_kk_gee_jackknife_wald_two_sided_pval = function(delta = 0){
+			p = tryCatch(
+				self$compute_jackknife_wald_two_sided_pval(delta = delta),
+				error = function(e) NA_real_
+			)
+			if (!is.finite(p) || p < 0 || p > 1) {
+				private$cache_nonestimable_se("kk_count_gee_jackknife_wald_calibration_unavailable")
+				return(NA_real_)
+			}
+			p
+		},
+		compute_kk_gee_jackknife_wald_confidence_interval = function(alpha = 0.05){
+			ci = tryCatch(
+				self$compute_jackknife_wald_confidence_interval(alpha = alpha),
+				error = function(e) c(NA_real_, NA_real_)
+			)
+			if (length(ci) < 2L || any(!is.finite(ci[1:2])) || ci[1] > ci[2]) {
+				private$cache_nonestimable_se("kk_count_gee_jackknife_wald_calibration_unavailable")
+				ci = c(NA_real_, NA_real_)
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+				return(ci)
+			}
+			ci
+		},
+		compute_wald_two_sided_pval_impl = function(delta){
+			if (private$use_kk_gee_jackknife_wald_calibration()) {
+				return(private$compute_kk_gee_jackknife_wald_two_sided_pval(delta = delta))
+			}
+			private$shared(estimate_only = FALSE)
+			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+		},
+		compute_wald_confidence_interval_impl = function(alpha){
+			if (private$use_kk_gee_jackknife_wald_calibration()) {
+				return(private$compute_kk_gee_jackknife_wald_confidence_interval(alpha = alpha))
+			}
+			private$shared(estimate_only = FALSE)
+			private$compute_z_or_t_ci_from_s_and_df(alpha)
+		},
 		gee_warm_start_args = function(expected_length, expected_fisher_dim = expected_length){
 			start_beta = private$get_fit_warm_start_for_length("beta", expected_length)
 			list(

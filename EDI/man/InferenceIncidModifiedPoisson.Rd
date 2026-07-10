@@ -111,7 +111,9 @@ Initialize a modified Poisson regression inference object.
   model_formula = NULL,
   verbose = FALSE,
   smart_cold_start_default = NULL,
-  harden = TRUE
+  harden = TRUE,
+  max_abs_reasonable_coef = 25,
+  max_abs_reasonable_linear_predictor = 25
 )}\if{html}{\out{</div>}}
 }
 
@@ -130,6 +132,10 @@ design's imputed covariates.}
 \item{\code{smart_cold_start_default}}{Whether to use smart cold start values.}
 
 \item{\code{harden}}{Whether to apply robustness measures.}
+
+\item{\code{max_abs_reasonable_coef}}{Cap for reasonable modified-Poisson coefficients.}
+
+\item{\code{max_abs_reasonable_linear_predictor}}{Cap for reasonable fitted log means.}
 }
 \if{html}{\out{</div>}}
 }

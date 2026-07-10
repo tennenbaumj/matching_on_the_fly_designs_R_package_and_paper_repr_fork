@@ -40,6 +40,154 @@ InferenceCountPoisson = R6::R6Class("InferenceCountPoisson",
 				assertNoCensoring(private$any_censoring)
 			}
 		},
+		#' @description Computes an asymptotic confidence interval using the configured test.
+		#' @param alpha Significance level. Default 0.05.
+		compute_asymp_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			switch(
+				private$testing_type,
+				wald = self$compute_wald_confidence_interval(alpha = alpha),
+				score = self$compute_score_confidence_interval(alpha = alpha),
+				gradient = self$compute_gradient_confidence_interval(alpha = alpha),
+				lik_ratio = self$compute_lik_ratio_confidence_interval(alpha = alpha)
+			)
+		},
+		#' @description Computes an asymptotic two-sided p-value using the configured test.
+		#' @param delta Null treatment effect. Default 0.
+		compute_asymp_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			switch(
+				private$testing_type,
+				wald = self$compute_wald_two_sided_pval(delta = delta),
+				score = self$compute_score_two_sided_pval(delta = delta),
+				gradient = self$compute_gradient_two_sided_pval(delta = delta),
+				lik_ratio = self$compute_lik_ratio_two_sided_pval(delta = delta)
+			)
+		},
+		#' @description Computes a design-conservative Wald confidence interval.
+		#' @param alpha Significance level. Default 0.05.
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			ci_model = private$compute_wald_confidence_interval_impl(alpha)
+			private$design_conservative_ci(ci_model, alpha = alpha)
+		},
+		#' @description Computes a design-conservative Wald two-sided p-value.
+		#' @param delta Null treatment effect. Default 0.
+		compute_wald_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			p_model = private$compute_wald_two_sided_pval_impl(delta)
+			private$design_conservative_pval(p_model, delta = delta)
+		},
+		#' @description Computes a design-conservative score confidence interval.
+		#' @param alpha Significance level. Default 0.05.
+		compute_score_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			ci_model = private$compute_score_confidence_interval_impl(alpha)
+			private$design_conservative_ci(ci_model, alpha = alpha)
+		},
+		#' @description Computes a design-conservative score two-sided p-value.
+		#' @param delta Null treatment effect. Default 0.
+		compute_score_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			p_model = private$compute_score_two_sided_pval_impl(delta)
+			private$design_conservative_pval(p_model, delta = delta)
+		},
+		#' @description Computes a design-conservative likelihood-ratio confidence interval.
+		#' @param alpha Significance level. Default 0.05.
+		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			ci_model = private$compute_lik_ratio_confidence_interval_impl(alpha)
+			private$design_conservative_ci(ci_model, alpha = alpha)
+		},
+		#' @description Computes a design-conservative likelihood-ratio two-sided p-value.
+		#' @param delta Null treatment effect. Default 0.
+		compute_lik_ratio_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			p_model = private$compute_lik_ratio_two_sided_pval_impl(delta)
+			private$design_conservative_pval(p_model, delta = delta)
+		},
+		#' @description Computes a design-conservative gradient confidence interval.
+		#' @param alpha Significance level. Default 0.05.
+		compute_gradient_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			ci_model = private$compute_gradient_confidence_interval_impl(alpha)
+			private$design_conservative_ci(ci_model, alpha = alpha)
+		},
+		#' @description Computes a design-conservative gradient two-sided p-value.
+		#' @param delta Null treatment effect. Default 0.
+		compute_gradient_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			p_model = private$compute_gradient_two_sided_pval_impl(delta)
+			private$design_conservative_pval(p_model, delta = delta)
+		},
+		#' @description Computes a design-conservative parametric LR-bootstrap p-value.
+		#' @param delta Null treatment effect. Default 0.
+		#' @param B Number of bootstrap replicates.
+		#' @param show_progress Whether to show progress.
+		#' @param min_number_usable_samples Minimum usable bootstrap samples.
+		#' @param max_attempts_per_replicate Maximum attempts per replicate.
+		compute_lik_ratio_bootstrap_two_sided_pval = function(delta = 0, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			p_model = super$compute_lik_ratio_bootstrap_two_sided_pval(
+				delta = delta,
+				B = B,
+				show_progress = show_progress,
+				min_number_usable_samples = min_number_usable_samples,
+				max_attempts_per_replicate = max_attempts_per_replicate
+			)
+			private$design_conservative_pval(p_model, delta = delta)
+		},
+		#' @description Computes a design-conservative parametric LR-bootstrap CI.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of bootstrap replicates.
+		#' @param show_progress Whether to show progress.
+		#' @param min_number_usable_samples Minimum usable bootstrap samples.
+		#' @param max_attempts_per_replicate Maximum attempts per replicate.
+		#' @param root_tolerance Root tolerance.
+		#' @param max_root_iterations Maximum root iterations.
+		compute_lik_ratio_bootstrap_confidence_interval = function(alpha = 0.05, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L, root_tolerance = NULL, max_root_iterations = 8L){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			ci_model = super$compute_lik_ratio_bootstrap_confidence_interval(
+				alpha = alpha,
+				B = B,
+				show_progress = show_progress,
+				min_number_usable_samples = min_number_usable_samples,
+				max_attempts_per_replicate = max_attempts_per_replicate,
+				root_tolerance = root_tolerance,
+				max_root_iterations = max_root_iterations
+			)
+			private$design_conservative_ci(ci_model, alpha = alpha)
+		},
 		#' @description Computes the treatment effect estimate for a bootstrap sample.
 		#' @param subject_or_block_weights Row weights for the bootstrap sample.
 		#' @param estimate_only If TRUE, skip variance calculations.
@@ -101,6 +249,44 @@ InferenceCountPoisson = R6::R6Class("InferenceCountPoisson",
 		poisson_X_full_cache = NULL,
 		poisson_w_cache = NULL,
 		get_complexity_tier = function() "medium",
+		design_jackknife_pval = function(delta = 0){
+			tryCatch({
+				p = self$compute_jackknife_wald_two_sided_pval(delta = delta)
+				p = as.numeric(p)[1L]
+				if (is.finite(p) && p >= 0 && p <= 1) p else NA_real_
+			}, error = function(e) NA_real_)
+		},
+		design_jackknife_ci = function(alpha = 0.05){
+			tryCatch({
+				ci = as.numeric(self$compute_jackknife_wald_confidence_interval(alpha = alpha))
+				if (length(ci) >= 2L && all(is.finite(ci[1:2])) && ci[1L] <= ci[2L]) ci[1:2] else c(NA_real_, NA_real_)
+			}, error = function(e) c(NA_real_, NA_real_))
+		},
+		design_conservative_pval = function(model_p, delta = 0){
+			model_p = as.numeric(model_p)[1L]
+			design_p = private$design_jackknife_pval(delta = delta)
+			if (is.finite(model_p) && is.finite(design_p)) return(max(model_p, design_p))
+			if (is.finite(model_p)) return(model_p)
+			if (is.finite(design_p)) return(design_p)
+			NA_real_
+		},
+		design_conservative_ci = function(model_ci, alpha = 0.05){
+			model_ci = as.numeric(model_ci)
+			if (length(model_ci) < 2L) model_ci = c(NA_real_, NA_real_)
+			model_ci = model_ci[1:2]
+			design_ci = private$design_jackknife_ci(alpha = alpha)
+			ci = if (all(is.finite(model_ci)) && all(is.finite(design_ci))) {
+				c(min(model_ci[1L], design_ci[1L]), max(model_ci[2L], design_ci[2L]))
+			} else if (all(is.finite(model_ci))) {
+				model_ci
+			} else if (all(is.finite(design_ci))) {
+				design_ci
+			} else {
+				c(NA_real_, NA_real_)
+			}
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			ci
+		},
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			if (is.null(private$best_X_colnames)){
 				private$shared(estimate_only = TRUE)

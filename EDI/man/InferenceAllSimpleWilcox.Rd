@@ -36,6 +36,13 @@ seq_des_inf$compute_estimate()
 \item \href{#method-InferenceAllSimpleWilcox-new}{\code{InferenceAllSimpleWilcox$new()}}
 \item \href{#method-InferenceAllSimpleWilcox-compute_estimate}{\code{InferenceAllSimpleWilcox$compute_estimate()}}
 \item \href{#method-InferenceAllSimpleWilcox-compute_estimate_with_bootstrap_weights}{\code{InferenceAllSimpleWilcox$compute_estimate_with_bootstrap_weights()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_estimate}{\code{InferenceAllSimpleWilcox$compute_jackknife_estimate()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_corrected_estimate}{\code{InferenceAllSimpleWilcox$compute_jackknife_corrected_estimate()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_bias_estimate}{\code{InferenceAllSimpleWilcox$compute_jackknife_bias_estimate()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_std_error}{\code{InferenceAllSimpleWilcox$compute_jackknife_std_error()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_standard_error}{\code{InferenceAllSimpleWilcox$compute_jackknife_standard_error()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_wald_two_sided_pval}{\code{InferenceAllSimpleWilcox$compute_jackknife_wald_two_sided_pval()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_wald_confidence_interval}{\code{InferenceAllSimpleWilcox$compute_jackknife_wald_confidence_interval()}}
 \item \href{#method-InferenceAllSimpleWilcox-clone}{\code{InferenceAllSimpleWilcox$clone()}}
 }
 }
@@ -70,13 +77,6 @@ seq_des_inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_bayesian_bootstrap_confidence_interval"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_bayesian_bootstrap_confidence_interval'><code>::InferenceBayesianBootstrap$compute_bayesian_bootstrap_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_bayesian_bootstrap_two_sided_pval"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_bayesian_bootstrap_two_sided_pval'><code>::InferenceBayesianBootstrap$compute_bayesian_bootstrap_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="approximate_jackknife_distribution_beta_hat_T"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-approximate_jackknife_distribution_beta_hat_T'><code>::InferenceJackknife$approximate_jackknife_distribution_beta_hat_T()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_bias_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_bias_estimate'><code>::InferenceJackknife$compute_jackknife_bias_estimate()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_corrected_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_corrected_estimate'><code>::InferenceJackknife$compute_jackknife_corrected_estimate()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_estimate'><code>::InferenceJackknife$compute_jackknife_estimate()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_standard_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_standard_error'><code>::InferenceJackknife$compute_jackknife_standard_error()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_std_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_std_error'><code>::InferenceJackknife$compute_jackknife_std_error()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_confidence_interval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_confidence_interval'><code>::InferenceJackknife$compute_jackknife_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_two_sided_pval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_two_sided_pval'><code>::InferenceJackknife$compute_jackknife_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_confidence_interval'><code>::InferenceAsymp$compute_wald_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
@@ -178,6 +178,77 @@ Computes the weighted Hodges-Lehmann style bootstrap estimate.
 }
 \if{html}{\out{</div>}}
 }
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_jackknife_estimate"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_jackknife_estimate}{}}}
+\subsection{Method \code{compute_jackknife_estimate()}}{
+Jackknife bias correction is unstable for the
+  Hodges-Lehmann estimator; report explicit non-estimability.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_jackknife_estimate(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_jackknife_corrected_estimate"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_jackknife_corrected_estimate}{}}}
+\subsection{Method \code{compute_jackknife_corrected_estimate()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_jackknife_corrected_estimate(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_jackknife_bias_estimate"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_jackknife_bias_estimate}{}}}
+\subsection{Method \code{compute_jackknife_bias_estimate()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_jackknife_bias_estimate(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_jackknife_std_error"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_jackknife_std_error}{}}}
+\subsection{Method \code{compute_jackknife_std_error()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_jackknife_std_error(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_jackknife_standard_error"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_jackknife_standard_error}{}}}
+\subsection{Method \code{compute_jackknife_standard_error()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_jackknife_standard_error(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_jackknife_wald_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_jackknife_wald_two_sided_pval}{}}}
+\subsection{Method \code{compute_jackknife_wald_two_sided_pval()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_jackknife_wald_two_sided_pval(
+  delta = 0,
+  unit = "auto"
+)}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_jackknife_wald_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_jackknife_wald_confidence_interval}{}}}
+\subsection{Method \code{compute_jackknife_wald_confidence_interval()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_jackknife_wald_confidence_interval(
+  alpha = 0.05,
+  unit = "auto"
+)}\if{html}{\out{</div>}}
+}
+
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceAllSimpleWilcox-clone"></a>}}

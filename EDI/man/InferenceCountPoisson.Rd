@@ -34,6 +34,18 @@ inf$compute_lik_ratio_bootstrap_two_sided_pval(delta = 0, B = 9, show_progress =
 \subsection{Public methods}{
 \itemize{
 \item \href{#method-InferenceCountPoisson-new}{\code{InferenceCountPoisson$new()}}
+\item \href{#method-InferenceCountPoisson-compute_asymp_confidence_interval}{\code{InferenceCountPoisson$compute_asymp_confidence_interval()}}
+\item \href{#method-InferenceCountPoisson-compute_asymp_two_sided_pval}{\code{InferenceCountPoisson$compute_asymp_two_sided_pval()}}
+\item \href{#method-InferenceCountPoisson-compute_wald_confidence_interval}{\code{InferenceCountPoisson$compute_wald_confidence_interval()}}
+\item \href{#method-InferenceCountPoisson-compute_wald_two_sided_pval}{\code{InferenceCountPoisson$compute_wald_two_sided_pval()}}
+\item \href{#method-InferenceCountPoisson-compute_score_confidence_interval}{\code{InferenceCountPoisson$compute_score_confidence_interval()}}
+\item \href{#method-InferenceCountPoisson-compute_score_two_sided_pval}{\code{InferenceCountPoisson$compute_score_two_sided_pval()}}
+\item \href{#method-InferenceCountPoisson-compute_lik_ratio_confidence_interval}{\code{InferenceCountPoisson$compute_lik_ratio_confidence_interval()}}
+\item \href{#method-InferenceCountPoisson-compute_lik_ratio_two_sided_pval}{\code{InferenceCountPoisson$compute_lik_ratio_two_sided_pval()}}
+\item \href{#method-InferenceCountPoisson-compute_gradient_confidence_interval}{\code{InferenceCountPoisson$compute_gradient_confidence_interval()}}
+\item \href{#method-InferenceCountPoisson-compute_gradient_two_sided_pval}{\code{InferenceCountPoisson$compute_gradient_two_sided_pval()}}
+\item \href{#method-InferenceCountPoisson-compute_lik_ratio_bootstrap_two_sided_pval}{\code{InferenceCountPoisson$compute_lik_ratio_bootstrap_two_sided_pval()}}
+\item \href{#method-InferenceCountPoisson-compute_lik_ratio_bootstrap_confidence_interval}{\code{InferenceCountPoisson$compute_lik_ratio_bootstrap_confidence_interval()}}
 \item \href{#method-InferenceCountPoisson-compute_estimate_with_bootstrap_weights}{\code{InferenceCountPoisson$compute_estimate_with_bootstrap_weights()}}
 \item \href{#method-InferenceCountPoisson-clone}{\code{InferenceCountPoisson$clone()}}
 }
@@ -76,16 +88,8 @@ inf$compute_lik_ratio_bootstrap_two_sided_pval(delta = 0, B = 9, show_progress =
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_std_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_std_error'><code>::InferenceJackknife$compute_jackknife_std_error()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_confidence_interval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_confidence_interval'><code>::InferenceJackknife$compute_jackknife_wald_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_two_sided_pval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_two_sided_pval'><code>::InferenceJackknife$compute_jackknife_wald_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_confidence_interval'><code>::InferenceAsymp$compute_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_two_sided_pval'><code>::InferenceAsympLik$compute_score_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_preference'><code>::InferenceAsympLik$get_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_source_used"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_source_used'><code>::InferenceAsympLik$get_information_source_used()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_supported_information_preferences"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_supported_information_preferences'><code>::InferenceAsympLik$get_supported_information_preferences()</code></a></span></li>
@@ -93,11 +97,7 @@ inf$compute_lik_ratio_bootstrap_two_sided_pval(delta = 0, B = 9, show_progress =
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_testing_type'><code>::InferenceAsympLik$get_testing_type()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_information_preference'><code>::InferenceAsympLik$set_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_testing_type'><code>::InferenceAsympLik$set_testing_type()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_confidence_interval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_confidence_interval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_two_sided_pval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_two_sided_pval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="get_last_param_bootstrap_diagnostics"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-get_last_param_bootstrap_diagnostics'><code>::InferenceParamBootstrap$get_last_param_bootstrap_diagnostics()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_asymp_confidence_interval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_asymp_confidence_interval'><code>::InferenceCountLikelihood$compute_asymp_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_asymp_two_sided_pval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_asymp_two_sided_pval'><code>::InferenceCountLikelihood$compute_asymp_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_estimate"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_estimate'><code>::InferenceCountLikelihood$compute_estimate()</code></a></span></li>
 </ul>
 </details>
@@ -132,6 +132,244 @@ design's imputed covariates.}
 \item{\code{smart_cold_start_default}}{Whether to use smart cold start values by default.}
 
 \item{\code{harden}}{Whether to apply robustness measures.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_asymp_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_asymp_confidence_interval}{}}}
+\subsection{Method \code{compute_asymp_confidence_interval()}}{
+Computes an asymptotic confidence interval using the configured test.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_asymp_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_asymp_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_asymp_two_sided_pval}{}}}
+\subsection{Method \code{compute_asymp_two_sided_pval()}}{
+Computes an asymptotic two-sided p-value using the configured test.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_asymp_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect. Default 0.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_wald_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_wald_confidence_interval}{}}}
+\subsection{Method \code{compute_wald_confidence_interval()}}{
+Computes a design-conservative Wald confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_wald_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_wald_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_wald_two_sided_pval}{}}}
+\subsection{Method \code{compute_wald_two_sided_pval()}}{
+Computes a design-conservative Wald two-sided p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_wald_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect. Default 0.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_score_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_score_confidence_interval}{}}}
+\subsection{Method \code{compute_score_confidence_interval()}}{
+Computes a design-conservative score confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_score_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_score_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_score_two_sided_pval}{}}}
+\subsection{Method \code{compute_score_two_sided_pval()}}{
+Computes a design-conservative score two-sided p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_score_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect. Default 0.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_lik_ratio_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_lik_ratio_confidence_interval}{}}}
+\subsection{Method \code{compute_lik_ratio_confidence_interval()}}{
+Computes a design-conservative likelihood-ratio confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_lik_ratio_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_lik_ratio_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_lik_ratio_two_sided_pval}{}}}
+\subsection{Method \code{compute_lik_ratio_two_sided_pval()}}{
+Computes a design-conservative likelihood-ratio two-sided p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_lik_ratio_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect. Default 0.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_gradient_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_gradient_confidence_interval}{}}}
+\subsection{Method \code{compute_gradient_confidence_interval()}}{
+Computes a design-conservative gradient confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_gradient_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_gradient_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_gradient_two_sided_pval}{}}}
+\subsection{Method \code{compute_gradient_two_sided_pval()}}{
+Computes a design-conservative gradient two-sided p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_gradient_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect. Default 0.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_lik_ratio_bootstrap_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_lik_ratio_bootstrap_two_sided_pval}{}}}
+\subsection{Method \code{compute_lik_ratio_bootstrap_two_sided_pval()}}{
+Computes a design-conservative parametric LR-bootstrap p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_lik_ratio_bootstrap_two_sided_pval(
+  delta = 0,
+  B = 199,
+  show_progress = FALSE,
+  min_number_usable_samples = 5L,
+  max_attempts_per_replicate = 2L
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect. Default 0.}
+
+\item{\code{B}}{Number of bootstrap replicates.}
+
+\item{\code{show_progress}}{Whether to show progress.}
+
+\item{\code{min_number_usable_samples}}{Minimum usable bootstrap samples.}
+
+\item{\code{max_attempts_per_replicate}}{Maximum attempts per replicate.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountPoisson-compute_lik_ratio_bootstrap_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountPoisson-compute_lik_ratio_bootstrap_confidence_interval}{}}}
+\subsection{Method \code{compute_lik_ratio_bootstrap_confidence_interval()}}{
+Computes a design-conservative parametric LR-bootstrap CI.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountPoisson$compute_lik_ratio_bootstrap_confidence_interval(
+  alpha = 0.05,
+  B = 199,
+  show_progress = FALSE,
+  min_number_usable_samples = 5L,
+  max_attempts_per_replicate = 2L,
+  root_tolerance = NULL,
+  max_root_iterations = 8L
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{B}}{Number of bootstrap replicates.}
+
+\item{\code{show_progress}}{Whether to show progress.}
+
+\item{\code{min_number_usable_samples}}{Minimum usable bootstrap samples.}
+
+\item{\code{max_attempts_per_replicate}}{Maximum attempts per replicate.}
+
+\item{\code{root_tolerance}}{Root tolerance.}
+
+\item{\code{max_root_iterations}}{Maximum root iterations.}
 }
 \if{html}{\out{</div>}}
 }

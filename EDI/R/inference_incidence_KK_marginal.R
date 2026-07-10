@@ -76,7 +76,7 @@ InferenceAbstractKKModifiedPoisson = R6::R6Class("InferenceAbstractKKModifiedPoi
 		}
 	),
 	private = list(
-		max_abs_reasonable_coef = 1e4,
+		max_abs_reasonable_coef = 25,
 		best_X_colnames = NULL,
 		cached_mod = NULL,
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){

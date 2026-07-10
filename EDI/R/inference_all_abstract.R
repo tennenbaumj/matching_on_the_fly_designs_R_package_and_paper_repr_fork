@@ -175,6 +175,15 @@ Inference = R6::R6Class("Inference",
 				}
 				clone_private[["custom_randomization_statistic_function"]] = fn
 			}
+			if (private$has_private_method("compiled_cpp_stat_src") &&
+				!is.null(private[["compiled_cpp_stat_src"]])){
+				clone_private = i$.__enclos_env__$private
+				src = private[["compiled_cpp_stat_src"]]
+				if (bindingIsLocked("compiled_cpp_stat_src", clone_private)) {
+					get("unlockBinding", envir = asNamespace("base"))("compiled_cpp_stat_src", clone_private)
+				}
+				clone_private[["compiled_cpp_stat_src"]] = src
+			}
 			i
 		},
 		#' @description Return the response vector used by inference extension classes.

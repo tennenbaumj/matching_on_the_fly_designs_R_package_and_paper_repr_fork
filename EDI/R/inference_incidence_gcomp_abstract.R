@@ -109,6 +109,19 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 			private$shared(estimate_only = FALSE)
 			private$compute_effect_pvalue(delta)
 		},
+		#' @description Computes a bootstrap confidence interval for the treatment effect.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of bootstrap samples.
+		#' @param type Bootstrap CI type. See \code{InferenceNonParamBootstrap$compute_bootstrap_confidence_interval}.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		#' @param min_number_usable_samples Minimum number of finite bootstrap samples required.
+		compute_bootstrap_confidence_interval = function(alpha = 0.05, B = 501, type = NULL, na.rm = TRUE, show_progress = TRUE, min_number_usable_samples = 5L){
+			type_resolved = tolower(type %||% "percentile")
+			if (identical(private$get_estimand_type(), "RR") && identical(type_resolved, "basic")) {
+				return(private$compute_rr_bootstrap_basic_confidence_interval(alpha = alpha, B = B, na.rm = na.rm, show_progress = show_progress, min_number_usable_samples = min_number_usable_samples))
+			}
+			super$compute_bootstrap_confidence_interval(alpha = alpha, B = B, type = type, na.rm = na.rm, show_progress = show_progress, min_number_usable_samples = min_number_usable_samples)
+		},
 		#' @description Computes a bootstrap two-sided p-value for the treatment effect.
 		#' @param delta The null treatment effect. Defaults to 0 for RD and 1 for RR.
 		#' @param B Number of bootstrap samples.
@@ -120,6 +133,52 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 				delta = private$default_null_value()
 			}
 			super$compute_bootstrap_two_sided_pval(delta = delta, B = B, type = type, na.rm = na.rm, show_progress = show_progress, min_number_usable_samples = min_number_usable_samples)
+		},
+		#' @description Computes a Bayesian-bootstrap two-sided p-value for the treatment effect.
+		#' @param delta The null treatment effect. Defaults to 0 for RD and 1 for RR.
+		#' @param B Number of Bayesian-bootstrap samples.
+		#' @param type Bayesian-bootstrap p-value type. See \code{InferenceBayesianBootstrap$compute_bayesian_bootstrap_two_sided_pval}.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		#' @param min_number_usable_samples Minimum number of finite bootstrap samples required.
+		compute_bayesian_bootstrap_two_sided_pval = function(delta = NULL, B = 501, type = NULL, na.rm = FALSE, show_progress = TRUE, min_number_usable_samples = 5L, weighting_unit_type = NULL){
+			if (is.null(delta)){
+				delta = private$default_null_value()
+			}
+			super$compute_bayesian_bootstrap_two_sided_pval(delta = delta, B = B, type = type, na.rm = na.rm, show_progress = show_progress, min_number_usable_samples = min_number_usable_samples, weighting_unit_type = weighting_unit_type)
+		},
+		#' @description Computes a Bayesian-bootstrap confidence interval for the treatment effect.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of Bayesian-bootstrap samples.
+		#' @param type Bayesian-bootstrap CI type. See \code{InferenceBayesianBootstrap$compute_bayesian_bootstrap_confidence_interval}.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		#' @param min_number_usable_samples Minimum number of finite bootstrap samples required.
+		compute_bayesian_bootstrap_confidence_interval = function(alpha = 0.05, B = 501, type = NULL, na.rm = TRUE, show_progress = TRUE, min_number_usable_samples = 5L, weighting_unit_type = NULL){
+			type_resolved = tolower(type %||% "percentile")
+			if (identical(private$get_estimand_type(), "RR") && type_resolved %in% c("basic", "wald")) {
+				return(private$compute_rr_bayesian_bootstrap_log_confidence_interval(alpha = alpha, B = B, type = type_resolved, na.rm = na.rm, show_progress = show_progress, min_number_usable_samples = min_number_usable_samples, weighting_unit_type = weighting_unit_type))
+			}
+			super$compute_bayesian_bootstrap_confidence_interval(alpha = alpha, B = B, type = type, na.rm = na.rm, show_progress = show_progress, min_number_usable_samples = min_number_usable_samples, weighting_unit_type = weighting_unit_type)
+		},
+		#' @description Computes a jackknife-Wald two-sided p-value for the treatment effect.
+		#' @param delta The null treatment effect. Defaults to 0 for RD and 1 for RR.
+		#' @param unit Deletion unit. Default \code{"auto"}.
+		compute_jackknife_wald_two_sided_pval = function(delta = NULL, unit = "auto"){
+			if (is.null(delta)){
+				delta = private$default_null_value()
+			}
+			if (identical(private$get_estimand_type(), "RR")) {
+				return(private$compute_rr_jackknife_wald_two_sided_pval(delta = delta, unit = unit))
+			}
+			super$compute_jackknife_wald_two_sided_pval(delta = delta, unit = unit)
+		},
+		#' @description Computes a jackknife-Wald confidence interval for the treatment effect.
+		#' @param alpha Significance level. Default \code{0.05}.
+		#' @param unit Deletion unit. Default \code{"auto"}.
+		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
+			if (identical(private$get_estimand_type(), "RR")) {
+				return(private$compute_rr_jackknife_wald_confidence_interval(alpha = alpha, unit = unit))
+			}
+			super$compute_jackknife_wald_confidence_interval(alpha = alpha, unit = unit)
 		}
 	),
 	private = list(
@@ -177,7 +236,7 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 			NA_real_
 		},
 		prob_clip_eps = .Machine$double.eps,
-		max_abs_reasonable_coef = 1e4,
+		max_abs_reasonable_coef = 25,
 		build_design_matrix = function(){
 			X_cov = private$X
 			if (is.null(X_cov) || ncol(X_cov) == 0) {
@@ -199,6 +258,101 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 		},
 		default_null_value = function(){
 			if (identical(private$get_estimand_type(), "RR")) 1 else 0
+		},
+		compute_rr_bootstrap_basic_confidence_interval = function(alpha = 0.05, B = 501, na.rm = TRUE, show_progress = TRUE, min_number_usable_samples = 5L){
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			est = as.numeric(self$compute_estimate(estimate_only = FALSE))[1L]
+			if (!is.finite(est) || est <= 0) {
+				return(private$missing_bootstrap_ci(alpha, "bootstrap_original_estimate_unavailable", stage = "estimate"))
+			}
+			boot_distr = as.numeric(self$approximate_bootstrap_distribution_beta_hat_T(B = B, show_progress = show_progress))
+			if (isTRUE(na.rm)) {
+				boot_distr = boot_distr[is.finite(boot_distr) & boot_distr > 0]
+			} else if (any(!is.finite(boot_distr) | boot_distr <= 0)) {
+				return(ci)
+			}
+			if (length(boot_distr) < as.integer(min_number_usable_samples)) {
+				return(private$missing_bootstrap_ci(alpha, "bootstrap_too_few_finite_estimates", stage = "estimate"))
+			}
+			q = stats::quantile(log(boot_distr), probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
+			ci[] = exp(2 * log(est) - q)
+			ci
+		},
+		compute_rr_bayesian_bootstrap_log_confidence_interval = function(alpha = 0.05, B = 501, type = "basic", na.rm = TRUE, show_progress = TRUE, min_number_usable_samples = 5L, weighting_unit_type = NULL){
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			est = as.numeric(self$compute_estimate(estimate_only = FALSE))[1L]
+			if (!is.finite(est) || est <= 0) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_original_estimate_unavailable", stage = "estimate"))
+			}
+			boot_distr = as.numeric(self$approximate_bayesian_bootstrap_distribution_beta_hat_T(B = B, show_progress = show_progress, weighting_unit_type = weighting_unit_type))
+			if (isTRUE(na.rm)) {
+				boot_distr = boot_distr[is.finite(boot_distr) & boot_distr > 0]
+			} else if (any(!is.finite(boot_distr) | boot_distr <= 0)) {
+				return(ci)
+			}
+			if (length(boot_distr) < as.integer(min_number_usable_samples)) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_too_few_finite_estimates", stage = "estimate"))
+			}
+			log_boot = log(boot_distr)
+			if (identical(type, "wald")) {
+				se_log = stats::sd(log_boot)
+				if (!is.finite(se_log) || se_log <= 0) return(ci)
+				z = stats::qnorm(1 - alpha / 2)
+				ci[] = exp(log(est) + c(-1, 1) * z * se_log)
+			} else {
+				q = stats::quantile(log_boot, probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
+				ci[] = exp(2 * log(est) - q)
+			}
+			ci
+		},
+		compute_rr_jackknife_log_se = function(unit = "auto"){
+			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) return(NA_real_)
+			private$assert_jackknife_supported(unit = unit)
+			jack = as.numeric(private$approximate_jackknife_distribution_beta_hat_T_private(unit = unit))
+			jack = jack[is.finite(jack) & jack > 0]
+			n_units = length(jack)
+			if (n_units <= 1L) {
+				private$cache_nonestimable_se("jackknife_too_few_positive_risk_ratio_estimates")
+				return(NA_real_)
+			}
+			log_jack = log(jack)
+			var_j = ((n_units - 1) / n_units) * sum((log_jack - mean(log_jack))^2)
+			if (!is.finite(var_j) || var_j <= 0) {
+				private$cache_nonestimable_se("jackknife_log_risk_ratio_standard_error_unavailable")
+				return(NA_real_)
+			}
+			sqrt(var_j)
+		},
+		compute_rr_jackknife_wald_two_sided_pval = function(delta = 1, unit = "auto"){
+			if (!is.finite(delta) || delta <= 0) {
+				private$cache_nonestimable_se("jackknife_log_risk_ratio_null_unavailable")
+				return(NA_real_)
+			}
+			est = as.numeric(self$compute_estimate(estimate_only = TRUE))[1L]
+			if (!is.finite(est) || est <= 0) {
+				private$cache_nonestimable_estimate("jackknife_original_risk_ratio_unavailable")
+				return(NA_real_)
+			}
+			se_log = private$compute_rr_jackknife_log_se(unit = unit)
+			if (!is.finite(se_log) || se_log <= 0) return(NA_real_)
+			2 * stats::pnorm(-abs((log(est) - log(delta)) / se_log))
+		},
+		compute_rr_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			est = as.numeric(self$compute_estimate(estimate_only = TRUE))[1L]
+			if (!is.finite(est) || est <= 0) {
+				private$cache_nonestimable_estimate("jackknife_original_risk_ratio_unavailable")
+				return(ci)
+			}
+			se_log = private$compute_rr_jackknife_log_se(unit = unit)
+			if (!is.finite(se_log) || se_log <= 0) return(ci)
+			z = stats::qnorm(1 - alpha / 2)
+			ci[] = exp(log(est) + c(-1, 1) * z * se_log)
+			ci
 		},
 		set_failed_fit_cache = function(){
 			private$cached_values$summary_table = NULL

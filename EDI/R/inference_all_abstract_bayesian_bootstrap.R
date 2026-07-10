@@ -262,22 +262,36 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				assertChoice(type, c("percentile", "symmetric", "wald", "studentized", "bootstrap-t", "bca"))
 			}
 			est = as.numeric(self$compute_estimate())[1L]
-			if (!is.finite(est)) return(NA_real_)
+			if (!is.finite(est)) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bayesian_bootstrap_original_estimate_unavailable")
+				return(NA_real_)
+			}
+			if (type == "bca" && private$mark_jackknife_nonestimable_if_block_unsupported(unit = "auto")) {
+				return(NA_real_)
+			}
 			if (type %in% c("studentized", "bootstrap-t")) {
 				boot_stats = private$approximate_bayesian_bootstrap_statistics_beta_hat_T(
 					B = B, show_progress = show_progress, na.rm = isTRUE(na.rm),
 					require_se = TRUE, weighting_unit_type = weighting_unit_type
 				)
-				ok = is.finite(boot_stats$theta) & is.finite(boot_stats$se) & boot_stats$se > 0
-				t_boot = abs(boot_stats$theta[ok] - est) / boot_stats$se[ok]
-				t_boot = t_boot[is.finite(t_boot)]
-				if (length(t_boot) < as.integer(min_number_usable_samples)) {
-					if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_too_few_finite_standard_errors")
-					return(NA_real_)
-				}
 				se_hat = tryCatch(private$infer_original_se(), error = function(e) NA_real_)
 				if (!is.finite(se_hat) || se_hat <= 0) {
 					if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_original_standard_error_unavailable")
+					return(NA_real_)
+				}
+				t_boot = tryCatch(
+					private$studentized_bootstrap_pivots(
+						theta = boot_stats$theta,
+						se = boot_stats$se,
+						est = est,
+						se_hat = se_hat,
+						min_number_usable_samples = min_number_usable_samples,
+						symmetric = TRUE
+					),
+					error = function(e) numeric(0)
+				)
+				if (length(t_boot) < as.integer(min_number_usable_samples)) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_unstable_studentized_standard_errors")
 					return(NA_real_)
 				}
 				t_obs = abs(est - delta) / se_hat
@@ -289,8 +303,14 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				weighting_unit_type = weighting_unit_type
 			)
 			if (isTRUE(na.rm)) boot_distr = boot_distr[is.finite(boot_distr)]
-			else if (any(!is.finite(boot_distr))) return(NA_real_)
-			if (length(boot_distr) < as.integer(min_number_usable_samples)) return(NA_real_)
+			else if (any(!is.finite(boot_distr))) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bayesian_bootstrap_nonfinite_estimates")
+				return(NA_real_)
+			}
+			if (length(boot_distr) < as.integer(min_number_usable_samples)) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bayesian_bootstrap_too_few_finite_estimates")
+				return(NA_real_)
+			}
 			if (type == "percentile") {
 				boot_null = boot_distr - mean(boot_distr) + delta
 				n_bs = length(boot_null)
@@ -306,13 +326,23 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				return(min(1, max(1 / n_bs, mean(D_boot >= D_obs))))
 			}
 			if (type == "bca") {
-				return(tryCatch(
+				p_value = tryCatch(
 					private$pval_bayesian_bca(boot_distr, est, delta, weighting_unit_type = weighting_unit_type),
-					error = function(e) NA_real_
-				))
+					error = function(e) {
+						if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_bca_pvalue_unavailable")
+						NA_real_
+					}
+				)
+				if (!is.finite(p_value) && isTRUE(private$harden) && !isTRUE(self$is_nonestimable())) {
+					private$cache_nonestimable_se("bayesian_bootstrap_bca_pvalue_unavailable")
+				}
+				return(p_value)
 			}
 			se_boot = stats::sd(boot_distr)
-			if (!is.finite(se_boot) || se_boot <= 0) return(NA_real_)
+			if (!is.finite(se_boot) || se_boot <= 0) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_standard_error_unavailable")
+				return(NA_real_)
+			}
 			2 * stats::pnorm(-abs((est - delta) / se_boot))
 		},
 		#' @description Computes a Bayesian-bootstrap confidence interval for the
@@ -351,7 +381,12 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			est = as.numeric(self$compute_estimate())[1L]
 			ci = c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
-			if (!is.finite(est)) return(ci)
+			if (!is.finite(est)) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_original_estimate_unavailable", stage = "estimate"))
+			}
+			if (type == "bca" && private$mark_jackknife_nonestimable_if_block_unsupported(unit = "auto")) {
+				return(private$missing_bootstrap_ci(alpha, "jackknife_block_size_gt_one_not_supported", stage = "se"))
+			}
 			if (type %in% c("studentized", "bootstrap-t")) {
 				boot_stats = private$approximate_bayesian_bootstrap_statistics_beta_hat_T(
 					B = B, show_progress = show_progress, na.rm = isTRUE(na.rm),
@@ -362,7 +397,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_too_few_finite_standard_errors", stage = "se"))
 				}
 				ci[] = tryCatch(
-					private$ci_studentized(boot_stats, alpha, est),
+					private$ci_studentized(boot_stats, alpha, est, min_number_usable_samples = min_number_usable_samples),
 					error = function(e) private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_ci_unavailable", stage = "se")
 				)
 				if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
@@ -376,10 +411,14 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				weighting_unit_type = weighting_unit_type
 			)
 			boot_distr = boot_distr[is.finite(boot_distr)]
-			if (length(boot_distr) < as.integer(min_number_usable_samples)) return(ci)
+			if (length(boot_distr) < as.integer(min_number_usable_samples)) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_too_few_finite_estimates", stage = "estimate"))
+			}
 			if (type == "wald") {
 				se_boot = stats::sd(boot_distr)
-				if (!is.finite(se_boot) || se_boot <= 0) return(ci)
+				if (!is.finite(se_boot) || se_boot <= 0) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_unavailable", stage = "se"))
+				}
 				z = stats::qnorm(1 - alpha / 2)
 				ci[] = c(est - z * se_boot, est + z * se_boot)
 				return(ci)
@@ -387,11 +426,17 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			if (type == "bca") {
 				ci[] = tryCatch(
 					private$ci_bayesian_bca(boot_distr, alpha, est, weighting_unit_type = weighting_unit_type),
-					error = function(e) c(NA_real_, NA_real_)
+					error = function(e) private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_bca_ci_unavailable", stage = "se")
 				)
+				if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_bca_ci_unavailable", stage = "se"))
+				}
 				return(ci)
 			}
 			ci[] = private$ci_from_boot_distribution(boot_distr, alpha, type, est = est)
+			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_ci_unavailable", stage = "estimate"))
+			}
 			ci
 		}
 	),
@@ -558,6 +603,9 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 		approximate_bayesian_jackknife_distribution_beta_hat_T = function(weighting_unit_type = NULL) {
 			private$active_resampling_operation = "bayesian_boot"
 			on.exit(private$active_resampling_operation <- NULL, add = TRUE)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = "auto")) {
+				return(numeric(0))
+			}
 			jack_cache_key = weighting_unit_type %||% "default"
 			if (!is.null(private$cached_values$bayes_jack_distr_cache[[jack_cache_key]])) {
 				return(private$cached_values$bayes_jack_distr_cache[[jack_cache_key]])
@@ -593,7 +641,9 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 		ci_bayesian_bca = function(boot_distr, alpha, est, weighting_unit_type = NULL) {
 			jack = private$approximate_bayesian_jackknife_distribution_beta_hat_T(weighting_unit_type = weighting_unit_type)
 			jack = jack[is.finite(jack)]
-			if (length(jack) < 2L) return(c(NA_real_, NA_real_))
+			if (length(jack) < 2L) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_bca_jackknife_unavailable", stage = "se"))
+			}
 			p_less = mean(boot_distr < est)
 			p_less = pmin(1 - .Machine$double.eps, pmax(.Machine$double.eps, p_less))
 			z0 = stats::qnorm(p_less)
@@ -601,11 +651,21 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			num = sum((jack_bar - jack)^3)
 			den = 6 * (sum((jack_bar - jack)^2)^(3/2))
 			a = if (is.finite(den) && den > 0) num / den else 0
+			if (!is.finite(z0) || !is.finite(a) || abs(z0) > 2.5 || abs(a) > 1) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_bca_unstable_bias_or_acceleration", stage = "se"))
+			}
 			z_alpha = stats::qnorm(c(alpha / 2, 1 - alpha / 2))
-			adj = stats::pnorm(z0 + (z0 + z_alpha) / pmax(.Machine$double.eps, 1 - a * (z0 + z_alpha)))
+			denom = 1 - a * (z0 + z_alpha)
+			if (any(!is.finite(denom)) || any(abs(denom) < sqrt(.Machine$double.eps))) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_bca_unstable_bias_or_acceleration", stage = "se"))
+			}
+			adj = stats::pnorm(z0 + (z0 + z_alpha) / denom)
 			prob_eps = 1 / (length(boot_distr) + 1)
 			adj = pmin(1 - prob_eps, pmax(prob_eps, adj))
 			adj = sort(adj)
+			if (any(adj <= 2 * prob_eps) || any(adj >= 1 - 2 * prob_eps)) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_bca_adjustment_on_boundary", stage = "se"))
+			}
 			if (diff(adj) < prob_eps) {
 				return(stats::quantile(boot_distr, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8))
 			}
@@ -614,7 +674,10 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 		pval_bayesian_bca = function(boot_distr, est, delta, weighting_unit_type = NULL) {
 			jack = private$approximate_bayesian_jackknife_distribution_beta_hat_T(weighting_unit_type = weighting_unit_type)
 			jack = jack[is.finite(jack)]
-			if (length(jack) < 2L) return(NA_real_)
+			if (length(jack) < 2L) {
+				private$cache_nonestimable_se("bayesian_bootstrap_bca_jackknife_unavailable")
+				return(NA_real_)
+			}
 			p_less = mean(boot_distr < est)
 			p_less = pmin(1 - .Machine$double.eps, pmax(.Machine$double.eps, p_less))
 			z0 = stats::qnorm(p_less)
@@ -622,14 +685,36 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			num = sum((jack_bar - jack)^3)
 			den = 6 * (sum((jack_bar - jack)^2)^(3/2))
 			a = if (is.finite(den) && den > 0) num / den else 0
+			if (!is.finite(z0) || !is.finite(a) || abs(z0) > 2.5 || abs(a) > 1) {
+				private$cache_nonestimable_se("bayesian_bootstrap_bca_unstable_bias_or_acceleration")
+				return(NA_real_)
+			}
+			z_alpha = stats::qnorm(c(0.025, 0.975))
+			denom_ci = 1 - a * (z0 + z_alpha)
+			if (any(!is.finite(denom_ci)) || any(abs(denom_ci) < sqrt(.Machine$double.eps))) {
+				private$cache_nonestimable_se("bayesian_bootstrap_bca_unstable_bias_or_acceleration")
+				return(NA_real_)
+			}
+			prob_eps = 1 / (length(boot_distr) + 1)
+			adj_ci = sort(stats::pnorm(z0 + (z0 + z_alpha) / denom_ci))
+			if (any(!is.finite(adj_ci)) || any(adj_ci <= 2 * prob_eps) || any(adj_ci >= 1 - 2 * prob_eps)) {
+				private$cache_nonestimable_se("bayesian_bootstrap_bca_adjustment_on_boundary")
+				return(NA_real_)
+			}
 			p_delta = mean(boot_distr < delta)
 			p_delta = pmin(1 - .Machine$double.eps, pmax(.Machine$double.eps, p_delta))
 			z_delta = stats::qnorm(p_delta)
 			s = z_delta - z0
 			denom = 1 + a * s
-			if (!is.finite(denom) || abs(denom) < .Machine$double.eps) return(NA_real_)
+			if (!is.finite(denom) || abs(denom) < sqrt(.Machine$double.eps)) {
+				private$cache_nonestimable_se("bayesian_bootstrap_bca_unstable_bias_or_acceleration")
+				return(NA_real_)
+			}
 			adj_z = s / denom - z0
-			if (!is.finite(adj_z)) return(NA_real_)
+			if (!is.finite(adj_z) || abs(adj_z) > 8) {
+				private$cache_nonestimable_se("bayesian_bootstrap_bca_adjustment_on_boundary")
+				return(NA_real_)
+			}
 			p_raw = min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
 			min(1, max(1 / length(boot_distr), p_raw))
 		},

@@ -542,12 +542,24 @@ get_hurdle_poisson_glmm_score_cpp <- function(X_r, y_r, group_id_r, params_sexp,
     .Call(`_EDI_get_hurdle_poisson_glmm_score_cpp`, X_r, y_r, group_id_r, params_sexp, n_gh)
 }
 
+get_hurdle_poisson_glmm_weighted_score_cpp <- function(X_r, y_r, group_id_r, weights_r, params_sexp, n_gh = 7L) {
+    .Call(`_EDI_get_hurdle_poisson_glmm_weighted_score_cpp`, X_r, y_r, group_id_r, weights_r, params_sexp, n_gh)
+}
+
 get_hurdle_poisson_glmm_hessian_cpp <- function(X_r, y_r, group_id_r, params_sexp, n_gh = 7L) {
     .Call(`_EDI_get_hurdle_poisson_glmm_hessian_cpp`, X_r, y_r, group_id_r, params_sexp, n_gh)
 }
 
+get_hurdle_poisson_glmm_weighted_hessian_cpp <- function(X_r, y_r, group_id_r, weights_r, params_sexp, n_gh = 7L) {
+    .Call(`_EDI_get_hurdle_poisson_glmm_weighted_hessian_cpp`, X_r, y_r, group_id_r, weights_r, params_sexp, n_gh)
+}
+
 get_hurdle_poisson_glmm_neg_loglik_cpp <- function(X_r, y_r, group_id_r, params_sexp, n_gh = 7L) {
     .Call(`_EDI_get_hurdle_poisson_glmm_neg_loglik_cpp`, X_r, y_r, group_id_r, params_sexp, n_gh)
+}
+
+get_hurdle_poisson_glmm_weighted_neg_loglik_cpp <- function(X_r, y_r, group_id_r, weights_r, params_sexp, n_gh = 7L) {
+    .Call(`_EDI_get_hurdle_poisson_glmm_weighted_neg_loglik_cpp`, X_r, y_r, group_id_r, weights_r, params_sexp, n_gh)
 }
 
 fast_hurdle_poisson_glmm_cpp <- function(X_r, y_r, group_id_r, j_T, warm_start_params = NULL, smart_cold_start = TRUE, estimate_only = FALSE, n_gh = 7L, maxit = 300L, eps_g = 1e-6, optimization_alg = "lbfgs", fixed_idx = NULL, fixed_values = NULL, warm_start_fisher_info = NULL) {

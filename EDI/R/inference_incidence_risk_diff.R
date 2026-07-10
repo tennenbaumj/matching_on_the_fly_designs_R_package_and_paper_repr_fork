@@ -142,6 +142,9 @@ InferenceIncidRiskDiff = R6::R6Class("InferenceIncidRiskDiff",
 		supports_reusable_bootstrap_worker = function(){
 			TRUE
 		},
+		get_supported_testing_types_impl = function(){
+			"wald"
+		},
 		generate_mod = function(estimate_only = FALSE){
 			attempt = private$fit_with_hardened_qr_column_dropping(
 				X_full = private$build_design_matrix(),

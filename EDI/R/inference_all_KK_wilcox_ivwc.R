@@ -230,6 +230,34 @@ InferenceAllKKWilcoxIVWC = R6::R6Class("InferenceAllKKWilcoxIVWC",
 				}
 				NA_real_
 			}
+		},
+		#' @description Jackknife bias correction is unstable for the
+		#'   Hodges-Lehmann rank estimator; report explicit non-estimability.
+		compute_jackknife_estimate = function(unit = "auto"){
+			private$cache_nonestimable_estimate("kk_wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_corrected_estimate = function(unit = "auto"){
+			self$compute_jackknife_estimate(unit = unit)
+		},
+		compute_jackknife_bias_estimate = function(unit = "auto"){
+			private$cache_nonestimable_estimate("kk_wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_std_error = function(unit = "auto"){
+			private$cache_nonestimable_se("kk_wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_standard_error = function(unit = "auto"){
+			self$compute_jackknife_std_error(unit = unit)
+		},
+		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
+			private$cache_nonestimable_se("kk_wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
+			private$cache_nonestimable_se("kk_wilcox_hl_jackknife_not_supported")
+			c(NA_real_, NA_real_)
 		}
 	),
 	private = list(

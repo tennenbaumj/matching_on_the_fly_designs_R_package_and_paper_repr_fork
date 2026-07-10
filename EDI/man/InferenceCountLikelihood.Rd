@@ -6,7 +6,7 @@
 \alias{inference_count_likelihood_public}
 \title{Count-Specific Likelihood Inference}
 \format{
-An object of class \code{list} of length 3.
+An object of class \code{list} of length 13.
 }
 \usage{
 inference_count_likelihood_public
@@ -14,9 +14,21 @@ inference_count_likelihood_public
 \arguments{
 \item{estimate_only}{If TRUE, skip variance component calculations.}
 
-\item{alpha}{Significance level 1 - \code{alpha}. Default 0.05.}
+\item{delta}{Null treatment effect.}
 
-\item{delta}{Null treatment effect to test against. Default 0.}
+\item{alpha}{Significance level. Default 0.05.}
+
+\item{B}{Number of bootstrap replicates.}
+
+\item{show_progress}{Whether to show progress.}
+
+\item{min_number_usable_samples}{Minimum usable bootstrap samples.}
+
+\item{max_attempts_per_replicate}{Maximum attempts per replicate.}
+
+\item{root_tolerance}{Root tolerance.}
+
+\item{max_root_iterations}{Maximum root iterations.}
 }
 \value{
 A confidence interval.
@@ -33,5 +45,25 @@ Computes the treatment estimate using the underlying model.
 Computes an asymptotic confidence interval using the configured test.
 
 Computes an asymptotic two-sided p-value using the configured test.
+
+Computes the Wald two-sided p-value regardless of configured testing type.
+
+Computes the Wald confidence interval regardless of configured testing type.
+
+Computes the score two-sided p-value regardless of configured testing type.
+
+Computes the score confidence interval regardless of configured testing type.
+
+Computes the likelihood-ratio two-sided p-value regardless of configured testing type.
+
+Computes the likelihood-ratio confidence interval regardless of configured testing type.
+
+Computes the gradient two-sided p-value regardless of configured testing type.
+
+Computes the gradient confidence interval regardless of configured testing type.
+
+Computes a parametric likelihood-ratio bootstrap p-value.
+
+Computes a parametric likelihood-ratio bootstrap CI.
 }
 \keyword{internal}

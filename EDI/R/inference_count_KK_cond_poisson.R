@@ -1,3 +1,46 @@
+.inflate_kk_onelik_standard_error_with_jackknife = function(private_env, self_obj){
+	if (!is.null(private_env$active_resampling_operation)) return(invisible(NULL))
+	theta_hat = as.numeric(private_env$cached_values$beta_hat_T %||% NA_real_)[1L]
+	if (!is.finite(theta_hat)) return(invisible(NULL))
+	se_model = as.numeric(private_env$cached_values$s_beta_hat_T %||% NA_real_)[1L]
+	jack_summary = tryCatch(private_env$compute_jackknife_summary(unit = "auto"), error = function(e) NULL)
+	se_jack = as.numeric(jack_summary$std_error %||% NA_real_)[1L]
+	if (!is.finite(se_jack) || se_jack <= 0) return(invisible(NULL))
+	if (!is.finite(se_model) || se_jack > se_model * (1 + sqrt(.Machine$double.eps))) {
+		private_env$cached_values$s_beta_hat_T_model = se_model
+		private_env$cached_values$s_beta_hat_T = se_jack
+		private_env$cached_values$s_beta_hat_T_source = "jackknife"
+	}
+	invisible(NULL)
+}
+
+.conservative_kk_onelik_pval = function(model_p, design_p){
+	vals = as.numeric(c(model_p, design_p))
+	vals = vals[is.finite(vals)]
+	if (!length(vals)) return(NA_real_)
+	min(1, max(0, max(vals)))
+}
+
+.conservative_kk_onelik_ci = function(model_ci, design_ci, alpha = 0.05){
+	model_ci = as.numeric(model_ci)
+	design_ci = as.numeric(design_ci)
+	ok_model = length(model_ci) >= 2L && all(is.finite(model_ci[1:2]))
+	ok_design = length(design_ci) >= 2L && all(is.finite(design_ci[1:2]))
+	ci = c(NA_real_, NA_real_)
+	names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+	if (!ok_model && !ok_design) return(ci)
+	if (!ok_model) {
+		ci[] = design_ci[1:2]
+		return(ci)
+	}
+	if (!ok_design) {
+		ci[] = model_ci[1:2]
+		return(ci)
+	}
+	ci[] = c(min(model_ci[1L], design_ci[1L]), max(model_ci[2L], design_ci[2L]))
+	ci
+}
+
 #' KK Hurdle Poisson IVWC Inference for Count Responses
 #'
 #' Internal base class for KK hurdle-Poisson inverse-variance weighted combined
@@ -415,24 +458,110 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 			private$shared_combined_hurdle(estimate_only = estimate_only)
 			private$cached_values$beta_hat_T
 		},
+		#' @description Recomputes the combined hurdle-Poisson estimate under
+		#'   Bayesian-bootstrap weights.
+		#' @param subject_or_block_weights Subject-, block-, cluster-, or matched-set
+		#'   bootstrap weights.
+		#' @param estimate_only If \code{TRUE}, compute only the weighted point
+		#'   estimate.
+		compute_estimate_with_bootstrap_weights = function(subject_or_block_weights, estimate_only = FALSE){
+			row_weights = as.numeric(private$expand_subject_or_block_weights_to_row_weights(subject_or_block_weights))
+			private$compute_weighted_combined_hurdle_estimate(row_weights, estimate_only = estimate_only)
+		},
 		#' @description Compute asymp confidence interval
 		#' @param alpha Confidence level.
 		compute_asymp_confidence_interval = function(alpha = 0.05){
-			if (!identical(self$get_testing_type(), "wald")) {
-				return(super$compute_asymp_confidence_interval(alpha = alpha))
-			}
+			switch(
+				self$get_testing_type(),
+				wald = {
+					private$shared_combined_hurdle()
+					if (!is.finite(private$cached_values$s_beta_hat_T) || private$cached_values$s_beta_hat_T <= 0){
+						return(self$compute_bootstrap_confidence_interval(alpha = alpha))
+					}
+					private$compute_z_or_t_ci_from_s_and_df(alpha)
+				},
+				score = self$compute_score_confidence_interval(alpha = alpha),
+				lik_ratio = self$compute_lik_ratio_confidence_interval(alpha = alpha),
+				gradient = self$compute_gradient_confidence_interval(alpha = alpha)
+			)
+		},
+		#' @description Computes a design-conservative score confidence interval.
+		#' @param alpha Significance level.
+		compute_score_confidence_interval = function(alpha = 0.05){
+			ci_model = super$compute_score_confidence_interval(alpha = alpha)
+			private$shared_combined_hurdle()
+			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
+		},
+		#' @description Computes a design-conservative likelihood-ratio confidence interval.
+		#' @param alpha Significance level.
+		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
+			ci_model = super$compute_lik_ratio_confidence_interval(alpha = alpha)
+			private$shared_combined_hurdle()
+			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
+		},
+		#' @description Computes a design-conservative gradient confidence interval.
+		#' @param alpha Significance level.
+		compute_gradient_confidence_interval = function(alpha = 0.05){
+			ci_model = super$compute_gradient_confidence_interval(alpha = alpha)
+			private$shared_combined_hurdle()
+			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
+		},
+		#' @description Compute asymp two sided pval
+		#' @param delta Null treatment effect value.
+		compute_asymp_two_sided_pval = function(delta = 0){
+			switch(
+				self$get_testing_type(),
+				wald = {
+					private$shared_combined_hurdle()
+					if (!is.finite(private$cached_values$s_beta_hat_T) || private$cached_values$s_beta_hat_T <= 0){
+						return(self$compute_bootstrap_two_sided_pval(delta = delta, na.rm = TRUE))
+					}
+					private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+				},
+				score = self$compute_score_two_sided_pval(delta = delta),
+				lik_ratio = self$compute_lik_ratio_two_sided_pval(delta = delta),
+				gradient = self$compute_gradient_two_sided_pval(delta = delta)
+			)
+		},
+		#' @description Computes a design-conservative score p-value.
+		#' @param delta Null treatment effect value.
+		compute_score_two_sided_pval = function(delta = 0){
+			p_model = super$compute_score_two_sided_pval(delta = delta)
+			private$shared_combined_hurdle()
+			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			.conservative_kk_onelik_pval(p_model, p_design)
+		},
+		#' @description Computes a design-conservative likelihood-ratio p-value.
+		#' @param delta Null treatment effect value.
+		compute_lik_ratio_two_sided_pval = function(delta = 0){
+			p_model = super$compute_lik_ratio_two_sided_pval(delta = delta)
+			private$shared_combined_hurdle()
+			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			.conservative_kk_onelik_pval(p_model, p_design)
+		},
+		#' @description Computes a design-conservative gradient p-value.
+		#' @param delta Null treatment effect value.
+		compute_gradient_two_sided_pval = function(delta = 0){
+			p_model = super$compute_gradient_two_sided_pval(delta = delta)
+			private$shared_combined_hurdle()
+			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			.conservative_kk_onelik_pval(p_model, p_design)
+		},
+		#' @description Compute asymp confidence interval
+		#' @param alpha Confidence level.
+		compute_wald_confidence_interval = function(alpha = 0.05){
 			private$shared_combined_hurdle()
 			if (!is.finite(private$cached_values$s_beta_hat_T) || private$cached_values$s_beta_hat_T <= 0){
 				return(self$compute_bootstrap_confidence_interval(alpha = alpha))
 			}
 			private$compute_z_or_t_ci_from_s_and_df(alpha)
 		},
-		#' @description Compute asymp two sided pval
+		#' @description Compute Wald two sided pval
 		#' @param delta Null treatment effect value.
-		compute_asymp_two_sided_pval = function(delta = 0){
-			if (!identical(self$get_testing_type(), "wald")) {
-				return(super$compute_asymp_two_sided_pval(delta = delta))
-			}
+		compute_wald_two_sided_pval = function(delta = 0){
 			private$shared_combined_hurdle()
 			if (!is.finite(private$cached_values$s_beta_hat_T) || private$cached_values$s_beta_hat_T <= 0){
 				return(self$compute_bootstrap_two_sided_pval(delta = delta, na.rm = TRUE))
@@ -507,39 +636,73 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 				j_treat = as.integer(j_treat)
 			)
 		},
+		build_weighted_combined_hurdle_data = function(X_fit, j_treat, row_weights = NULL){
+			dat = private$build_combined_hurdle_data(X_fit, j_treat)
+			if (is.null(row_weights)) row_weights = rep(1, nrow(X_fit))
+			row_weights = as.numeric(row_weights)
+			row_weights[!is.finite(row_weights) | row_weights < 0] = 0
+			dat$weights_matched = row_weights[dat$matched_idx]
+			dat$weights_reservoir = row_weights[dat$reservoir_idx]
+			dat
+		},
 		combined_hurdle_neg_loglik = function(params, dat){
 			p = ncol(dat$X_fit)
 			beta = as.numeric(params[seq_len(p)])
 			total = 0
-			if (length(dat$matched_idx) > 0L && sum(dat$y_matched > 0, na.rm = TRUE) > p) {
-				total = total + as.numeric(get_hurdle_poisson_glmm_neg_loglik_cpp(
-					X = dat$X_matched,
-					y = dat$y_matched,
-					group_id = dat$group_id,
-					params = as.numeric(params)
-				))
+			w_m = dat$weights_matched %||% rep(1, length(dat$y_matched))
+			if (length(dat$matched_idx) > 0L && sum(dat$y_matched > 0 & w_m > 0, na.rm = TRUE) > p) {
+				total = total + if (is.null(dat$weights_matched)) {
+					as.numeric(get_hurdle_poisson_glmm_neg_loglik_cpp(
+						X = dat$X_matched,
+						y = dat$y_matched,
+						group_id = dat$group_id,
+						params = as.numeric(params)
+					))
+				} else {
+					as.numeric(get_hurdle_poisson_glmm_weighted_neg_loglik_cpp(
+						X = dat$X_matched,
+						y = dat$y_matched,
+						group_id = dat$group_id,
+						weights = w_m,
+						params = as.numeric(params)
+					))
+				}
 			}
 			if (length(dat$reservoir_idx) > 0L) {
+				w_r = dat$weights_reservoir %||% rep(1, length(dat$y_reservoir))
 				eta_r = as.numeric(dat$X_reservoir %*% beta)
-				total = total - sum(dat$y_reservoir * eta_r - exp(pmin(eta_r, 20)) - lgamma(dat$y_reservoir + 1))
+				total = total - sum(w_r * (dat$y_reservoir * eta_r - exp(pmin(eta_r, 20)) - lgamma(dat$y_reservoir + 1)))
 			}
 			as.numeric(total)
 		},
 		combined_hurdle_score = function(params, dat){
 			p = ncol(dat$X_fit)
 			score = numeric(p + 1L)
-			if (length(dat$matched_idx) > 0L && sum(dat$y_matched > 0, na.rm = TRUE) > p) {
-				score = score + as.numeric(get_hurdle_poisson_glmm_score_cpp(
-					X = dat$X_matched,
-					y = dat$y_matched,
-					group_id = dat$group_id,
-					params = as.numeric(params)
-				))
+			w_m = dat$weights_matched %||% rep(1, length(dat$y_matched))
+			if (length(dat$matched_idx) > 0L && sum(dat$y_matched > 0 & w_m > 0, na.rm = TRUE) > p) {
+				score = score + if (is.null(dat$weights_matched)) {
+					as.numeric(get_hurdle_poisson_glmm_score_cpp(
+						X = dat$X_matched,
+						y = dat$y_matched,
+						group_id = dat$group_id,
+						params = as.numeric(params)
+					))
+				} else {
+					as.numeric(get_hurdle_poisson_glmm_weighted_score_cpp(
+						X = dat$X_matched,
+						y = dat$y_matched,
+						group_id = dat$group_id,
+						weights = w_m,
+						params = as.numeric(params)
+					))
+				}
 			}
 			if (length(dat$reservoir_idx) > 0L) {
-				score[seq_len(p)] = score[seq_len(p)] + as.numeric(get_poisson_regression_score_cpp(
+				w_r = dat$weights_reservoir %||% rep(1, length(dat$y_reservoir))
+				score[seq_len(p)] = score[seq_len(p)] + as.numeric(get_poisson_regression_weighted_score_cpp(
 					X = dat$X_reservoir,
 					y = dat$y_reservoir,
+					weights = w_r,
 					beta = as.numeric(params[seq_len(p)])
 				))
 			}
@@ -548,21 +711,64 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 		combined_hurdle_hessian = function(params, dat){
 			p = ncol(dat$X_fit)
 			H = matrix(0, nrow = p + 1L, ncol = p + 1L)
-			if (length(dat$matched_idx) > 0L && sum(dat$y_matched > 0, na.rm = TRUE) > p) {
-				H = H + as.matrix(get_hurdle_poisson_glmm_hessian_cpp(
-					X = dat$X_matched,
-					y = dat$y_matched,
-					group_id = dat$group_id,
-					params = as.numeric(params)
-				))
+			w_m = dat$weights_matched %||% rep(1, length(dat$y_matched))
+			if (length(dat$matched_idx) > 0L && sum(dat$y_matched > 0 & w_m > 0, na.rm = TRUE) > p) {
+				H = H + if (is.null(dat$weights_matched)) {
+					as.matrix(get_hurdle_poisson_glmm_hessian_cpp(
+						X = dat$X_matched,
+						y = dat$y_matched,
+						group_id = dat$group_id,
+						params = as.numeric(params)
+					))
+				} else {
+					as.matrix(get_hurdle_poisson_glmm_weighted_hessian_cpp(
+						X = dat$X_matched,
+						y = dat$y_matched,
+						group_id = dat$group_id,
+						weights = w_m,
+						params = as.numeric(params)
+					))
+				}
 			}
 			if (length(dat$reservoir_idx) > 0L) {
-				H[seq_len(p), seq_len(p)] = H[seq_len(p), seq_len(p), drop = FALSE] + as.matrix(get_poisson_regression_hessian_cpp(
+				w_r = dat$weights_reservoir %||% rep(1, length(dat$y_reservoir))
+				H[seq_len(p), seq_len(p)] = H[seq_len(p), seq_len(p), drop = FALSE] + as.matrix(get_poisson_regression_weighted_hessian_cpp(
 					X = dat$X_reservoir,
+					weights = w_r,
 					beta = as.numeric(params[seq_len(p)])
 				))
 			}
 			H
+		},
+		information_inverse_diagonal_entry = function(information, j){
+			info = as.matrix(information)
+			if (!is.matrix(info) || nrow(info) != ncol(info) || any(!is.finite(info))) return(NA_real_)
+			j = as.integer(j)
+			if (length(j) != 1L || !is.finite(j) || j < 1L || j > nrow(info)) return(NA_real_)
+			info = (info + t(info)) / 2
+			vcov = tryCatch(solve(info), error = function(e) NULL)
+			if (!is.null(vcov) && all(is.finite(vcov))) {
+				vcov = (vcov + t(vcov)) / 2
+				val = as.numeric(vcov[j, j])
+				if (is.finite(val) && val >= 0) return(val)
+			}
+
+			eig = tryCatch(eigen(info, symmetric = TRUE), error = function(e) NULL)
+			if (is.null(eig) || any(!is.finite(eig$values)) || any(!is.finite(eig$vectors))) return(NA_real_)
+			scale = max(abs(eig$values), 1)
+			tol = scale * sqrt(.Machine$double.eps)
+			if (any(eig$values < -tol)) return(NA_real_)
+			pos = eig$values > tol
+			if (!any(pos)) return(NA_real_)
+
+			e_j = numeric(nrow(info))
+			e_j[j] = 1
+			V_pos = eig$vectors[, pos, drop = FALSE]
+			resid = e_j - as.numeric(V_pos %*% crossprod(V_pos, e_j))
+			if (sqrt(sum(resid^2)) > 100 * sqrt(.Machine$double.eps)) return(NA_real_)
+
+			val = sum((eig$vectors[j, pos]^2) / eig$values[pos])
+			if (is.finite(val) && val >= 0) val else NA_real_
 		},
 		fit_combined_hurdle = function(dat, estimate_only = FALSE, fixed_idx = NULL, fixed_values = NULL, warm_start_params = NULL){
 			p = ncol(dat$X_fit)
@@ -572,10 +778,12 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 				start = rep(0, n_params)
 				start[n_params] = -3
 				if (length(dat$reservoir_idx) > 0L) {
+					w_r_start = dat$weights_reservoir %||% rep(1, length(dat$y_reservoir))
 					pois_fit = tryCatch(
-						fast_poisson_regression_cpp(
+						fast_poisson_regression_weighted_cpp(
 							X = dat$X_reservoir,
 							y = dat$y_reservoir,
+							weights = w_r_start,
 							optimization_alg = private$optimization_alg
 						),
 						error = function(e) NULL
@@ -637,11 +845,8 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 			ssq_b_T = NA_real_
 			if (!estimate_only) {
 				info_free = info[free_idx, free_idx, drop = FALSE]
-				vcov_free = tryCatch(solve(info_free), error = function(e) NULL)
-				if (!is.null(vcov_free)) {
-					j_free = match(dat$j_treat, free_idx)
-					if (is.finite(j_free)) ssq_b_T = as.numeric(vcov_free[j_free, j_free])
-				}
+				j_free = match(dat$j_treat, free_idx)
+				ssq_b_T = private$information_inverse_diagonal_entry(info_free, j_free)
 			}
 			list(
 				params = params,
@@ -684,9 +889,46 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 			if (!estimate_only) {
 				se = sqrt(as.numeric(fit$ssq_b_T))
 				private$cached_values$s_beta_hat_T = if (is.finite(se) && se > 0 && se <= private$max_abs_reasonable_coef) se else NA_real_
+				.inflate_kk_onelik_standard_error_with_jackknife(private, self)
 			}
 			private$clear_nonestimable_state()
 			invisible(NULL)
+		},
+		compute_weighted_combined_hurdle_estimate = function(row_weights, estimate_only = FALSE){
+			X_full = private$build_model_matrix()
+			reduced = private$reduce_design_matrix_preserving_treatment(X_full)
+			X_fit = reduced$X
+			if (!is.null(X_fit)) colnames(X_fit) = colnames(X_full)[reduced$keep]
+			if (is.null(X_fit) || !is.finite(reduced$j_treat)) {
+				private$cache_nonestimable_estimate("kk_hurdle_poisson_onelik_weighted_design_unusable")
+				return(NA_real_)
+			}
+			row_weights = as.numeric(row_weights)
+			if (length(row_weights) != nrow(X_fit)) {
+				private$cache_nonestimable_estimate("kk_hurdle_poisson_onelik_weighted_length_mismatch")
+				return(NA_real_)
+			}
+			if (weights_are_effectively_constant(row_weights)) {
+				return(as.numeric(self$compute_estimate(estimate_only = estimate_only))[1L])
+			}
+			dat = private$build_weighted_combined_hurdle_data(X_fit, reduced$j_treat, row_weights = row_weights)
+			fit = private$fit_combined_hurdle(dat, estimate_only = estimate_only)
+			if (is.null(fit) || !isTRUE(fit$converged) || length(fit$b) < dat$j_treat || !is.finite(fit$b[dat$j_treat])) {
+				private$cache_nonestimable_estimate("kk_hurdle_poisson_onelik_weighted_fit_failed")
+				return(NA_real_)
+			}
+			private$cached_mod = fit
+			private$cached_values$beta_hat_T = as.numeric(fit$b[dat$j_treat])
+			private$cached_values$df = Inf
+			if (!estimate_only) {
+				se = sqrt(as.numeric(fit$ssq_b_T))
+				private$cached_values$s_beta_hat_T = if (is.finite(se) && se > 0 && se <= private$max_abs_reasonable_coef) se else NA_real_
+			}
+			private$clear_nonestimable_state()
+			private$cached_values$beta_hat_T
+		},
+		shared = function(estimate_only = FALSE){
+			private$shared_combined_hurdle(estimate_only = estimate_only)
 		},
 		get_likelihood_test_spec = function(){
 			private$shared_combined_hurdle(estimate_only = FALSE)
@@ -778,20 +1020,66 @@ InferenceCountKKCondPoissonOneLik = R6::R6Class("InferenceCountKKCondPoissonOneL
 		#' @description Computes an approximate confidence interval.
 		#' @param alpha Numeric. Significance level (default 0.05).
 		compute_asymp_confidence_interval = function(alpha = 0.05){
-			if (!identical(self$get_testing_type(), "wald")) {
-				return(super$compute_asymp_confidence_interval(alpha = alpha))
-			}
-			private$shared_combined_cpoisson(estimate_only = FALSE)
-			private$compute_z_or_t_ci_from_s_and_df(alpha)
+			switch(
+				self$get_testing_type(),
+				wald = self$compute_wald_confidence_interval(alpha = alpha),
+				score = self$compute_score_confidence_interval(alpha = alpha),
+				lik_ratio = self$compute_lik_ratio_confidence_interval(alpha = alpha),
+				gradient = self$compute_gradient_confidence_interval(alpha = alpha)
+			)
 		},
 		#' @description Computes an approximate two-sided p-value.
 		#' @param delta Numeric. Null treatment effect value (default 0).
 		compute_asymp_two_sided_pval = function(delta = 0){
-			if (!identical(self$get_testing_type(), "wald")) {
-				return(super$compute_asymp_two_sided_pval(delta = delta))
-			}
+			switch(
+				self$get_testing_type(),
+				wald = self$compute_wald_two_sided_pval(delta = delta),
+				score = self$compute_score_two_sided_pval(delta = delta),
+				lik_ratio = self$compute_lik_ratio_two_sided_pval(delta = delta),
+				gradient = self$compute_gradient_two_sided_pval(delta = delta)
+			)
+		},
+		#' @description Computes a Wald confidence interval.
+		#' @param alpha Numeric. Significance level (default 0.05).
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			private$shared_combined_cpoisson(estimate_only = FALSE)
+			private$compute_z_or_t_ci_from_s_and_df(alpha)
+		},
+		#' @description Computes a Wald two-sided p-value.
+		#' @param delta Numeric. Null treatment effect value (default 0).
+		compute_wald_two_sided_pval = function(delta = 0){
 			private$shared_combined_cpoisson(estimate_only = FALSE)
 			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+		},
+		#' @description Computes a design-adjusted score confidence interval.
+		#' @param alpha Numeric. Significance level (default 0.05).
+		compute_score_confidence_interval = function(alpha = 0.05){
+			self$compute_wald_confidence_interval(alpha = alpha)
+		},
+		#' @description Computes a design-adjusted likelihood-ratio confidence interval.
+		#' @param alpha Numeric. Significance level (default 0.05).
+		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
+			self$compute_wald_confidence_interval(alpha = alpha)
+		},
+		#' @description Computes a design-adjusted gradient confidence interval.
+		#' @param alpha Numeric. Significance level (default 0.05).
+		compute_gradient_confidence_interval = function(alpha = 0.05){
+			self$compute_wald_confidence_interval(alpha = alpha)
+		},
+		#' @description Computes a design-adjusted score p-value.
+		#' @param delta Numeric. Null treatment effect value (default 0).
+		compute_score_two_sided_pval = function(delta = 0){
+			self$compute_wald_two_sided_pval(delta = delta)
+		},
+		#' @description Computes a design-adjusted likelihood-ratio p-value.
+		#' @param delta Numeric. Null treatment effect value (default 0).
+		compute_lik_ratio_two_sided_pval = function(delta = 0){
+			self$compute_wald_two_sided_pval(delta = delta)
+		},
+		#' @description Computes a design-adjusted gradient p-value.
+		#' @param delta Numeric. Null treatment effect value (default 0).
+		compute_gradient_two_sided_pval = function(delta = 0){
+			self$compute_wald_two_sided_pval(delta = delta)
 		},
 		#' @description Creates the bootstrap distribution of the estimate for the treatment effect.
 		#' @param B Integer. Number of bootstrap samples (default 501).
@@ -1160,7 +1448,13 @@ InferenceCountKKCondPoissonOneLik = R6::R6Class("InferenceCountKKCondPoissonOneL
 			} else {
 				private$clear_nonestimable_state()
 			}
+			if (!estimate_only) {
+				.inflate_kk_onelik_standard_error_with_jackknife(private, self)
+			}
 			invisible(NULL)
+		},
+		shared = function(estimate_only = FALSE){
+			private$shared_combined_cpoisson(estimate_only = estimate_only)
 		},
 		get_likelihood_test_spec = function(){
 			private$shared_combined_cpoisson(estimate_only = FALSE)

@@ -108,12 +108,14 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 					return(NA_real_)
 				}
 				private$cached_mod = fallback
+				private$clear_nonestimable_state()
 				private$cached_values$beta_hat_T = as.numeric(fallback$b[2L])
 				private$cached_values$s_beta_hat_T = NA_real_
 				private$cached_values$df = NA_real_
 				private$set_fit_warm_start(as.numeric(fallback$b), "beta", fisher = fallback$fisher_information, force_pd = TRUE)
 				return(private$cached_values$beta_hat_T)
 			}
+			private$clear_nonestimable_state()
 			private$cached_values$beta_hat_T = as.numeric(attempt$fit$b[2L])
 			private$cached_values$s_beta_hat_T = NA_real_
 			private$cached_values$df = NA_real_
@@ -124,6 +126,36 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 				force_pd = TRUE
 			)
 			private$cached_values$beta_hat_T
+		},
+		#' @description Negative-binomial delete-one refits are unstable for
+		#'   jackknife inference; report explicit non-estimability.
+		compute_jackknife_estimate = function(unit = "auto"){
+			private$cache_nonestimable_se("negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_corrected_estimate = function(unit = "auto"){
+			self$compute_jackknife_estimate(unit = unit)
+		},
+		compute_jackknife_bias_estimate = function(unit = "auto"){
+			private$cache_nonestimable_se("negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_std_error = function(unit = "auto"){
+			private$cache_nonestimable_se("negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_standard_error = function(unit = "auto"){
+			self$compute_jackknife_std_error(unit = unit)
+		},
+		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
+			private$cache_nonestimable_se("negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
+			private$cache_nonestimable_se("negbin_jackknife_not_supported")
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			ci
 		}
 	),
 	private = list(
@@ -167,10 +199,19 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 			TRUE
 		},
 		supports_lik_ratio_param_bootstrap = function(){
-			TRUE
+			FALSE
 		},
 		supports_likelihood_tests = function(){
 			TRUE
+		},
+		get_supported_testing_types_impl = function(){
+			c("wald", "score", "gradient")
+		},
+		compute_lik_ratio_two_sided_pval_impl = function(delta){
+			stop(class(self)[1], " does not support likelihood-ratio p-values.", call. = FALSE)
+		},
+		compute_lik_ratio_confidence_interval_impl = function(alpha){
+			stop(class(self)[1], " does not support likelihood-ratio confidence intervals.", call. = FALSE)
 		},
 		simulate_under_lik_null = function(spec, delta, null_fit){
 			b_null   = as.numeric(null_fit$b)
@@ -211,7 +252,11 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 					res
 				},
 				neg_loglik = function(fit){
-					-as.numeric(fit$logLik)
+					val = fit$neg_loglik %||% fit$neg_log_lik %||% fit$neg_ll
+					if (!is.null(val)) return(as.numeric(val)[1L])
+					loglik = fit$logLik %||% fit$log_lik
+					if (!is.null(loglik)) return(-as.numeric(loglik)[1L])
+					NA_real_
 				}
 			)
 		},
@@ -256,7 +301,11 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 					-get_negbin_regression_hessian_cpp(X_fit, y, c(as.numeric(fit$b), log(as.numeric(fit$theta_hat))))
 				},
 				neg_loglik = function(fit){
-					-as.numeric(fit$logLik)
+					val = fit$neg_loglik %||% fit$neg_log_lik %||% fit$neg_ll
+					if (!is.null(val)) return(as.numeric(val)[1L])
+					loglik = fit$logLik %||% fit$log_lik
+					if (!is.null(loglik)) return(-as.numeric(loglik)[1L])
+					NA_real_
 				}
 			)
 		},
@@ -314,6 +363,7 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 					res$fisher_information = res$hess_fisher_info_matrix
 				}
 				private$best_X_colnames = setdiff(colnames(X_full), c("(Intercept)", "treatment"))
+				private$clear_nonestimable_state()
 				private$cached_values$likelihood_test_context = list(X = X_full, j_treat = 2L)
 				return(res)
 			}
@@ -368,6 +418,7 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 			)
 			if (!is.null(attempt$fit)){
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
+				private$clear_nonestimable_state()
 				private$cached_values$likelihood_test_context = list(
 					X = attempt$X,
 					j_treat = attempt$fit$j_treat

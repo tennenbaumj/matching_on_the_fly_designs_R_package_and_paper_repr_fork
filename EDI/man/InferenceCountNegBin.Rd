@@ -31,6 +31,13 @@ inf$compute_estimate()
 \itemize{
 \item \href{#method-InferenceCountNegBin-new}{\code{InferenceCountNegBin$new()}}
 \item \href{#method-InferenceCountNegBin-compute_estimate_with_bootstrap_weights}{\code{InferenceCountNegBin$compute_estimate_with_bootstrap_weights()}}
+\item \href{#method-InferenceCountNegBin-compute_jackknife_estimate}{\code{InferenceCountNegBin$compute_jackknife_estimate()}}
+\item \href{#method-InferenceCountNegBin-compute_jackknife_corrected_estimate}{\code{InferenceCountNegBin$compute_jackknife_corrected_estimate()}}
+\item \href{#method-InferenceCountNegBin-compute_jackknife_bias_estimate}{\code{InferenceCountNegBin$compute_jackknife_bias_estimate()}}
+\item \href{#method-InferenceCountNegBin-compute_jackknife_std_error}{\code{InferenceCountNegBin$compute_jackknife_std_error()}}
+\item \href{#method-InferenceCountNegBin-compute_jackknife_standard_error}{\code{InferenceCountNegBin$compute_jackknife_standard_error()}}
+\item \href{#method-InferenceCountNegBin-compute_jackknife_wald_two_sided_pval}{\code{InferenceCountNegBin$compute_jackknife_wald_two_sided_pval()}}
+\item \href{#method-InferenceCountNegBin-compute_jackknife_wald_confidence_interval}{\code{InferenceCountNegBin$compute_jackknife_wald_confidence_interval()}}
 \item \href{#method-InferenceCountNegBin-clone}{\code{InferenceCountNegBin$clone()}}
 }
 }
@@ -65,23 +72,8 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_bayesian_bootstrap_confidence_interval"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_bayesian_bootstrap_confidence_interval'><code>::InferenceBayesianBootstrap$compute_bayesian_bootstrap_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_bayesian_bootstrap_two_sided_pval"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_bayesian_bootstrap_two_sided_pval'><code>::InferenceBayesianBootstrap$compute_bayesian_bootstrap_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="approximate_jackknife_distribution_beta_hat_T"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-approximate_jackknife_distribution_beta_hat_T'><code>::InferenceJackknife$approximate_jackknife_distribution_beta_hat_T()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_bias_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_bias_estimate'><code>::InferenceJackknife$compute_jackknife_bias_estimate()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_corrected_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_corrected_estimate'><code>::InferenceJackknife$compute_jackknife_corrected_estimate()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_estimate"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_estimate'><code>::InferenceJackknife$compute_jackknife_estimate()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_standard_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_standard_error'><code>::InferenceJackknife$compute_jackknife_standard_error()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_std_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_std_error'><code>::InferenceJackknife$compute_jackknife_std_error()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_confidence_interval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_confidence_interval'><code>::InferenceJackknife$compute_jackknife_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_two_sided_pval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_two_sided_pval'><code>::InferenceJackknife$compute_jackknife_wald_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_confidence_interval'><code>::InferenceAsymp$compute_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_two_sided_pval'><code>::InferenceAsympLik$compute_score_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_preference'><code>::InferenceAsympLik$get_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_source_used"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_source_used'><code>::InferenceAsympLik$get_information_source_used()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_supported_information_preferences"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_supported_information_preferences'><code>::InferenceAsympLik$get_supported_information_preferences()</code></a></span></li>
@@ -89,12 +81,20 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_testing_type'><code>::InferenceAsympLik$get_testing_type()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_information_preference'><code>::InferenceAsympLik$set_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_testing_type'><code>::InferenceAsympLik$set_testing_type()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_confidence_interval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_confidence_interval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_two_sided_pval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_two_sided_pval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="get_last_param_bootstrap_diagnostics"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-get_last_param_bootstrap_diagnostics'><code>::InferenceParamBootstrap$get_last_param_bootstrap_diagnostics()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_asymp_confidence_interval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_asymp_confidence_interval'><code>::InferenceCountLikelihood$compute_asymp_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_asymp_two_sided_pval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_asymp_two_sided_pval'><code>::InferenceCountLikelihood$compute_asymp_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_estimate"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_estimate'><code>::InferenceCountLikelihood$compute_estimate()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_gradient_confidence_interval'><code>::InferenceCountLikelihood$compute_gradient_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_gradient_two_sided_pval'><code>::InferenceCountLikelihood$compute_gradient_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_lik_ratio_bootstrap_confidence_interval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_lik_ratio_bootstrap_confidence_interval'><code>::InferenceCountLikelihood$compute_lik_ratio_bootstrap_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_lik_ratio_bootstrap_two_sided_pval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_lik_ratio_bootstrap_two_sided_pval'><code>::InferenceCountLikelihood$compute_lik_ratio_bootstrap_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_lik_ratio_confidence_interval'><code>::InferenceCountLikelihood$compute_lik_ratio_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_lik_ratio_two_sided_pval'><code>::InferenceCountLikelihood$compute_lik_ratio_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_score_confidence_interval'><code>::InferenceCountLikelihood$compute_score_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_score_two_sided_pval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_score_two_sided_pval'><code>::InferenceCountLikelihood$compute_score_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_wald_confidence_interval'><code>::InferenceCountLikelihood$compute_wald_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceCountLikelihood" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceCountLikelihood.html#method-InferenceCountLikelihood-compute_wald_two_sided_pval'><code>::InferenceCountLikelihood$compute_wald_two_sided_pval()</code></a></span></li>
 </ul>
 </details>
 }}
@@ -153,6 +153,77 @@ Computes the treatment effect estimate for a weighted bootstrap sample.
 }
 \if{html}{\out{</div>}}
 }
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountNegBin-compute_jackknife_estimate"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountNegBin-compute_jackknife_estimate}{}}}
+\subsection{Method \code{compute_jackknife_estimate()}}{
+Negative-binomial delete-one refits are unstable for
+  jackknife inference; report explicit non-estimability.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountNegBin$compute_jackknife_estimate(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountNegBin-compute_jackknife_corrected_estimate"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountNegBin-compute_jackknife_corrected_estimate}{}}}
+\subsection{Method \code{compute_jackknife_corrected_estimate()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountNegBin$compute_jackknife_corrected_estimate(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountNegBin-compute_jackknife_bias_estimate"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountNegBin-compute_jackknife_bias_estimate}{}}}
+\subsection{Method \code{compute_jackknife_bias_estimate()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountNegBin$compute_jackknife_bias_estimate(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountNegBin-compute_jackknife_std_error"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountNegBin-compute_jackknife_std_error}{}}}
+\subsection{Method \code{compute_jackknife_std_error()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountNegBin$compute_jackknife_std_error(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountNegBin-compute_jackknife_standard_error"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountNegBin-compute_jackknife_standard_error}{}}}
+\subsection{Method \code{compute_jackknife_standard_error()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountNegBin$compute_jackknife_standard_error(unit = "auto")}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountNegBin-compute_jackknife_wald_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountNegBin-compute_jackknife_wald_two_sided_pval}{}}}
+\subsection{Method \code{compute_jackknife_wald_two_sided_pval()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountNegBin$compute_jackknife_wald_two_sided_pval(
+  delta = 0,
+  unit = "auto"
+)}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountNegBin-compute_jackknife_wald_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountNegBin-compute_jackknife_wald_confidence_interval}{}}}
+\subsection{Method \code{compute_jackknife_wald_confidence_interval()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountNegBin$compute_jackknife_wald_confidence_interval(
+  alpha = 0.05,
+  unit = "auto"
+)}\if{html}{\out{</div>}}
+}
+
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountNegBin-clone"></a>}}

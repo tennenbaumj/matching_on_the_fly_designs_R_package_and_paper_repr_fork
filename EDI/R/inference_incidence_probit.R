@@ -28,13 +28,15 @@ InferenceIncidProbitRegr = R6::R6Class("InferenceIncidProbitRegr",
 		#' @param smart_cold_start_default Whether to use smart cold start values by default.
 		#' @param harden  		Whether to apply robustness measures.
 		#' @param optimization_alg  Optimization algorithm to use. Default is dispatched via policy.
-		initialize = function(des_obj, model_formula = NULL, verbose = FALSE, smart_cold_start_default = NULL, harden = TRUE, optimization_alg = NULL){
+		#' @param max_abs_reasonable_coef Cap for reasonable probit coefficients.
+		initialize = function(des_obj, model_formula = NULL, verbose = FALSE, smart_cold_start_default = NULL, harden = TRUE, optimization_alg = NULL, max_abs_reasonable_coef = 10){
 			if (should_run_asserts()) {
 				assertResponseType(des_obj$get_response_type(), "incidence")
 				assertFormula(model_formula, null.ok = TRUE)
 			}
 			self$set_optimization_alg(optimization_alg, allow_irls = TRUE)
 			super$initialize(des_obj, model_formula = model_formula, verbose = verbose, harden = harden, smart_cold_start_default = smart_cold_start_default)
+			private$max_abs_reasonable_coef = max_abs_reasonable_coef
 			if (should_run_asserts()) {
 				assertNoCensoring(private$any_censoring)
 			}
@@ -66,13 +68,12 @@ InferenceIncidProbitRegr = R6::R6Class("InferenceIncidProbitRegr",
 					list(b = res$b, fisher_information = res$fisher_information, ssq_b_2 = ssq_b_2)
 				},
 				fit_ok = function(mod, X_fit, keep){
-					!is.null(mod) && length(mod$b) >= 2L && is.finite(mod$b[2])
+					isTRUE(private$is_probit_fit_reasonable(mod))
 				}
 			)
 			private$cached_mod = attempt$fit
-			if (is.null(attempt$fit) || is.null(attempt$fit$b) || length(attempt$fit$b) < 2L || !is.finite(attempt$fit$b[2])) {
-				private$cached_values$beta_hat_T = NA_real_
-				private$cached_values$s_beta_hat_T = NA_real_
+			if (!isTRUE(private$is_probit_fit_reasonable(attempt$fit))) {
+				private$cache_nonestimable_estimate("probit_regression_weighted_extreme_coefficients")
 				return(NA_real_)
 			}
 			private$cached_values$beta_hat_T = as.numeric(attempt$fit$b[2])
@@ -88,6 +89,12 @@ InferenceIncidProbitRegr = R6::R6Class("InferenceIncidProbitRegr",
 	),
 	private = list(
 		best_X_colnames = NULL,
+		max_abs_reasonable_coef = 10,
+		is_probit_fit_reasonable = function(mod){
+			if (is.null(mod) || is.null(mod$b) || length(mod$b) < 2L) return(FALSE)
+			b = as.numeric(mod$b)
+			all(is.finite(b)) && all(abs(b) <= private$max_abs_reasonable_coef)
+		},
 		get_complexity_tier = function() "medium",
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			if (is.null(private$best_X_colnames)){
@@ -112,7 +119,7 @@ InferenceIncidProbitRegr = R6::R6Class("InferenceIncidProbitRegr",
 				estimate_only = TRUE,
 				optimization_alg = private$optimization_alg
 			)
-			if (is.null(res) || !is.finite(res$b[2])){
+			if (!isTRUE(private$is_probit_fit_reasonable(res))){
 				return(NA_real_)
 			}
 			private$set_fit_warm_start(res$b, "beta", fisher = res$fisher_information)
@@ -151,7 +158,7 @@ InferenceIncidProbitRegr = R6::R6Class("InferenceIncidProbitRegr",
 				),
 				error = function(e) NULL
 			)
-			if (is.null(full_fit_b) || length(full_fit_b$b) < j || !is.finite(full_fit_b$b[j])) return(NULL)
+			if (!isTRUE(private$is_probit_fit_reasonable(full_fit_b))) return(NULL)
 			list(
 				worker_data = list(y = y_sim),
 				full_fit = full_fit_b,
@@ -210,18 +217,12 @@ InferenceIncidProbitRegr = R6::R6Class("InferenceIncidProbitRegr",
 					get_probit_regression_score_cpp(X_fit, y, as.numeric(fit$b))
 				},
 				observed_information = function(fit){
-					if (!is.null(fit$fisher_information)) return(fit$fisher_information)
-					if (!is.null(fit$XtWX)) return(fit$XtWX)
 					-get_probit_regression_hessian_cpp(X_fit, as.numeric(fit$b))
 				},
 				fisher_information = function(fit){
-					if (!is.null(fit$fisher_information)) return(fit$fisher_information)
-					if (!is.null(fit$XtWX)) return(fit$XtWX)
 					-get_probit_regression_hessian_cpp(X_fit, as.numeric(fit$b))
 				},
 				information = function(fit){
-					if (!is.null(fit$fisher_information)) return(fit$fisher_information)
-					if (!is.null(fit$XtWX)) return(fit$XtWX)
 					-get_probit_regression_hessian_cpp(X_fit, as.numeric(fit$b))
 				},
 				neg_loglik = function(fit){
@@ -262,11 +263,16 @@ InferenceIncidProbitRegr = R6::R6Class("InferenceIncidProbitRegr",
 					}
 				},
 				fit_ok = function(mod, X_fit, keep){
-					if (is.null(mod) || length(mod$b) < 2L || !is.finite(mod$b[2])) return(FALSE)
+					if (!isTRUE(private$is_probit_fit_reasonable(mod))) return(FALSE)
 					if (estimate_only) return(TRUE)
 					is.finite(mod$ssq_b_2) && mod$ssq_b_2 > 0
 				}
 			)
+			if (!isTRUE(private$is_probit_fit_reasonable(attempt$fit))) {
+				private$cache_nonestimable_estimate("probit_regression_extreme_coefficients")
+				private$cached_values$likelihood_test_context = NULL
+				return(NULL)
+			}
 			if (!is.null(attempt$fit)){
 				private$set_fit_warm_start(attempt$fit$b, "beta", fisher = attempt$fit$fisher_information, weights = attempt$fit$w)
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))

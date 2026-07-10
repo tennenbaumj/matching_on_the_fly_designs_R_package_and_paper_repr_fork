@@ -481,11 +481,14 @@ get_bootstrap_dispatch_policy = function() {
       "^InferenceSurvivalKKRankRegrIVWC$" = "percentile",
       "^InferenceOrdinalAdjCatLogitRegr$" = "percentile",
       "^InferenceSurvivalKKStratCoxPHOneLik$" = "percentile",
-      "^InferenceCountPoisson$" = "percentile",
-      "^InferenceCountQuasiPoisson$" = "percentile",
-      "^InferencePropZeroOneInflatedBetaRegr$" = "percentile",
-      "^InferencePropFractionalLogit$" = "percentile",
-      "^InferenceCountHurdleNegBin$" = "percentile",
+	      "^InferenceCountPoisson$" = "percentile",
+	      "^InferenceCountQuasiPoisson$" = "percentile",
+	      "^InferenceCountZeroInflatedPoisson$" = "percentile",
+	      "^InferenceCountZeroInflatedNegBin$" = "percentile",
+	      "^InferenceCountHurdlePoisson$" = "percentile",
+	      "^InferencePropZeroOneInflatedBetaRegr$" = "percentile",
+	      "^InferencePropFractionalLogit$" = "percentile",
+	      "^InferenceCountHurdleNegBin$" = "percentile",
       "^InferenceContinRobustRegr$" = "percentile"
     ),
     design_class_overrides = list(
@@ -513,6 +516,7 @@ get_optimization_dispatch_policy = function() {
   list(
     default_alg = "newton_raphson",
     inference_class_overrides = c(
+      "^InferenceCountKKGLMM$"  = "newton_raphson",
       "KKGLMM$"                 = "lbfgs",
       "KKWeibullFrailtyIVWC$"   = "lbfgs",
       "KKWeibullFrailtyOneLik$" = "lbfgs",
@@ -1073,6 +1077,17 @@ edi_bootstrap_dispatch_policy = function(inference_class, object = NULL) {
   design_overrides = config$design_class_overrides
   default_type = config$default_type
   if (is.null(default_type)) default_type = "bca"
+  finalize_type = function(type) {
+    type = tolower(type)
+    if (identical(type, "bca") && !is.null(object)) {
+      bca_unavailable = isTRUE(tryCatch(
+        object$.__enclos_env__$private$jackknife_block_size_gt_one_unsupported(unit = "auto"),
+        error = function(e) FALSE
+      ))
+      if (bca_unavailable) return("percentile")
+    }
+    type
+  }
   if (!is.null(object) && !is.null(design_overrides) && length(design_overrides) > 0L) {
     des_obj = tryCatch(object$.__enclos_env__$private$des_obj, error = function(e) NULL)
     if (!is.null(des_obj)) {
@@ -1082,7 +1097,7 @@ edi_bootstrap_dispatch_policy = function(inference_class, object = NULL) {
           for (pattern in names(design_map)) {
             if (is.na(pattern) || pattern == "") next
             if (grepl(pattern, inference_class, perl = TRUE)) {
-              return(tolower(design_map[[pattern]]))
+              return(finalize_type(design_map[[pattern]]))
             }
           }
         }
@@ -1093,11 +1108,11 @@ edi_bootstrap_dispatch_policy = function(inference_class, object = NULL) {
     for (pattern in names(overrides)) {
       if (is.na(pattern) || pattern == "") next
       if (grepl(pattern, inference_class, perl = TRUE)) {
-        return(tolower(overrides[[pattern]]))
+        return(finalize_type(overrides[[pattern]]))
       }
     }
   }
-  tolower(default_type)
+  finalize_type(default_type)
 }
 edi_optimization_dispatch_policy = function(inference_class) {
   config = edi_env$optimization_dispatch_policy_config

@@ -125,11 +125,24 @@ InferenceIncidExactBinomial = R6::R6Class("InferenceIncidExactBinomial",
 		},
 		pval_exact_binomial = function(delta_0){
 			stats = private$get_exact_binomial_stats()
+			if (stats$m <= 0L) {
+				private$cache_nonestimable_estimate("exact_binomial_no_matched_pairs")
+				return(NA_real_)
+			}
+			if (stats$d_plus + stats$d_minus <= 0L) {
+				return(1)
+			}
 			zhang_exact_binom_pval_cpp(stats$d_plus, stats$d_minus, delta_0)
 		},
 		ci_exact_binomial = function(alpha){
 			stats = private$get_exact_binomial_stats()
 			d_total = stats$d_plus + stats$d_minus
+			if (d_total <= 0L) {
+				private$cache_nonestimable_estimate("exact_binomial_no_discordant_pairs")
+				ci = c(NA_real_, NA_real_)
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+				return(ci)
+			}
 			ci_prob = stats::binom.test(stats$d_plus, d_total, conf.level = 1 - alpha)$conf.int
 			ci = stats::qlogis(ci_prob)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")

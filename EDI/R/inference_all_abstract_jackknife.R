@@ -16,6 +16,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 		#' @return A numeric vector of jackknife replicate estimates.
 		approximate_jackknife_distribution_beta_hat_T = function(unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) return(numeric(0))
 			private$assert_jackknife_supported(unit = unit)
 			as.numeric(private$approximate_jackknife_distribution_beta_hat_T_private(unit = unit))
 		},
@@ -32,6 +33,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 		#' @return A numeric jackknife bias-corrected treatment estimate.
 		compute_jackknife_estimate = function(unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) return(NA_real_)
 			private$assert_jackknife_supported(unit = unit)
 			private$compute_jackknife_summary(unit = unit)$estimate
 		},
@@ -50,6 +52,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 		#' @return A numeric jackknife bias estimate.
 		compute_jackknife_bias_estimate = function(unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) return(NA_real_)
 			private$assert_jackknife_supported(unit = unit)
 			private$compute_jackknife_summary(unit = unit)$bias
 		},
@@ -66,6 +69,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 		#' @return A numeric jackknife standard error.
 		compute_jackknife_std_error = function(unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) return(NA_real_)
 			private$assert_jackknife_supported(unit = unit)
 			private$compute_jackknife_summary(unit = unit)$std_error
 		},
@@ -92,6 +96,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 		#' @return A two-sided jackknife-Wald p-value.
 		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) return(NA_real_)
 			private$assert_jackknife_supported(unit = unit)
 			if (should_run_asserts()) {
 				assertNumeric(delta, len = 1)
@@ -125,6 +130,11 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 		#' @return A jackknife-Wald confidence interval.
 		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) {
+				ci = c(NA_real_, NA_real_)
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+				return(ci)
+			}
 			private$assert_jackknife_supported(unit = unit)
 			if (should_run_asserts()) {
 				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
@@ -157,6 +167,45 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 			}
 			unit
 		},
+		resolve_jackknife_unit = function(unit = "auto"){
+			unit = private$normalize_jackknife_unit(unit)
+			if (unit != "auto") return(unit)
+			design_obj = private$des_obj
+			is_matching_design = is(design_obj, "DesignMatching") &&
+				isTRUE(tryCatch(design_obj$is_matching_design(), error = function(e) FALSE))
+			is_cluster_design = is(design_obj, "DesignFixedCluster") || is(design_obj, "DesignFixedBlockedCluster")
+			is_blocking_design = is(design_obj, "DesignBlocking") &&
+				isTRUE(tryCatch(design_obj$is_blocking_design(), error = function(e) FALSE))
+			if (is_matching_design) {
+				if (isTRUE(private$is_KK)) "matched_set" else "pair"
+			} else if (is_cluster_design) {
+				"cluster"
+			} else if (is_blocking_design) {
+				"block"
+			} else {
+				"observation"
+			}
+		},
+		jackknife_block_size_gt_one_unsupported = function(unit = "auto"){
+			resolved_unit = private$resolve_jackknife_unit(unit)
+			design_obj = private$des_obj
+			is_blocking_design = is(design_obj, "DesignBlocking") &&
+				isTRUE(tryCatch(design_obj$is_blocking_design(), error = function(e) FALSE))
+			if (resolved_unit %in% c("pair", "matched_set")) return(FALSE)
+			if (resolved_unit == "cluster" && !is_blocking_design) return(FALSE)
+			if (!is_blocking_design) return(FALSE)
+			block_ids = tryCatch(design_obj$get_block_ids(), error = function(e) NULL)
+			if (is.null(block_ids)) return(FALSE)
+			block_ids = as.integer(block_ids)
+			block_ids = block_ids[is.finite(block_ids) & block_ids > 0L]
+			if (!length(block_ids)) return(FALSE)
+			any(as.integer(table(block_ids)) > 1L)
+		},
+		mark_jackknife_nonestimable_if_block_unsupported = function(unit = "auto"){
+			if (!private$jackknife_block_size_gt_one_unsupported(unit = unit)) return(FALSE)
+			private$cache_nonestimable_se("jackknife_block_size_gt_one_not_supported")
+			TRUE
+		},
 		assert_jackknife_supported = function(unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
 			design_obj = private$des_obj
@@ -179,10 +228,13 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 			invisible(NULL)
 		},
 		jackknife_cache_key = function(unit = "auto"){
-			private$normalize_jackknife_unit(unit)
+			private$resolve_jackknife_unit(unit)
 		},
 		compute_jackknife_summary = function(unit = "auto"){
 			unit = private$normalize_jackknife_unit(unit)
+			if (private$mark_jackknife_nonestimable_if_block_unsupported(unit = unit)) {
+				return(list(estimate = NA_real_, bias = NA_real_, std_error = NA_real_, distribution = numeric(0)))
+			}
 			cache_key = private$jackknife_cache_key(unit)
 			if (is.null(private$cached_values$jackknife_summary)) {
 				private$cached_values$jackknife_summary = list()

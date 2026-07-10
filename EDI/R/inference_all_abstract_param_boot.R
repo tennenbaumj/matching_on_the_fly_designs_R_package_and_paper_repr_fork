@@ -81,7 +81,11 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 				}
 			}
 			spec = private$get_likelihood_test_spec()
-			if (is.null(spec)) return(NA_real_)
+			if (is.null(spec)) {
+				if (!isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("lik_ratio_bootstrap_spec_unavailable")
+				return(NA_real_)
+			}
 
 			eval_obs = private$get_memoized_likelihood_test_eval(
 				delta         = delta,
@@ -90,10 +94,22 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 				include_full_negloglik = TRUE,
 				include_null_negloglik = TRUE
 			)
-			if (isTRUE(eval_obs$invalid)) return(NA_real_)
-			if (!is.finite(eval_obs$full_negloglik) || !is.finite(eval_obs$null_negloglik)) return(NA_real_)
+			if (isTRUE(eval_obs$invalid)) {
+				if (!isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("lik_ratio_bootstrap_observed_lr_invalid")
+				return(NA_real_)
+			}
+			if (!is.finite(eval_obs$full_negloglik) || !is.finite(eval_obs$null_negloglik)) {
+				if (!isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("lik_ratio_bootstrap_observed_negloglik_nonfinite")
+				return(NA_real_)
+			}
 			lr_obs = 2 * (eval_obs$null_negloglik - eval_obs$full_negloglik)
-			if (!is.finite(lr_obs)) return(NA_real_)
+			if (!is.finite(lr_obs)) {
+				if (!isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("lik_ratio_bootstrap_observed_lr_nonfinite")
+				return(NA_real_)
+			}
 			null_fit = eval_obs$null_fit
 
 			actual_cores = private$effective_parallel_cores("param_bootstrap", self$num_cores)
@@ -213,7 +229,8 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 		#' likelihood-ratio confidence intervals.
 		#'
 		#' This method is available only for classes whose private
-		#' \code{supports_lik_ratio_param_bootstrap()} method returns \code{TRUE}.
+		#' \code{supports_lik_ratio_param_bootstrap_confidence_interval()} method
+		#' returns \code{TRUE}.
 		#'
 		#' The standard user-facing arguments are \code{B = 199} and
 		#' \code{show_progress = FALSE}. Runtime cost is high because each
@@ -228,14 +245,20 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 		#'   \code{5L}.
 		#' @param max_attempts_per_replicate Maximum number of simulation/refit
 		#'   retries per bootstrap replicate. Default \code{2L}.
+		#' @param root_tolerance Effect-scale tolerance for the inversion root.
+		#'   If \code{NULL}, a tolerance proportional to the Wald standard error is
+		#'   used. The bootstrap p-value being inverted is Monte Carlo-discrete, so
+		#'   solving to machine precision is not meaningful.
+		#' @param max_root_iterations Maximum number of bisection iterations per
+		#'   bound during interval inversion. Use \code{0L} to return the first
+		#'   finite outer bracket. Default \code{8L}.
 		#' @return Named two-element numeric vector with the confidence-interval bounds.
-		compute_lik_ratio_bootstrap_confidence_interval = function(alpha = 0.05, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L){
+		compute_lik_ratio_bootstrap_confidence_interval = function(alpha = 0.05, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L, root_tolerance = NULL, max_root_iterations = 8L){
 			private$active_resampling_operation = "param_boot"
 			on.exit(private$active_resampling_operation <- NULL, add = TRUE)
-			if (!isTRUE(private$supports_lik_ratio_param_bootstrap())){
+			if (!isTRUE(private$supports_lik_ratio_param_bootstrap_confidence_interval())){
 				stop(
-					class(self)[1], " does not support parametric-bootstrap LR calibration. ",
-					"Override private$supports_lik_ratio_param_bootstrap() and simulate_under_lik_null().",
+					class(self)[1], " does not support parametric-bootstrap LR confidence intervals.",
 					call. = FALSE
 				)
 			}
@@ -244,6 +267,8 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 				assertCount(B, positive = TRUE)
 				assertCount(min_number_usable_samples, positive = TRUE)
 				assertCount(max_attempts_per_replicate, positive = TRUE)
+				assertNumeric(root_tolerance, lower = .Machine$double.xmin, null.ok = TRUE)
+				assertIntegerish(max_root_iterations, lower = 0, len = 1, any.missing = FALSE)
 			}
 			est = self$compute_estimate()
 			if (!is.finite(est)) return(c(NA_real_, NA_real_))
@@ -259,6 +284,10 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 			se = tryCatch(private$get_standard_error(), error = function(e) NA_real_)
 			step = if (is.finite(se) && se > 0) se else max(abs(est), 1)
 			step = max(step, 1e-4)
+			root_tolerance = if (is.null(root_tolerance)) max(1e-4, 0.10 * step) else as.numeric(root_tolerance)[1L]
+			if (!is.finite(root_tolerance) || root_tolerance <= 0) root_tolerance = 1e-4
+			max_root_iterations = max(0L, as.integer(max_root_iterations)[1L])
+			pval_mc_tolerance = max(1 / (as.numeric(B) + 1), sqrt(alpha * (1 - alpha) / as.numeric(B)))
 			wald_ci = tryCatch(
 				private$compute_wald_confidence_interval_impl(alpha),
 				error = function(e) c(NA_real_, NA_real_)
@@ -293,6 +322,7 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 						f_seed = pval_fn(seed) - alpha
 						if (is.finite(f_seed)) {
 							if (abs(f_seed) <= 1e-6) return(seed)
+							if (f_seed <= 0 && abs(f_seed) <= pval_mc_tolerance) return(seed)
 							if (f_seed <= 0) {
 								outer = seed
 								f_outer = f_seed
@@ -308,6 +338,7 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 						f_d = pval_fn(d) - alpha
 						if (!is.finite(f_d)) next
 						if (abs(f_d) <= 1e-6) return(d)
+						if (f_d <= 0 && abs(f_d) <= pval_mc_tolerance) return(d)
 						if (f_d <= 0) {
 							outer = d
 							f_outer = f_d
@@ -324,14 +355,29 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 
 				lower = min(est, outer)
 				upper = max(est, outer)
-				root_fn = function(d) pval_fn(d) - alpha
 				f.lower = if (isTRUE(all.equal(lower, outer))) f_outer else f_est
 				f.upper = if (isTRUE(all.equal(upper, outer))) f_outer else f_est
-				as.numeric(tryCatch(
-					suppressWarnings(stats::uniroot(root_fn, lower = lower, upper = upper,
-						f.lower = f.lower, f.upper = f.upper, tol = 1e-6)$root),
-					error = function(e) NA_real_
-				))
+				if (!is.finite(f.lower) || !is.finite(f.upper)) return(NA_real_)
+				if (f.lower * f.upper > 0) return(NA_real_)
+				if (max_root_iterations == 0L) return(outer)
+
+				best = (lower + upper) / 2
+				for (iter in seq_len(max_root_iterations)) {
+					mid = (lower + upper) / 2
+					best = mid
+					if (abs(upper - lower) <= root_tolerance) return(mid)
+					f.mid = pval_fn(mid) - alpha
+					if (!is.finite(f.mid)) next
+					if (abs(f.mid) <= max(1e-6, pval_mc_tolerance)) return(mid)
+					if ((f.mid >= 0 && f.lower >= 0) || (f.mid <= 0 && f.lower <= 0)) {
+						lower = mid
+						f.lower = f.mid
+					} else {
+						upper = mid
+						f.upper = f.mid
+					}
+				}
+				best
 			}
 
 			ci = c(
@@ -746,6 +792,9 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 			)
 		},
 		supports_lik_ratio_param_bootstrap = function() FALSE,
+		supports_lik_ratio_param_bootstrap_confidence_interval = function(){
+			isTRUE(private$supports_lik_ratio_param_bootstrap())
+		},
 		#' Simulate a bootstrap dataset under the fitted null likelihood and return
 		#' a minimal spec list for refitting.
 		#'

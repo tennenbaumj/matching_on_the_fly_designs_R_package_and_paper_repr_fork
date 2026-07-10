@@ -21,22 +21,36 @@ InferenceRand = R6::R6Class("InferenceRand",
 			private$cached_values$rand_distr_cache = list()
 			private$cached_values$custom_stat_analysis = NULL
 		},
-		#' @description Set Custom Randomization Statistic as a Pre-Compiled Rcpp Function
-		#' @param fn  A compiled Rcpp function returning a scalar \code{double}. Must accept
-		#'   either \code{(NumericVector y, IntegerVector w)} or
+		#' @description Set Custom Randomization Statistic as a C++ Function
+		#' @param fn  Either a C++ source code string or a pre-compiled Rcpp function returning a
+		#'   scalar \code{double}. Must accept either \code{(NumericVector y, IntegerVector w)} or
 		#'   \code{(NumericVector y, IntegerVector w, IntegerVector dead)} as arguments.
-		#'   Compile with \code{Rcpp::cppFunction()} before passing. Pass \code{NULL} to clear.
+		#'   Passing a source string (recommended) enables safe use with parallel workers; passing
+		#'   a pre-compiled function works only in the main process (XPtrs become NULL when
+		#'   serialized to worker nodes). Pass \code{NULL} to clear.
 		#'   Cannot be combined with \code{set_custom_randomization_statistic_function}.
 		set_custom_randomization_statistic_cpp = function(fn){
 			if (!is.null(fn) && !is.null(private[["custom_randomization_statistic_function"]])) {
 				stop("Cannot specify both custom_randomization_statistic_function and custom_randomization_statistic_cpp.")
 			}
 			if (!is.null(fn)) {
-				if (!is.function(fn)) stop("custom_randomization_statistic_cpp must be a compiled Rcpp function, not a ", class(fn)[1], ".")
-				arity = length(formals(fn))
-				if (!arity %in% c(2L, 3L)) stop("custom_randomization_statistic_cpp must accept 2 arguments (y, w) or 3 arguments (y, w, dead); got ", arity, ".")
+				if (is.character(fn) && length(fn) == 1L) {
+					compiled = Rcpp::cppFunction(fn)
+					arity = length(formals(compiled))
+					if (!arity %in% c(2L, 3L)) stop("custom_randomization_statistic_cpp source must define a function with 2 arguments (y, w) or 3 arguments (y, w, dead); got ", arity, ".")
+					private[["compiled_cpp_stat_src"]] = fn
+					private[["compiled_cpp_stat_fn"]] = compiled
+				} else {
+					if (!is.function(fn)) stop("custom_randomization_statistic_cpp must be a C++ source string or compiled Rcpp function, not a ", class(fn)[1], ".")
+					arity = length(formals(fn))
+					if (!arity %in% c(2L, 3L)) stop("custom_randomization_statistic_cpp must accept 2 arguments (y, w) or 3 arguments (y, w, dead); got ", arity, ".")
+					private[["compiled_cpp_stat_src"]] = NULL
+					private[["compiled_cpp_stat_fn"]] = fn
+				}
+			} else {
+				private[["compiled_cpp_stat_src"]] = NULL
+				private[["compiled_cpp_stat_fn"]] = NULL
 			}
-			private[["compiled_cpp_stat_fn"]] = fn
 			private$cached_values$t0s_rand = NULL
 			private$cached_values$rand_distr_cache = list()
 			private$cached_values$custom_stat_analysis = NULL
@@ -68,7 +82,10 @@ InferenceRand = R6::R6Class("InferenceRand",
 			}
 			if (is.null(permutations)) permutations = private$generate_permutations(r)
 			setup = private$setup_randomization_template_and_shifts(delta, transform_responses, zero_one_logit_clamp)
-			if (!isTRUE(debug) && !is.null(permutations) && private$has_private_method("compute_fast_randomization_distr")) {
+			has_custom_randomization_statistic =
+				!is.null(private[["custom_randomization_statistic_function"]]) ||
+				!is.null(private[["compiled_cpp_stat_fn"]])
+			if (!isTRUE(debug) && !is.null(permutations) && !has_custom_randomization_statistic && private$has_private_method("compute_fast_randomization_distr")) {
 				fast_distr = tryCatch(
 					private$compute_fast_randomization_distr(setup$template$.__enclos_env__$private$y, permutations, delta, transform_responses, zero_one_logit_clamp),
 					error = function(e) NULL
@@ -78,8 +95,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 			}
 			if (!isTRUE(debug) && !is.null(permutations) &&
 				isTRUE(private$use_reusable_bootstrap_worker()) &&
-				is.null(private[["custom_randomization_statistic_function"]]) &&
-				is.null(private[["compiled_cpp_stat_fn"]])) {
+				!has_custom_randomization_statistic) {
 				actual_rand_cores = private$effective_parallel_cores("rand_pval", self$num_cores)
 				return(private$compute_randomization_distr_via_reused_worker_states(
 					permutations = permutations,
@@ -194,6 +210,9 @@ InferenceRand = R6::R6Class("InferenceRand",
 				))
 			}
 			actual_rand_cores = private$effective_parallel_cores("rand_pval", self$num_cores)
+			if (has_custom_randomization_statistic) {
+				actual_rand_cores = 1L
+			}
 			if (actual_rand_cores > 1L && need_thread_objs) {
 				do_warmup_iter = function() {
 					w_des = if (!is.null(des_template)) des_template$duplicate() else NULL
@@ -281,10 +300,16 @@ InferenceRand = R6::R6Class("InferenceRand",
 				t0s = private$cached_values$t0s_rand[seq_len(r)] + delta
 				t = private$compute_treatment_estimate_during_randomization_inference()
 				if (is.function(self$is_nonestimable) && isTRUE(self$is_nonestimable("estimate"))) return(NA_real_)
-				if (length(t) != 1 || !is.finite(t)) return(NA_real_)
+				if (length(t) != 1 || !is.finite(t)) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_estimate("randomization_observed_statistic_unavailable")
+					return(NA_real_)
+				}
 				na_t0s = !is.finite(t0s)
 				nsim_adj = sum(!na_t0s)
-				if (nsim_adj == 0L) return(NA_real_)
+				if (nsim_adj == 0L) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_estimate("randomization_too_few_finite_estimates")
+					return(NA_real_)
+				}
 				return(min(1, max(2 / nsim_adj, 2 * min(sum(t0s >= t, na.rm = TRUE) / nsim_adj, sum(t0s <= t, na.rm = TRUE) / nsim_adj))))
 			}
 			if (is.null(private$cached_values$rand_distr_cache)) private$cached_values$rand_distr_cache = list()
@@ -304,7 +329,40 @@ InferenceRand = R6::R6Class("InferenceRand",
 				private$compute_treatment_estimate_during_randomization_inference()
 			}
 			if (is.function(self$is_nonestimable) && isTRUE(self$is_nonestimable("estimate"))) return(NA_real_)
-			if (length(t) != 1 || !is.finite(t)) return(NA_real_)
+			if (length(t) != 1 || !is.finite(t)) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("randomization_observed_statistic_unavailable")
+				return(NA_real_)
+			}
+			if (!is.null(private[["custom_randomization_statistic_function"]]) ||
+			    !is.null(private[["compiled_cpp_stat_fn"]])) {
+				if (!exists("custom_stat_analysis", inherits = FALSE)) {
+					custom_stat_analysis = private$analyze_custom_randomization_statistic()
+				}
+				if (isTRUE(custom_stat_analysis$can_use_lightweight_yw_only)) {
+					setup = private$setup_randomization_template_and_shifts(
+						delta,
+						transform_responses,
+						zero_one_logit_clamp
+					)
+					t0s = vapply(seq_len(as.integer(r)), function(idx) {
+						private$run_randomization_iteration(
+							NULL,
+							NULL,
+							idx,
+							permutations,
+							delta,
+							transform_responses,
+							setup$y_delta,
+							setup$base_template_y,
+							setup$base_template_dead,
+							custom_stat_analysis,
+							setup$lightweight_custom_context,
+							zero_one_logit_clamp = zero_one_logit_clamp
+						)
+					}, numeric(1))
+					return(private$compute_two_sided_randomization_pval_from_t0s(t0s, t))
+				}
+			}
 			mc_pval = private$compute_two_sided_pval_with_sequential_mc(
 				t = t,
 				r = r,
@@ -331,6 +389,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 	private = list(
 		custom_randomization_statistic_function = NULL,
 		compiled_cpp_stat_fn = NULL,
+		compiled_cpp_stat_src = NULL,
 		randomization_mc_control = NULL,
 		normalize_delta_for_cache = function(delta, resolution = NULL){
 			if (!is.finite(delta)) return("NA")
@@ -537,7 +596,10 @@ InferenceRand = R6::R6Class("InferenceRand",
 		compute_two_sided_randomization_pval_from_t0s = function(t0s, t){
 			na_t0s = !is.finite(t0s)
 			nsim_adj = sum(!na_t0s)
-			if (nsim_adj == 0L) return(NA_real_)
+			if (nsim_adj == 0L) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("randomization_too_few_finite_estimates")
+				return(NA_real_)
+			}
 			min(1, max(2 / nsim_adj, 2 * min(sum(t0s >= t, na.rm = TRUE) / nsim_adj, sum(t0s <= t, na.rm = TRUE) / nsim_adj)))
 		},
 		compute_two_sided_randomization_pval_band = function(t0s, t, conf_level){
@@ -807,7 +869,8 @@ InferenceRand = R6::R6Class("InferenceRand",
 						zero_one_logit_clamp = zero_one_logit_clamp
 					)
 				}
-				val = private$evaluate_lightweight_custom_randomization_statistic(lightweight_custom_context, y_sim, w_sim, base_template_dead)
+				cpp_fn_override = if (is.function(custom_stat_analysis[["get_cpp_fn"]])) custom_stat_analysis$get_cpp_fn() else NULL
+				val = private$evaluate_lightweight_custom_randomization_statistic(lightweight_custom_context, y_sim, w_sim, base_template_dead, cpp_fn_override = cpp_fn_override)
 				if (isTRUE(debug)) return(list(val = val, error = NULL))
 				return(val)
 			}
@@ -853,7 +916,23 @@ InferenceRand = R6::R6Class("InferenceRand",
 			}
 			# C++ stat is always lightweight: it only ever receives (y, w) or (y, w, dead).
 			if (!is.null(private[["compiled_cpp_stat_fn"]])) {
-				analysis = list(can_use_lightweight_yw_only = TRUE, needs_match_data = FALSE)
+				cpp_src = private[["compiled_cpp_stat_src"]]
+				# Build a self-compiling closure that is safe to serialize to parallel workers.
+				# It captures only the source string (not the XPtr), so workers compile their
+				# own local copy on first use rather than receiving an invalid null pointer.
+				get_cpp_fn = if (!is.null(cpp_src)) {
+					local({
+						.src = cpp_src
+						.fn  = NULL
+						function() {
+							if (is.null(.fn)) .fn <<- Rcpp::cppFunction(.src)
+							.fn
+						}
+					})
+				} else {
+					NULL
+				}
+				analysis = list(can_use_lightweight_yw_only = TRUE, needs_match_data = FALSE, get_cpp_fn = get_cpp_fn)
 				private$cached_values$custom_stat_analysis = analysis; return(analysis)
 			}
 			# Basic analysis: does it only use y and w?
@@ -864,9 +943,11 @@ InferenceRand = R6::R6Class("InferenceRand",
 			private$cached_values$custom_stat_analysis = analysis
 			analysis
 		},
-		evaluate_lightweight_custom_randomization_statistic = function(lightweight_custom_context, y, w, dead){
+		evaluate_lightweight_custom_randomization_statistic = function(lightweight_custom_context, y, w, dead, cpp_fn_override = NULL){
 			# Fast path: compiled C++ function — no R interpreter overhead per permutation.
-			cpp_fn = private$get_compiled_cpp_stat()
+			# cpp_fn_override is used by parallel workers (compiled fresh from source on each
+			# worker) so they never dereference the XPtr that was serialized from the main process.
+			cpp_fn = if (!is.null(cpp_fn_override)) cpp_fn_override else private$get_compiled_cpp_stat()
 			if (!is.null(cpp_fn)) {
 				arity = length(formals(cpp_fn))
 				return(as.numeric(

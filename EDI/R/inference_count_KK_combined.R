@@ -70,17 +70,53 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 			private$cached_values$summary_table = NULL
 			private$cached_values$beta_hat_T
 		},
+		#' @description Computes a Wald confidence interval.
+		#' @param alpha Significance level.
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			private$shared(estimate_only = FALSE)
+			private$compute_z_or_t_ci_from_s_and_df(alpha)
+		},
+		#' @description Computes a Wald two-sided p-value.
+		#' @param delta Null treatment effect value.
+		compute_wald_two_sided_pval = function(delta = 0){
+			private$shared(estimate_only = FALSE)
+			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+		},
+		#' @description Computes a likelihood-ratio confidence interval, conservatively
+		#'   widened against the design-aware Wald interval.
+		#' @param alpha Significance level.
+		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
+			ci_model = super$compute_lik_ratio_confidence_interval(alpha = alpha)
+			ci_design = self$compute_wald_confidence_interval(alpha = alpha)
+			.conservative_kk_onelik_ci(ci_model, ci_design, alpha = alpha)
+		},
+		#' @description Computes a likelihood-ratio two-sided p-value, conservatively
+		#'   calibrated against the design-aware Wald p-value.
+		#' @param delta Null treatment effect value.
+		compute_lik_ratio_two_sided_pval = function(delta = 0){
+			p_model = super$compute_lik_ratio_two_sided_pval(delta = delta)
+			p_design = self$compute_wald_two_sided_pval(delta = delta)
+			.conservative_kk_onelik_pval(p_model, p_design)
+		},
 		#' @description Computes an approximate confidence interval.
 		#' @param alpha Confidence level.
 		compute_asymp_confidence_interval = function(alpha = 0.05){
-			private$shared(estimate_only = FALSE)
-			private$compute_z_or_t_ci_from_s_and_df(alpha)
+			switch(
+				self$get_testing_type(),
+				wald = self$compute_wald_confidence_interval(alpha = alpha),
+				lik_ratio = self$compute_lik_ratio_confidence_interval(alpha = alpha),
+				self$compute_wald_confidence_interval(alpha = alpha)
+			)
 		},
 		#' @description Computes an approximate two-sided p-value.
 		#' @param delta Null treatment effect value.
 		compute_asymp_two_sided_pval = function(delta = 0){
-			private$shared(estimate_only = FALSE)
-			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			switch(
+				self$get_testing_type(),
+				wald = self$compute_wald_two_sided_pval(delta = delta),
+				lik_ratio = self$compute_lik_ratio_two_sided_pval(delta = delta),
+				self$compute_wald_two_sided_pval(delta = delta)
+			)
 		}
 	)),
 	private = utils::modifyList(as.list(InferenceMixinKKGLMMShared$private), list(
@@ -144,12 +180,28 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 		supports_likelihood_tests = function(){
 			isTRUE(private$use_rcpp)
 		},
+		get_supported_testing_types_impl = function(){
+			if (isTRUE(private$use_rcpp)) c("wald", "lik_ratio") else "wald"
+		},
+		compute_score_two_sided_pval_impl = function(delta){
+			stop(class(self)[1], " does not support score p-values.", call. = FALSE)
+		},
+		compute_score_confidence_interval_impl = function(alpha){
+			stop(class(self)[1], " does not support score confidence intervals.", call. = FALSE)
+		},
+		compute_gradient_two_sided_pval_impl = function(delta){
+			stop(class(self)[1], " does not support gradient p-values.", call. = FALSE)
+		},
+		compute_gradient_confidence_interval_impl = function(alpha){
+			stop(class(self)[1], " does not support gradient confidence intervals.", call. = FALSE)
+		},
 		shared = function(estimate_only = FALSE){
 			if (private$use_rcpp) {
 				private$shared_rcpp(estimate_only)
 			} else {
 				private$shared_glmm_tmb(estimate_only)
 			}
+			if (!estimate_only) .inflate_kk_onelik_standard_error_with_jackknife(private, self)
 		},
 		shared_rcpp = function(estimate_only = FALSE){
 			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))
@@ -169,8 +221,12 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 			} else {
 				X_fit = cbind(`(Intercept)` = 1, w = private$w)
 			}
+			if ("treatment" %in% colnames(X_fit))
+				colnames(X_fit)[colnames(X_fit) == "treatment"] = "w"
 			X_fit = as.matrix(X_fit)
-			j_T = 1L  # 0-based index of treatment column
+			j_T_r = which(colnames(X_fit) == "w")
+			if (length(j_T_r) == 0L) j_T_r = 2L
+			j_T = as.integer(j_T_r - 1L)
 			
 			n_params = ncol(X_fit) + 1L
 			fit = tryCatch(
@@ -192,7 +248,7 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 				# Rcpp failed; fall back to glmmTMB
 				return(private$shared_glmm_tmb(estimate_only = estimate_only))
 			}
-			beta_hat_T = as.numeric(fit$b[j_T + 1L])
+			beta_hat_T = as.numeric(fit$b[j_T_r])
 			if (!is.finite(beta_hat_T) || abs(beta_hat_T) > private$max_abs_reasonable_coef) {
 				return(private$shared_glmm_tmb(estimate_only = estimate_only))
 			}
@@ -202,7 +258,7 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 				X = X_fit,
 				y = as.numeric(private$y),
 				group_id = as.integer(group_id),
-				j_treat = j_T + 1L,
+				j_treat = as.integer(j_T_r),
 				start = as.numeric(c(fit$b, fit$log_sigma))
 			)
 			private$cached_values$beta_hat_T = beta_hat_T

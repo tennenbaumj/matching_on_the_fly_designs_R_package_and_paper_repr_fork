@@ -189,7 +189,8 @@ This is the primary user-facing entry point for bootstrap-calibrated
 likelihood-ratio confidence intervals.
 
 This method is available only for classes whose private
-\code{supports_lik_ratio_param_bootstrap()} method returns \code{TRUE}.
+\code{supports_lik_ratio_param_bootstrap_confidence_interval()} method
+returns \code{TRUE}.
 
 The standard user-facing arguments are \code{B = 199} and
 \code{show_progress = FALSE}. Runtime cost is high because each
@@ -201,7 +202,9 @@ evaluations.
   B = 199,
   show_progress = FALSE,
   min_number_usable_samples = 5L,
-  max_attempts_per_replicate = 2L
+  max_attempts_per_replicate = 2L,
+  root_tolerance = NULL,
+  max_root_iterations = 8L
 )}\if{html}{\out{</div>}}
 }
 
@@ -220,6 +223,15 @@ replicates required within each p-value evaluation. Default
 
 \item{\code{max_attempts_per_replicate}}{Maximum number of simulation/refit
 retries per bootstrap replicate. Default \code{2L}.}
+
+\item{\code{root_tolerance}}{Effect-scale tolerance for the inversion root.
+If \code{NULL}, a tolerance proportional to the Wald standard error is
+used. The bootstrap p-value being inverted is Monte Carlo-discrete, so
+solving to machine precision is not meaningful.}
+
+\item{\code{max_root_iterations}}{Maximum number of bisection iterations per
+bound during interval inversion. Use \code{0L} to return the first
+finite outer bracket. Default \code{8L}.}
 }
 \if{html}{\out{</div>}}
 }

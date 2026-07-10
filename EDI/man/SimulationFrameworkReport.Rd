@@ -114,8 +114,10 @@ A \code{data.table} with one row per unique
   inference_type) combination.  Columns include \code{MSE},
   \code{coverage}, \code{ci_length} (when CI types were run),
   \code{power} (when betaT != 0 and p-value types were run),
-  \code{size} (when betaT == 0 and p-value types were run), and
-  parameter annotation strings.
+  \code{size} and \code{size_pval} (when betaT == 0 and p-value types
+  were run; \code{size_pval} is the exact two-sided binomial test
+  p-value of H0: true size = alpha, suitable for multiplicity-corrected
+  calibration checks across settings), and parameter annotation strings.
 }
 }
 \if{html}{\out{<hr>}}

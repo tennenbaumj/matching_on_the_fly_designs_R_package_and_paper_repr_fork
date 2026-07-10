@@ -1230,6 +1230,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// get_hurdle_poisson_glmm_weighted_score_cpp
+Eigen::VectorXd get_hurdle_poisson_glmm_weighted_score_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, SEXP weights_r, SEXP params_sexp, int n_gh);
+RcppExport SEXP _EDI_get_hurdle_poisson_glmm_weighted_score_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP weights_rSEXP, SEXP params_sexpSEXP, SEXP n_ghSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_r(X_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type y_r(y_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type group_id_r(group_id_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type weights_r(weights_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type params_sexp(params_sexpSEXP);
+    Rcpp::traits::input_parameter< int >::type n_gh(n_ghSEXP);
+    rcpp_result_gen = Rcpp::wrap(get_hurdle_poisson_glmm_weighted_score_cpp(X_r, y_r, group_id_r, weights_r, params_sexp, n_gh));
+    return rcpp_result_gen;
+END_RCPP
+}
 // get_hurdle_poisson_glmm_hessian_cpp
 Eigen::MatrixXd get_hurdle_poisson_glmm_hessian_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, SEXP params_sexp, int n_gh);
 RcppExport SEXP _EDI_get_hurdle_poisson_glmm_hessian_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP params_sexpSEXP, SEXP n_ghSEXP) {
@@ -1245,6 +1261,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// get_hurdle_poisson_glmm_weighted_hessian_cpp
+Eigen::MatrixXd get_hurdle_poisson_glmm_weighted_hessian_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, SEXP weights_r, SEXP params_sexp, int n_gh);
+RcppExport SEXP _EDI_get_hurdle_poisson_glmm_weighted_hessian_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP weights_rSEXP, SEXP params_sexpSEXP, SEXP n_ghSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_r(X_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type y_r(y_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type group_id_r(group_id_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type weights_r(weights_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type params_sexp(params_sexpSEXP);
+    Rcpp::traits::input_parameter< int >::type n_gh(n_ghSEXP);
+    rcpp_result_gen = Rcpp::wrap(get_hurdle_poisson_glmm_weighted_hessian_cpp(X_r, y_r, group_id_r, weights_r, params_sexp, n_gh));
+    return rcpp_result_gen;
+END_RCPP
+}
 // get_hurdle_poisson_glmm_neg_loglik_cpp
 double get_hurdle_poisson_glmm_neg_loglik_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, SEXP params_sexp, int n_gh);
 RcppExport SEXP _EDI_get_hurdle_poisson_glmm_neg_loglik_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP params_sexpSEXP, SEXP n_ghSEXP) {
@@ -1257,6 +1289,22 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< SEXP >::type params_sexp(params_sexpSEXP);
     Rcpp::traits::input_parameter< int >::type n_gh(n_ghSEXP);
     rcpp_result_gen = Rcpp::wrap(get_hurdle_poisson_glmm_neg_loglik_cpp(X_r, y_r, group_id_r, params_sexp, n_gh));
+    return rcpp_result_gen;
+END_RCPP
+}
+// get_hurdle_poisson_glmm_weighted_neg_loglik_cpp
+double get_hurdle_poisson_glmm_weighted_neg_loglik_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, SEXP weights_r, SEXP params_sexp, int n_gh);
+RcppExport SEXP _EDI_get_hurdle_poisson_glmm_weighted_neg_loglik_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP weights_rSEXP, SEXP params_sexpSEXP, SEXP n_ghSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_r(X_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type y_r(y_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type group_id_r(group_id_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type weights_r(weights_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type params_sexp(params_sexpSEXP);
+    Rcpp::traits::input_parameter< int >::type n_gh(n_ghSEXP);
+    rcpp_result_gen = Rcpp::wrap(get_hurdle_poisson_glmm_weighted_neg_loglik_cpp(X_r, y_r, group_id_r, weights_r, params_sexp, n_gh));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4788,8 +4836,11 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_fast_hurdle_negbin_with_var_cpp", (DL_FUNC) &_EDI_fast_hurdle_negbin_with_var_cpp, 13},
     {"_EDI_fast_truncated_negbin_count_cpp", (DL_FUNC) &_EDI_fast_truncated_negbin_count_cpp, 11},
     {"_EDI_get_hurdle_poisson_glmm_score_cpp", (DL_FUNC) &_EDI_get_hurdle_poisson_glmm_score_cpp, 5},
+    {"_EDI_get_hurdle_poisson_glmm_weighted_score_cpp", (DL_FUNC) &_EDI_get_hurdle_poisson_glmm_weighted_score_cpp, 6},
     {"_EDI_get_hurdle_poisson_glmm_hessian_cpp", (DL_FUNC) &_EDI_get_hurdle_poisson_glmm_hessian_cpp, 5},
+    {"_EDI_get_hurdle_poisson_glmm_weighted_hessian_cpp", (DL_FUNC) &_EDI_get_hurdle_poisson_glmm_weighted_hessian_cpp, 6},
     {"_EDI_get_hurdle_poisson_glmm_neg_loglik_cpp", (DL_FUNC) &_EDI_get_hurdle_poisson_glmm_neg_loglik_cpp, 5},
+    {"_EDI_get_hurdle_poisson_glmm_weighted_neg_loglik_cpp", (DL_FUNC) &_EDI_get_hurdle_poisson_glmm_weighted_neg_loglik_cpp, 6},
     {"_EDI_fast_hurdle_poisson_glmm_cpp", (DL_FUNC) &_EDI_fast_hurdle_poisson_glmm_cpp, 14},
     {"_EDI_exact_jonckheere_terpstra_pval_cpp", (DL_FUNC) &_EDI_exact_jonckheere_terpstra_pval_cpp, 2},
     {"_EDI_compute_matching_wilcox_distr_parallel_cpp", (DL_FUNC) &_EDI_compute_matching_wilcox_distr_parallel_cpp, 8},

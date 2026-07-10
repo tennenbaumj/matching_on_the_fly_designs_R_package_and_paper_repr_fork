@@ -60,17 +60,40 @@ InferenceAsymp = R6::R6Class("InferenceAsymp",
 			if (is.null(private$cached_mod)) self$compute_estimate()
 			private$cached_mod
 		},
-		#' @description Prints a summary of the model from the last call that produced the
-		#' treatment estimate and SE.
-		get_summary = function(){
-			mod = self$get_mod()
-			if (is.null(mod)) {
-				cat("No model available (call compute_estimate() first).\n")
-				return(invisible(NULL))
-			}
-			if (identical(class(mod), "list")) {
-				if (!is.null(private$cached_values$summary_table)) {
-					print(private$cached_values$summary_table)
+			#' @description Prints a summary of the model from the last call that produced the
+			#' treatment estimate and SE.
+			get_summary = function(){
+				if (is.null(private$cached_mod) || is.null(private$cached_values$summary_table)) {
+					tryCatch(
+						self$compute_estimate(estimate_only = FALSE),
+						error = function(e) tryCatch(self$compute_estimate(), error = function(e2) NULL)
+					)
+				}
+				mod = self$get_mod()
+				if (is.null(mod)) {
+					cat("No model available (call compute_estimate() first).\n")
+					return(invisible(NULL))
+				}
+				fallback = private$cached_values$model_fit_fallback
+				if (is.list(fallback) && isTRUE(fallback$used)) {
+					cat("Model fit fallback: ", fallback$fitted_model, "\n", sep = "")
+					if (!is.null(fallback$requested_model)) {
+						cat("Requested model: ", fallback$requested_model, "\n", sep = "")
+					}
+					if (!is.null(fallback$reason)) {
+						cat("Fallback reason: ", fallback$reason, "\n", sep = "")
+					}
+					if (length(fallback$omitted_conditional %||% character(0))) {
+						cat("Omitted conditional covariates: ", paste(fallback$omitted_conditional, collapse = ", "), "\n", sep = "")
+					}
+					if (length(fallback$omitted_auxiliary %||% character(0))) {
+						cat("Omitted auxiliary covariates: ", paste(fallback$omitted_auxiliary, collapse = ", "), "\n", sep = "")
+					}
+					cat("Omitted coefficient rows are shown as NA because those terms were not included in the fallback fit.\n")
+				}
+				if (identical(class(mod), "list")) {
+					if (!is.null(private$cached_values$summary_table)) {
+						print(private$cached_values$summary_table)
 				} else {
 					print(mod)
 				}

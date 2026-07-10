@@ -285,7 +285,7 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "score")
 		},
 		compute_score_confidence_interval_impl = function(alpha){
-			private$invert_test_pval_confidence_interval(alpha)
+			private$invert_test_pval_confidence_interval(alpha, testing_type = "score")
 		},
 		compute_gradient_two_sided_pval_impl = function(delta){
 			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "gradient")
@@ -458,15 +458,26 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 		},
 
 		compute_likelihood_test_two_sided_pval = function(delta, testing_type){
-			private$get_memoized_likelihood_test_pval(
+			spec = private$get_likelihood_test_spec()
+			if (is.null(spec)) {
+				if (!isTRUE(self$is_nonestimable())) {
+					private$cache_nonestimable_estimate("likelihood_test_spec_unavailable")
+				}
+				return(NA_real_)
+			}
+			p_value = private$get_memoized_likelihood_test_pval(
 				delta = delta,
 				testing_type = testing_type,
-				spec = private$get_likelihood_test_spec(),
+				spec = spec,
 				warm_cache_key = paste0("likelihood_test:", testing_type)
 			)
+			if (!is.finite(p_value) && !isTRUE(self$is_nonestimable("estimate"))) {
+				private$cache_nonestimable_se(paste0(testing_type, "_test_unavailable"))
+			}
+			p_value
 		},
 
-		invert_test_pval_confidence_interval = function(alpha){
+		invert_test_pval_confidence_interval = function(alpha, testing_type = private$testing_type){
 			est = self$compute_estimate()
 			if (!is.finite(est)) return(c(NA_real_, NA_real_))
 
@@ -477,7 +488,20 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			lower_seed = if (length(wald_ci) >= 1L && is.finite(wald_ci[[1L]])) wald_ci[[1L]] else NA_real_
 			upper_seed = if (length(wald_ci) >= 2L && is.finite(wald_ci[[2L]])) wald_ci[[2L]] else NA_real_
 
-			pval_fn = function(delta) self$compute_asymp_two_sided_pval(delta)
+			testing_type = private$normalize_testing_type(testing_type)
+			spec = private$get_likelihood_test_spec()
+			pval_fn = if (!is.null(spec) && testing_type %in% c("score", "gradient", "lik_ratio")) {
+				function(delta) {
+					private$get_memoized_likelihood_test_pval(
+						delta = delta,
+						testing_type = testing_type,
+						spec = spec,
+						warm_cache_key = paste0(testing_type, "_ci")
+					)
+				}
+			} else {
+				function(delta) self$compute_asymp_two_sided_pval(delta)
+			}
 
 			ci_vals = pval_invert_ci_cpp(
 				pval_fn    = pval_fn,
@@ -490,6 +514,9 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 
 			ci = c(ci_vals[1L], ci_vals[2L])
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+				private$cache_nonestimable_se("test_inversion_confidence_interval_unavailable")
+			}
 			ci
 		},
 
@@ -527,55 +554,19 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				return(ci)
 			}
 
-			find_bound = function(direction, seed){
-				outer = NA_real_
-				f_outer = NA_real_
-				if (is.finite(seed) && ((direction < 0 && seed < est) || (direction > 0 && seed > est))) {
-					f_seed = pval_fn(seed) - alpha
-					if (is.finite(f_seed)) {
-						if (abs(f_seed) <= 1e-6) return(seed)
-						if (f_seed <= 0) {
-							outer = seed
-							f_outer = f_seed
-						}
-					}
-				}
-
-				if (!is.finite(outer)) {
-					for (i in 0:59) {
-						d = est + direction * step * 2^i
-						f_d = pval_fn(d) - alpha
-						if (!is.finite(f_d)) next
-						if (abs(f_d) <= 1e-6) return(d)
-						if (f_d <= 0) {
-							outer = d
-							f_outer = f_d
-							break
-						}
-					}
-				}
-
-				if (!is.finite(outer) || !is.finite(f_outer)) return(NA_real_)
-
-				f_est = p_est - alpha
-				if (!is.finite(f_est)) return(NA_real_)
-				if (abs(f_est) <= 1e-6) return(est)
-
-				lower = min(est, outer)
-				upper = max(est, outer)
-				root_fn = function(delta) pval_fn(delta) - alpha
-				root = tryCatch(
-					stats::uniroot(root_fn, lower = lower, upper = upper, tol = 1e-6)$root,
-					error = function(e) NA_real_
-				)
-				as.numeric(root)
-			}
-
-			ci = c(
-				find_bound(direction = -1, seed = lower_seed),
-				find_bound(direction = 1, seed = upper_seed)
+			ci_vals = pval_invert_ci_cpp(
+				pval_fn    = pval_fn,
+				est        = est,
+				alpha      = alpha,
+				step       = step,
+				lower_seed = lower_seed,
+				upper_seed = upper_seed
 			)
+			ci = c(ci_vals[1L], ci_vals[2L])
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+				private$cache_nonestimable_se("gradient_confidence_interval_unavailable")
+			}
 			ci
 		},
 
@@ -605,45 +596,30 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			upper_seed = if (length(wald_ci) >= 2L && is.finite(wald_ci[[2L]])) wald_ci[[2L]] else est + step
 
 			j = as.integer(spec$j)
+			fit_null_formals = tryCatch(names(formals(spec$fit_null)), error = function(e) character())
+			accepts_start = "start" %in% fit_null_formals
+			extract_start = spec$extract_start %||% function(fit_obj) NULL
+			full_start = tryCatch(extract_start(spec$full_fit), error = function(e) NULL)
+			if (!is.null(full_start) && length(full_start) == 0L) full_start = NULL
 			fit_null_fn = function(delta){
-				entry = private$get_memoized_likelihood_test_eval(
-					delta = delta,
-					testing_type = "lik_ratio",
-					spec = spec,
-					warm_cache_key = "lik_ratio_ci",
-					include_score = TRUE,
-					include_full_negloglik = TRUE,
-					include_null_negloglik = TRUE
+				fit = tryCatch(
+					if (accepts_start) spec$fit_null(delta, start = full_start) else spec$fit_null(delta),
+					error = function(e) NULL
 				)
-				if (isTRUE(entry$invalid)) return(NULL)
-				entry$null_fit
+				if (is.null(fit)) return(NULL)
+				null_params = fit$params %||% fit$b %||% {
+					co = fit$coefficients
+					if (is.numeric(co)) as.numeric(co) else NULL
+				}
+				if (is.null(null_params) || length(null_params) < j || !is.finite(null_params[j])) return(NULL)
+				attr(fit, "edi_likelihood_test_delta") = delta
+				attr(fit, "edi_likelihood_test_testing_type") = "lik_ratio"
+				fit
 			}
 			neg_loglik_fn = function(fit){
-				delta_fit = attr(fit, "edi_likelihood_test_delta", exact = TRUE)
-				if (is.finite(delta_fit)) {
-					entry = private$get_memoized_likelihood_test_eval(
-						delta = delta_fit,
-						testing_type = "lik_ratio",
-						spec = spec,
-						warm_cache_key = "lik_ratio_ci",
-						include_null_negloglik = TRUE
-					)
-					if (!isTRUE(entry$invalid) && is.finite(entry$null_negloglik)) return(entry$null_negloglik)
-				}
 				tryCatch(spec$neg_loglik(fit), error = function(e) NA_real_)
 			}
 			score_fn = function(fit){
-				delta_fit = attr(fit, "edi_likelihood_test_delta", exact = TRUE)
-				if (is.finite(delta_fit)) {
-					entry = private$get_memoized_likelihood_test_eval(
-						delta = delta_fit,
-						testing_type = "lik_ratio",
-						spec = spec,
-						warm_cache_key = "lik_ratio_ci",
-						include_score = TRUE
-					)
-					if (!isTRUE(entry$invalid) && !is.null(entry$score)) return(entry$score)
-				}
 				tryCatch(spec$score(fit), error = function(e) NULL)
 			}
 
@@ -662,6 +638,9 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 
 			ci = c(ci_vals[1L], ci_vals[2L])
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+				private$cache_nonestimable_se("lik_ratio_confidence_interval_unavailable")
+			}
 			ci
 		},
 

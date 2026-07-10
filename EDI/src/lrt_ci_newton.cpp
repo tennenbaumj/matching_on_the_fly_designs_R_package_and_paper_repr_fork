@@ -146,8 +146,12 @@ NumericVector lrt_ci_nr_cpp(
 		double delta = b;
 		LrtEval ev = ev_outer;
 
+		bool converged_p = false;
 		for (int k = 0; k < max_nr_iter; ++k) {
-			if (ev.valid && std::abs(ev.p - alpha) < tol_p) break;
+			if (ev.valid && std::abs(ev.p - alpha) < tol_p) {
+				converged_p = true;
+				break;
+			}
 			double lo = std::min(a, b);
 			double hi = std::max(a, b);
 			if (hi - lo < tol_bracket) break;
@@ -177,7 +181,7 @@ NumericVector lrt_ci_nr_cpp(
 			ev = ev_new;
 		}
 
-		ci[dir_idx] = delta;
+		ci[dir_idx] = converged_p ? delta : (a + b) / 2.0;
 	}
 
 	return ci;

@@ -101,12 +101,20 @@ inference_asymp_lik_std_mod_cache_private = list(
 			}
 		},
 		compute_likelihood_test_two_sided_pval = function(delta, testing_type){
-			private$get_memoized_likelihood_test_pval(
+			spec = private$get_likelihood_test_spec()
+			if (is.null(spec)) {
+				stop(class(self)[1], " does not expose a likelihood-test specification.", call. = FALSE)
+			}
+			p_value = private$get_memoized_likelihood_test_pval(
 				delta = delta,
 				testing_type = testing_type,
-				spec = private$get_likelihood_test_spec(),
+				spec = spec,
 				warm_cache_key = paste0("likelihood_test:", testing_type)
 			)
+			if (!is.finite(p_value) && !isTRUE(self$is_nonestimable("estimate"))) {
+				private$cache_nonestimable_se(paste0(testing_type, "_test_unavailable"))
+			}
+			p_value
 		},
 		shared = function(estimate_only = FALSE){
 			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))
@@ -124,12 +132,17 @@ inference_asymp_lik_std_mod_cache_private = list(
 			
 			private$cached_mod = model_output
 			if (is.null(model_output)) {
-				private$cached_values$beta_hat_T = NA_real_
-				private$cached_values$s_beta_hat_T = NA_real_
+				private$cache_nonestimable_estimate("model_fit_unavailable")
 				private$cached_values$df = NA_real_
 				return(invisible(NULL))
 			}
-			private$cached_values$beta_hat_T = model_output$beta_hat_T %||% model_output$b[2]
+			beta_hat_T = as.numeric(model_output$beta_hat_T %||% model_output$b[2])[1L]
+			if (!is.finite(beta_hat_T)) {
+				private$cache_nonestimable_estimate("model_treatment_estimate_unavailable")
+				private$cached_values$df = NA_real_
+				return(invisible(NULL))
+			}
+			private$cached_values$beta_hat_T = beta_hat_T
 			
 			if (!is.null(model_output$b)) {
 				private$set_fit_warm_start(
@@ -142,12 +155,14 @@ inference_asymp_lik_std_mod_cache_private = list(
 			}
 			if (estimate_only) return(invisible(NULL))
 			ssq = model_output$ssq_b_2 %||% model_output$ssq_b_j
-			if (!is.null(ssq) && !is.na(ssq) && ssq > 0) {
-				private$cached_values$s_beta_hat_T = sqrt(ssq)
-			} else {
-				private$cached_values$s_beta_hat_T = NA_real_
-			}
+			ssq = if (length(ssq) >= 1L) as.numeric(ssq)[1L] else NA_real_
 			private$cached_values$df = model_output$df %||% NA_real_
+			if (is.finite(ssq) && ssq > 0) {
+				private$cached_values$s_beta_hat_T = sqrt(ssq)
+				private$clear_nonestimable_state()
+			} else {
+				private$cache_nonestimable_se("model_standard_error_unavailable")
+			}
 		},
 		# Helper for subclasses to extract the policy-driven warm start arguments for C++ calls.
 		get_backend_warm_start_args = function(expected_length, expected_fisher_dim = expected_length) {

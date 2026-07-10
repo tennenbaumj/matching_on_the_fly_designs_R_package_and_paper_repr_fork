@@ -35,6 +35,10 @@ inf$compute_estimate()
 \item \href{#method-InferenceCountKKGLMM-new}{\code{InferenceCountKKGLMM$new()}}
 \item \href{#method-InferenceCountKKGLMM-compute_estimate}{\code{InferenceCountKKGLMM$compute_estimate()}}
 \item \href{#method-InferenceCountKKGLMM-compute_estimate_with_bootstrap_weights}{\code{InferenceCountKKGLMM$compute_estimate_with_bootstrap_weights()}}
+\item \href{#method-InferenceCountKKGLMM-compute_wald_confidence_interval}{\code{InferenceCountKKGLMM$compute_wald_confidence_interval()}}
+\item \href{#method-InferenceCountKKGLMM-compute_wald_two_sided_pval}{\code{InferenceCountKKGLMM$compute_wald_two_sided_pval()}}
+\item \href{#method-InferenceCountKKGLMM-compute_lik_ratio_confidence_interval}{\code{InferenceCountKKGLMM$compute_lik_ratio_confidence_interval()}}
+\item \href{#method-InferenceCountKKGLMM-compute_lik_ratio_two_sided_pval}{\code{InferenceCountKKGLMM$compute_lik_ratio_two_sided_pval()}}
 \item \href{#method-InferenceCountKKGLMM-compute_asymp_confidence_interval}{\code{InferenceCountKKGLMM$compute_asymp_confidence_interval()}}
 \item \href{#method-InferenceCountKKGLMM-compute_asymp_two_sided_pval}{\code{InferenceCountKKGLMM$compute_asymp_two_sided_pval()}}
 \item \href{#method-InferenceCountKKGLMM-clone}{\code{InferenceCountKKGLMM$clone()}}
@@ -78,14 +82,10 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_std_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_std_error'><code>::InferenceJackknife$compute_jackknife_std_error()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_confidence_interval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_confidence_interval'><code>::InferenceJackknife$compute_jackknife_wald_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_two_sided_pval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_two_sided_pval'><code>::InferenceJackknife$compute_jackknife_wald_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_confidence_interval'><code>::InferenceAsymp$compute_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_two_sided_pval'><code>::InferenceAsympLik$compute_score_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_preference'><code>::InferenceAsympLik$get_information_preference()</code></a></span></li>
@@ -173,6 +173,76 @@ bootstrap weights.}
 
 \item{\code{estimate_only}}{If \code{TRUE}, compute only the weighted point
 estimate.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKGLMM-compute_wald_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKGLMM-compute_wald_confidence_interval}{}}}
+\subsection{Method \code{compute_wald_confidence_interval()}}{
+Computes a Wald confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKGLMM$compute_wald_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKGLMM-compute_wald_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKGLMM-compute_wald_two_sided_pval}{}}}
+\subsection{Method \code{compute_wald_two_sided_pval()}}{
+Computes a Wald two-sided p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKGLMM$compute_wald_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect value.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKGLMM-compute_lik_ratio_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKGLMM-compute_lik_ratio_confidence_interval}{}}}
+\subsection{Method \code{compute_lik_ratio_confidence_interval()}}{
+Computes a likelihood-ratio confidence interval, conservatively
+  widened against the design-aware Wald interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKGLMM$compute_lik_ratio_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKGLMM-compute_lik_ratio_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKGLMM-compute_lik_ratio_two_sided_pval}{}}}
+\subsection{Method \code{compute_lik_ratio_two_sided_pval()}}{
+Computes a likelihood-ratio two-sided p-value, conservatively
+  calibrated against the design-aware Wald p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKGLMM$compute_lik_ratio_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect value.}
 }
 \if{html}{\out{</div>}}
 }

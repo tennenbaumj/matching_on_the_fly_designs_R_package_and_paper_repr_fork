@@ -275,7 +275,7 @@ InferenceBaiAdjustedT = R6::R6Class("InferenceBaiAdjustedT",
 			if (!is.null(private$cached_values$halves)) return(private$cached_values$halves)
 			
 			m = private$cached_values$KKstats$m
-			if (m < 2) return(data.frame()) # Cannot make pairs of pairs if there's < 2 pairs
+			if (is.null(m) || !is.finite(m) || m < 2) return(data.frame()) # Cannot make pairs of pairs if there's < 2 pairs
 			X = private$get_X()
 			pair_avg = compute_pair_averages_cpp(X, private$des_obj_priv_int$m, m)
 			weights = private$des_obj_priv_int$covariate_weights

@@ -17,6 +17,7 @@ inference_count_likelihood_public = list(
 		#' @param alpha Significance level 1 - \code{alpha}. Default 0.05.
 		#' @return A confidence interval.
 		compute_asymp_confidence_interval = function(alpha = 0.05){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
 			if (private$testing_type == "wald") {
 				private$shared(estimate_only = FALSE)
 				if (is.finite(private$cached_values$s_beta_hat_T %||% NA_real_)) {
@@ -29,6 +30,7 @@ inference_count_likelihood_public = list(
 		#' @param delta Null treatment effect to test against. Default 0.
 		#' @return The asymptotic p-value.
 		compute_asymp_two_sided_pval = function(delta = 0){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			if (private$testing_type == "wald") {
 				private$shared(estimate_only = FALSE)
 				if (is.finite(private$cached_values$s_beta_hat_T %||% NA_real_)) {
@@ -36,6 +38,90 @@ inference_count_likelihood_public = list(
 				}
 			}
 			super$compute_asymp_two_sided_pval(delta)
+		},
+		#' @description Computes the Wald two-sided p-value regardless of configured testing type.
+		#' @param delta Null treatment effect.
+		compute_wald_two_sided_pval = function(delta = 0){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			super$compute_wald_two_sided_pval(delta)
+		},
+		#' @description Computes the Wald confidence interval regardless of configured testing type.
+		#' @param alpha Significance level. Default 0.05.
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			super$compute_wald_confidence_interval(alpha)
+		},
+		#' @description Computes the score two-sided p-value regardless of configured testing type.
+		#' @param delta Null treatment effect.
+		compute_score_two_sided_pval = function(delta = 0){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			super$compute_score_two_sided_pval(delta)
+		},
+		#' @description Computes the score confidence interval regardless of configured testing type.
+		#' @param alpha Significance level. Default 0.05.
+		compute_score_confidence_interval = function(alpha = 0.05){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			super$compute_score_confidence_interval(alpha)
+		},
+		#' @description Computes the likelihood-ratio two-sided p-value regardless of configured testing type.
+		#' @param delta Null treatment effect.
+		compute_lik_ratio_two_sided_pval = function(delta = 0){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			super$compute_lik_ratio_two_sided_pval(delta)
+		},
+		#' @description Computes the likelihood-ratio confidence interval regardless of configured testing type.
+		#' @param alpha Significance level. Default 0.05.
+		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			super$compute_lik_ratio_confidence_interval(alpha)
+		},
+		#' @description Computes the gradient two-sided p-value regardless of configured testing type.
+		#' @param delta Null treatment effect.
+		compute_gradient_two_sided_pval = function(delta = 0){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			super$compute_gradient_two_sided_pval(delta)
+		},
+		#' @description Computes the gradient confidence interval regardless of configured testing type.
+		#' @param alpha Significance level. Default 0.05.
+		compute_gradient_confidence_interval = function(alpha = 0.05){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			super$compute_gradient_confidence_interval(alpha)
+		},
+		#' @description Computes a parametric likelihood-ratio bootstrap p-value.
+		#' @param delta Null treatment effect.
+		#' @param B Number of bootstrap replicates.
+		#' @param show_progress Whether to show progress.
+		#' @param min_number_usable_samples Minimum usable bootstrap samples.
+		#' @param max_attempts_per_replicate Maximum attempts per replicate.
+		compute_lik_ratio_bootstrap_two_sided_pval = function(delta = 0, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
+			super$compute_lik_ratio_bootstrap_two_sided_pval(
+				delta = delta,
+				B = B,
+				show_progress = show_progress,
+				min_number_usable_samples = min_number_usable_samples,
+				max_attempts_per_replicate = max_attempts_per_replicate
+			)
+		},
+		#' @description Computes a parametric likelihood-ratio bootstrap CI.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of bootstrap replicates.
+		#' @param show_progress Whether to show progress.
+		#' @param min_number_usable_samples Minimum usable bootstrap samples.
+		#' @param max_attempts_per_replicate Maximum attempts per replicate.
+		#' @param root_tolerance Root tolerance.
+		#' @param max_root_iterations Maximum root iterations.
+		compute_lik_ratio_bootstrap_confidence_interval = function(alpha = 0.05, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L, root_tolerance = NULL, max_root_iterations = 8L){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
+			super$compute_lik_ratio_bootstrap_confidence_interval(
+				alpha = alpha,
+				B = B,
+				show_progress = show_progress,
+				min_number_usable_samples = min_number_usable_samples,
+				max_attempts_per_replicate = max_attempts_per_replicate,
+				root_tolerance = root_tolerance,
+				max_root_iterations = max_root_iterations
+			)
 		}
 	)
 
@@ -43,7 +129,11 @@ inference_count_likelihood_private = list(
 		# --- Count-specific shared logic ---
 
 		shared = function(estimate_only = FALSE){
-			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))
+			if (estimate_only &&
+					!is.null(private$cached_values$beta_hat_T) &&
+					is.finite(as.numeric(private$cached_values$beta_hat_T)[1L])) {
+				return(invisible(NULL))
+			}
 			if (!estimate_only && !is.null(private$cached_values$s_beta_hat_T) && is.finite(private$cached_values$s_beta_hat_T)) return(invisible(NULL))
 
 			model_output = private$generate_mod(estimate_only = estimate_only)
@@ -82,6 +172,7 @@ inference_count_likelihood_private = list(
 		},
 
 		get_standard_error = function(){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			private$shared(estimate_only = FALSE)
 			# Try information-based SE first if supported
 			if (isTRUE(private$supports_information_preference())) {
@@ -112,22 +203,44 @@ inference_count_likelihood_private = list(
 		},
 
 		compute_score_two_sided_pval_impl = function(delta){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "score")
 		},
 		compute_gradient_two_sided_pval_impl = function(delta){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "gradient")
 		},
 		compute_lik_ratio_two_sided_pval_impl = function(delta){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "lik_ratio")
 		},
 		compute_score_confidence_interval_impl = function(alpha){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
 			private$invert_test_pval_confidence_interval(alpha)
 		},
 		compute_gradient_confidence_interval_impl = function(alpha){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
 			private$invert_test_pval_confidence_interval(alpha)
 		},
 		compute_lik_ratio_confidence_interval_impl = function(alpha){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(private$count_likelihood_missing_ci(alpha))
 			private$invert_test_pval_confidence_interval(alpha)
+		},
+		count_likelihood_block_asymp_unsupported = function(){
+			private$jackknife_block_size_gt_one_unsupported(unit = "auto")
+		},
+		mark_count_likelihood_block_asymp_nonestimable = function(){
+			if (!private$count_likelihood_block_asymp_unsupported()) return(FALSE)
+			if (is.null(private$cached_values$beta_hat_T)) {
+				try(private$shared(estimate_only = TRUE), silent = TRUE)
+			}
+			private$cache_nonestimable_se("count_likelihood_asymp_block_size_gt_one_not_supported")
+			TRUE
+		},
+		count_likelihood_missing_ci = function(alpha = 0.05){
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			ci
 		}
 	)
 

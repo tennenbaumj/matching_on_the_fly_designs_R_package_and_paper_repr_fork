@@ -39,6 +39,25 @@ make_param_boot_zinb_design <- function(seed = 20260522L, n = 120L){
 	des
 }
 
+make_param_boot_zero_augmented_poisson_design <- function(seed = 20260525L, n = 80L){
+	set.seed(seed)
+	x1 <- rnorm(n)
+	x2 <- rnorm(n)
+	w <- rep(c(1, -1), length.out = n)
+	w01 <- (w + 1) / 2
+	p_zero <- plogis(-0.85 + 0.35 * w01 - 0.25 * x1)
+	mu <- exp(0.25 + 0.15 * w01 + 0.20 * x1 - 0.10 * x2)
+	is_zero <- rbinom(n, 1L, p_zero)
+	y_count <- rpois(n, mu)
+	y <- ifelse(is_zero == 1L, 0L, y_count)
+
+	des <- DesignFixedBernoulli$new(n = n, response_type = "count", verbose = FALSE)
+	des$add_all_subjects_to_experiment(data.frame(x1 = x1, x2 = x2))
+	des$overwrite_all_subject_assignments(w)
+	des$add_all_subject_responses(y)
+	des
+}
+
 make_param_boot_ordinal_design <- function(seed = 20260523L, n = 120L){
 	set.seed(seed)
 	x1 <- rnorm(n)
@@ -98,6 +117,26 @@ assert_param_bootstrap_lr_smoke <- function(inf, B = 9L, min_success = 3L, seed 
 	expect_gte(diag$n_success, min_success)
 	expect_gt(diag$success_fraction, 0)
 }
+
+test_that("raw LR parametric bootstrap is disabled for zero-augmented Poisson models", {
+	des <- make_param_boot_zero_augmented_poisson_design()
+
+	for (class_gen in list(InferenceCountZeroInflatedPoisson, InferenceCountHurdlePoisson)) {
+		inf <- class_gen$new(des, model_formula = ~ x1 + x2, use_rcpp = TRUE, verbose = FALSE)
+		p_boot <- inf$compute_lik_ratio_bootstrap_two_sided_pval(
+			delta = 0,
+			B = 9L,
+			show_progress = FALSE
+		)
+
+		expect_true(is.na(p_boot))
+		expect_true(inf$is_nonestimable("se"))
+		expect_equal(
+			inf$get_nonestimable_reason(),
+			"zero_augmented_poisson_parametric_lrt_bootstrap_disabled_due_raw_lrt_miscalibration"
+		)
+	}
+})
 
 test_that("parametric bootstrap LR smoke tests cover censoring, mixture, ordinal, and GLMM-style families", {
 	assert_param_bootstrap_lr_smoke(

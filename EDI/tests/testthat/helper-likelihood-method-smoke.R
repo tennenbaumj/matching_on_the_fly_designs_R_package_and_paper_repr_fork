@@ -24,7 +24,19 @@ run_likelihood_method_smoke_suite <- function(response_type_filter = NA_characte
 				grepl("does not support gradient confidence intervals", msg, fixed = TRUE) ||
 				grepl("does not support likelihood-ratio p-values", msg, fixed = TRUE) ||
 				grepl("does not support likelihood-ratio confidence intervals", msg, fixed = TRUE) ||
-				grepl("does not support parametric-bootstrap LR calibration", msg, fixed = TRUE)
+				grepl("does not support parametric-bootstrap LR calibration", msg, fixed = TRUE) ||
+				grepl("does not support parametric-bootstrap LR confidence intervals", msg, fixed = TRUE)
+		}
+		nonestimable_message <- function(){
+			is_nonestimable = isTRUE(tryCatch(inf$is_nonestimable(), error = function(e) FALSE))
+			if (!is_nonestimable) return(NULL)
+			stage = tryCatch(inf$get_nonestimable_stage(), error = function(e) NULL)
+			reason = tryCatch(inf$get_nonestimable_reason(), error = function(e) NULL)
+			paste0(
+				"explicitly non-estimable",
+				if (!is.null(stage) && nzchar(stage)) paste0("; stage=", stage) else "",
+				if (!is.null(reason) && nzchar(reason)) paste0("; reason=", reason) else ""
+			)
 		}
 
 		pval_methods <- c(
@@ -56,6 +68,11 @@ run_likelihood_method_smoke_suite <- function(response_type_filter = NA_characte
 			)
 			if (is.null(val)) next
 			if (!is.numeric(val) || length(val) != 1L || !is.finite(val) || val < 0 || val > 1) {
+				msg = nonestimable_message()
+				if (!is.null(msg)) {
+					cat(sprintf("  [%s] %s: %s\n", label, method_name, msg))
+					next
+				}
 				cat(sprintf("  [%s] skipping %s: non-finite or invalid p-value output\n", label, method_name))
 				next
 			}
@@ -78,6 +95,11 @@ run_likelihood_method_smoke_suite <- function(response_type_filter = NA_characte
 			)
 			if (is.null(val)) next
 			if (!is.numeric(val) || length(val) != 2L || !all(is.finite(val)) || val[1] > val[2]) {
+				msg = nonestimable_message()
+				if (!is.null(msg)) {
+					cat(sprintf("  [%s] %s: %s\n", label, method_name, msg))
+					next
+				}
 				cat(sprintf("  [%s] skipping %s: non-finite or invalid confidence interval output\n", label, method_name))
 				next
 			}
@@ -89,6 +111,11 @@ run_likelihood_method_smoke_suite <- function(response_type_filter = NA_characte
 				inf$.__enclos_env__$private$supports_lik_ratio_param_bootstrap(),
 				error = function(e) FALSE
 			))
+		supports_param_boot_ci = supports_param_boot &&
+			isTRUE(tryCatch({
+				ci_support_fn = inf$.__enclos_env__$private$supports_lik_ratio_param_bootstrap_confidence_interval
+				if (is.function(ci_support_fn)) ci_support_fn() else TRUE
+			}, error = function(e) TRUE))
 		if (supports_param_boot){
 			param_boot_pval = tryCatch(
 				inf$compute_lik_ratio_bootstrap_two_sided_pval(delta = 0, B = 5L, show_progress = FALSE),
@@ -102,28 +129,40 @@ run_likelihood_method_smoke_suite <- function(response_type_filter = NA_characte
 			)
 			if (!is.null(param_boot_pval)) {
 				if (!is.numeric(param_boot_pval) || length(param_boot_pval) != 1L || !is.finite(param_boot_pval) || param_boot_pval < 0 || param_boot_pval > 1) {
+					msg = nonestimable_message()
+					if (!is.null(msg)) {
+						cat(sprintf("  [%s] compute_lik_ratio_bootstrap_two_sided_pval: %s\n", label, msg))
+						return(invisible(TRUE))
+					}
 					cat(sprintf("  [%s] skipping compute_lik_ratio_bootstrap_two_sided_pval: non-finite or invalid p-value output\n", label))
 					return(invisible(TRUE))
 				}
 				cat(sprintf("  [%s] compute_lik_ratio_bootstrap_two_sided_pval = %s\n", label, paste(param_boot_pval, collapse = ", ")))
 			}
 
-			param_boot_ci = tryCatch(
-				inf$compute_lik_ratio_bootstrap_confidence_interval(alpha = 0.2, B = 5L, show_progress = FALSE),
-				error = function(e) {
-					if (is_unsupported_method_error(e)) {
-						cat(sprintf("  [%s] skipping compute_lik_ratio_bootstrap_confidence_interval: %s\n", label, conditionMessage(e)))
-						return(NULL)
+			if (supports_param_boot_ci){
+				param_boot_ci = tryCatch(
+					inf$compute_lik_ratio_bootstrap_confidence_interval(alpha = 0.2, B = 5L, show_progress = FALSE),
+					error = function(e) {
+						if (is_unsupported_method_error(e)) {
+							cat(sprintf("  [%s] skipping compute_lik_ratio_bootstrap_confidence_interval: %s\n", label, conditionMessage(e)))
+							return(NULL)
+						}
+						stop(label, ": compute_lik_ratio_bootstrap_confidence_interval failed: ", e$message)
 					}
-					stop(label, ": compute_lik_ratio_bootstrap_confidence_interval failed: ", e$message)
+				)
+				if (!is.null(param_boot_ci)) {
+					if (!is.numeric(param_boot_ci) || length(param_boot_ci) != 2L || !all(is.finite(param_boot_ci)) || param_boot_ci[1] > param_boot_ci[2]) {
+						msg = nonestimable_message()
+						if (!is.null(msg)) {
+							cat(sprintf("  [%s] compute_lik_ratio_bootstrap_confidence_interval: %s\n", label, msg))
+							return(invisible(TRUE))
+						}
+						cat(sprintf("  [%s] skipping compute_lik_ratio_bootstrap_confidence_interval: non-finite or invalid confidence interval output\n", label))
+						return(invisible(TRUE))
+					}
+					cat(sprintf("  [%s] compute_lik_ratio_bootstrap_confidence_interval = %s\n", label, paste(param_boot_ci, collapse = ", ")))
 				}
-			)
-			if (!is.null(param_boot_ci)) {
-				if (!is.numeric(param_boot_ci) || length(param_boot_ci) != 2L || !all(is.finite(param_boot_ci)) || param_boot_ci[1] > param_boot_ci[2]) {
-					cat(sprintf("  [%s] skipping compute_lik_ratio_bootstrap_confidence_interval: non-finite or invalid confidence interval output\n", label))
-					return(invisible(TRUE))
-				}
-				cat(sprintf("  [%s] compute_lik_ratio_bootstrap_confidence_interval = %s\n", label, paste(param_boot_ci, collapse = ", ")))
 			}
 		}
 

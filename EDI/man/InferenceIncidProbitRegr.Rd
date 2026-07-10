@@ -110,7 +110,8 @@ Initialize a probit-regression inference object.
   verbose = FALSE,
   smart_cold_start_default = NULL,
   harden = TRUE,
-  optimization_alg = NULL
+  optimization_alg = NULL,
+  max_abs_reasonable_coef = 10
 )}\if{html}{\out{</div>}}
 }
 
@@ -131,6 +132,8 @@ design's imputed covariates.}
 \item{\code{harden}}{Whether to apply robustness measures.}
 
 \item{\code{optimization_alg}}{Optimization algorithm to use. Default is dispatched via policy.}
+
+\item{\code{max_abs_reasonable_coef}}{Cap for reasonable probit coefficients.}
 }
 \if{html}{\out{</div>}}
 }

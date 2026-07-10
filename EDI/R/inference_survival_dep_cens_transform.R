@@ -62,6 +62,42 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 			private$cached_values$s_beta_hat_T = NA_real_
 			private$cached_values$beta_hat_T
 		},
+		#' @description Reports jackknife bias correction as unavailable for this
+		#'   model; leave-one-out bias correction is unstable for the
+		#'   dependent-censoring transformation likelihood on small censored samples.
+		compute_jackknife_estimate = function(unit = "auto"){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_corrected_estimate = function(unit = "auto"){
+			self$compute_jackknife_estimate(unit = unit)
+		},
+		compute_jackknife_bias_estimate = function(unit = "auto"){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_std_error = function(unit = "auto"){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_standard_error = function(unit = "auto"){
+			self$compute_jackknife_std_error(unit = unit)
+		},
+		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			ci
+		},
 		#' @description Computes an approximate confidence interval.
 		#' @param alpha Confidence level.
 		compute_asymp_confidence_interval = function(alpha = 0.05){
@@ -100,7 +136,8 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 				y = private$y, dead = private$dead, X = X,
 				warm_start_params = private$get_fit_warm_start_for_length("params", n_params),
 				warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
-				smart_cold_start = private$smart_cold_start_default
+				smart_cold_start = private$smart_cold_start_default,
+				estimate_only = estimate_only
 			)
 			if (is.null(res) || !is.finite(res$b[2])){
 				return(NA_real_)
@@ -132,6 +169,7 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 					tryCatch(fast_dep_cens_transform_optim_cpp(
 						y = y, dead = dead, X = X_fit, warm_start_params = warm_start_params,
 						warm_start_fisher_info = warm_fisher,
+						estimate_only = TRUE,
 						smart_cold_start = private$smart_cold_start_default,
 						fixed_idx = j_treat, fixed_values = delta
 					), error = function(e) NULL)

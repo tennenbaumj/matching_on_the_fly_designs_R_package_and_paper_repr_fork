@@ -21,14 +21,14 @@ InferenceCountHurdlePoisson = R6::R6Class("InferenceCountHurdlePoisson",
 		#' @description Initialize a hurdle Poisson inference object.
 		#' @param des_obj A completed \code{Design} object with a count response.
 		#' @param model_formula Optional formula for the count submodel.
-		#' @param model_formula_hurdle Formula for the hurdle submodel. Defaults to
-		#'   \code{~ .}, meaning treatment plus all available covariates.
+		#' @param model_formula_hurdle Formula for the hurdle submodel. If
+		#'   \code{NULL} (default), it uses the same formula as \code{model_formula}.
 		#' @param use_rcpp Logical. If \code{TRUE} (default), use the internal Rcpp
 		#'   implementation. If \code{FALSE}, use \pkg{glmmTMB}.
 		#' @param verbose Whether to print progress messages.
 		#' @param smart_cold_start_default   Whether to use smart cold start values.
 		#' @param optimization_alg Optimization algorithm. Default is dispatched via policy.
-		initialize = function(des_obj, model_formula = NULL, model_formula_hurdle = ~ ., use_rcpp = TRUE, verbose = FALSE, smart_cold_start_default = NULL, optimization_alg = NULL){
+		initialize = function(des_obj, model_formula = NULL, model_formula_hurdle = NULL, use_rcpp = TRUE, verbose = FALSE, smart_cold_start_default = NULL, optimization_alg = NULL){
 			super$initialize(des_obj, model_formula = model_formula, model_formula_zero = model_formula_hurdle, use_rcpp = use_rcpp, verbose = verbose, smart_cold_start_default = smart_cold_start_default, optimization_alg = optimization_alg)
 		}
 	),
@@ -60,16 +60,22 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 		#' @description Initialize
 		#' @param des_obj A completed \code{Design} object.
 		#' @param model_formula Optional formula for covariate adjustment.
-		#' @param model_formula_hurdle Formula for the hurdle submodel. Defaults to
-		#'   \code{~ .}, meaning treatment plus all available covariates.
+		#' @param model_formula_hurdle Formula for the hurdle submodel. If
+		#'   \code{NULL} (default), it uses the same formula as \code{model_formula}.
 		#' @param verbose A flag indicating whether messages should be displayed.
 		#' @param smart_cold_start_default   Whether to use smart cold start values.
-		initialize = function(des_obj, model_formula = NULL, model_formula_hurdle = ~ ., verbose = FALSE, smart_cold_start_default = NULL){
+		initialize = function(des_obj, model_formula = NULL, model_formula_hurdle = NULL, verbose = FALSE, smart_cold_start_default = NULL){
 			if (should_run_asserts()) {
 				assertResponseType(des_obj$get_response_type(), "count")
-				assertFormula(model_formula_hurdle, null.ok = FALSE)
+				assertFormula(model_formula_hurdle, null.ok = TRUE)
 			}
 			super$initialize(des_obj, verbose = verbose, model_formula = model_formula, smart_cold_start_default = smart_cold_start_default)
+			if (is.null(model_formula_hurdle)) {
+				model_formula_hurdle = private$model_formula
+			}
+			if (should_run_asserts()) {
+				assertFormula(model_formula_hurdle, null.ok = FALSE)
+			}
 			if (should_run_asserts()) {
 				assertNoCensoring(private$any_censoring)
 			}
@@ -80,6 +86,9 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 		compute_asymp_confidence_interval = function(alpha = 0.05){
 			if (should_run_asserts()) {
 				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) {
+				return(private$count_likelihood_missing_ci(alpha))
 			}
 			private$shared()
 			if (should_run_asserts()) {
@@ -93,6 +102,7 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 			if (should_run_asserts()) {
 				assertNumeric(delta)
 			}
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			private$shared()
 			if (should_run_asserts()) {
 				private$assert_finite_se()
@@ -102,11 +112,15 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 		#' @description Compute gradient / likelihood-based alternatives
 		#' @param delta The null treatment effect (default 0).
 		compute_gradient_two_sided_pval = function(delta = 0){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "gradient")
 		},
 		#' @description Compute likelihood-based confidence interval
 		#' @param alpha The significance level (default 0.05).
 		compute_gradient_confidence_interval = function(alpha = 0.05){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) {
+				return(private$count_likelihood_missing_ci(alpha))
+			}
 			private$invert_test_pval_confidence_interval(alpha)
 		},
 		#' @description Computes the treatment effect estimate for a weighted bootstrap sample.
@@ -146,6 +160,7 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 				private$cache_nonestimable_estimate("hurdle_negbin_weighted_treatment_missing")
 				return(NA_real_)
 			}
+			private$clear_nonestimable_state()
 			private$cached_mod = mod
 			private$cached_values$count_likelihood_context = NULL
 			private$cached_values$beta_hat_T = as.numeric(cond_coef["w"])
@@ -153,6 +168,36 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 			private$cached_values$df = NA_real_
 			private$cached_values$full_coefficients = cond_coef
 			private$cached_values$beta_hat_T
+		},
+		#' @description Hurdle negative-binomial delete-one refits are unstable for
+		#'   jackknife inference; report explicit non-estimability.
+		compute_jackknife_estimate = function(unit = "auto"){
+			private$cache_nonestimable_se("hurdle_negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_corrected_estimate = function(unit = "auto"){
+			self$compute_jackknife_estimate(unit = unit)
+		},
+		compute_jackknife_bias_estimate = function(unit = "auto"){
+			private$cache_nonestimable_se("hurdle_negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_std_error = function(unit = "auto"){
+			private$cache_nonestimable_se("hurdle_negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_standard_error = function(unit = "auto"){
+			self$compute_jackknife_std_error(unit = unit)
+		},
+		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
+			private$cache_nonestimable_se("hurdle_negbin_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
+			private$cache_nonestimable_se("hurdle_negbin_jackknife_not_supported")
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			ci
 		}
 	),
 	private = list(
@@ -246,6 +291,9 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 		},
 		supports_likelihood_tests = function(){
 			TRUE
+		},
+		supports_lik_ratio_param_bootstrap_confidence_interval = function(){
+			FALSE
 		},
 		get_likelihood_test_spec = function(){
 			private$shared(estimate_only = FALSE)
@@ -352,6 +400,7 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 				return(NULL)
 			}
 			
+			private$clear_nonestimable_state()
 			private$cached_values$count_likelihood_context = list(X = fit$X, X_hurdle = fit$X_hurdle, j_treat = fit$j)
 			
 			out = list(
@@ -373,6 +422,7 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 			out
 		},
 		get_standard_error = function(){
+			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
 			private$shared()
 			as.numeric(private$cached_values$s_beta_hat_T)
 		},

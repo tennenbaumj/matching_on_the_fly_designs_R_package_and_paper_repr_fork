@@ -310,6 +310,24 @@ public:
     }
 
     Eigen::MatrixXd hessian(const Eigen::Ref<const Eigen::VectorXd>& params) {
+        {
+            int total_p = params.size();
+            Eigen::MatrixXd H(total_p, total_p);
+            H.setZero();
+            double h = 1e-6;
+            Eigen::VectorXd grad_at_params(total_p);
+            operator()(params, grad_at_params);
+
+            for (int i = 0; i < total_p; ++i) {
+                Eigen::VectorXd p_plus = params;
+                p_plus[i] += h;
+                Eigen::VectorXd g_plus(total_p);
+                operator()(p_plus, g_plus);
+                H.col(i) = (g_plus - grad_at_params) / h;
+            }
+            H = (H + H.transpose()) / 2.0;
+            return H;
+        }
         const int total_p = params.size();
         const Eigen::VectorXd beta_event = params.head(m_p);
         const Eigen::VectorXd beta_cens = params.segment(m_p, m_p);

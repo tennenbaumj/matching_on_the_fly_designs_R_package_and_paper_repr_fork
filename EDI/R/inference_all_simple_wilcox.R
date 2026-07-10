@@ -53,13 +53,11 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 			}
 			super$initialize(des_obj = des_obj, verbose = verbose, harden = TRUE, model_formula = model_formula, smart_cold_start_default = smart_cold_start_default)
 			private$max_resample_attempts = max_resample_attempts
-			if (should_run_asserts()) {
-				if (private$any_censoring){
-					stop(
-						"Wilcoxon rank-sum inference does not support censored survival data. ",
-						"Use InferenceSurvivalGehanWilcox for censored survival outcomes."
-					)
-				}
+			if (private$any_censoring){
+				stop(
+					"Wilcoxon rank-sum inference does not support censored survival data. ",
+					"Use InferenceSurvivalGehanWilcox for censored survival outcomes."
+				)
 			}
 		},
 		#' @description Returns the Hodges-Lehmann pseudo-median of all pairwise treatment-minus-control
@@ -102,6 +100,34 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 				private$cached_values$df = NA_real_
 			}
 			private$cached_values$beta_hat_T
+		},
+		#' @description Jackknife bias correction is unstable for the
+		#'   Hodges-Lehmann estimator; report explicit non-estimability.
+		compute_jackknife_estimate = function(unit = "auto"){
+			private$cache_nonestimable_estimate("wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_corrected_estimate = function(unit = "auto"){
+			self$compute_jackknife_estimate(unit = unit)
+		},
+		compute_jackknife_bias_estimate = function(unit = "auto"){
+			private$cache_nonestimable_estimate("wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_std_error = function(unit = "auto"){
+			private$cache_nonestimable_se("wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_standard_error = function(unit = "auto"){
+			self$compute_jackknife_std_error(unit = unit)
+		},
+		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
+			private$cache_nonestimable_se("wilcox_hl_jackknife_not_supported")
+			NA_real_
+		},
+		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
+			private$cache_nonestimable_se("wilcox_hl_jackknife_not_supported")
+			c(NA_real_, NA_real_)
 		}
 	),
 	private = list(

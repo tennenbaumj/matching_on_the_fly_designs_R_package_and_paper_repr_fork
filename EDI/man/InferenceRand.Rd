@@ -74,7 +74,7 @@ Set Custom Randomization Statistic Computation
 \if{html}{\out{<a id="method-InferenceRand-set_custom_randomization_statistic_cpp"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceRand-set_custom_randomization_statistic_cpp}{}}}
 \subsection{Method \code{set_custom_randomization_statistic_cpp()}}{
-Set Custom Randomization Statistic as a Pre-Compiled Rcpp Function
+Set Custom Randomization Statistic as a C++ Function
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceRand$set_custom_randomization_statistic_cpp(fn)}\if{html}{\out{</div>}}
 }
@@ -82,10 +82,12 @@ Set Custom Randomization Statistic as a Pre-Compiled Rcpp Function
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{fn}}{A compiled Rcpp function returning a scalar \code{double}. Must accept
-either \code{(NumericVector y, IntegerVector w)} or
+\item{\code{fn}}{Either a C++ source code string or a pre-compiled Rcpp function returning a
+scalar \code{double}. Must accept either \code{(NumericVector y, IntegerVector w)} or
 \code{(NumericVector y, IntegerVector w, IntegerVector dead)} as arguments.
-Compile with \code{Rcpp::cppFunction()} before passing. Pass \code{NULL} to clear.
+Passing a source string (recommended) enables safe use with parallel workers; passing
+a pre-compiled function works only in the main process (XPtrs become NULL when
+serialized to worker nodes). Pass \code{NULL} to clear.
 Cannot be combined with \code{set_custom_randomization_statistic_function}.}
 }
 \if{html}{\out{</div>}}
