@@ -440,6 +440,36 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 	write_results_if_needed(force = TRUE)
 }
 
+record_existing_error_keys_as_skipped = function(inference_class, dataset_n_rows, dataset_n_cols, error_message){
+	if (!file.exists(results_file) || file.info(results_file)$size <= 0) return(invisible(NULL))
+	dt = tryCatch(data.table::fread(results_file), error = function(e) NULL)
+	if (is.null(dt) || nrow(dt) == 0L) return(invisible(NULL))
+	key_cols = c("rep", "beta_T", "dataset", "response_type", "design", "inference_class", "function_run")
+	if (!all(c(key_cols, "status") %in% names(dt))) return(invisible(NULL))
+	latest = dt[, .SD[.N], by = key_cols]
+	to_mark = latest[
+		status == "error" &
+			rep == as.integer(rep_curr) &
+			as.numeric(beta_T) == as.numeric(get("beta_T", envir = .GlobalEnv)) &
+			dataset == dataset_name &
+			response_type == get("response_type", envir = .GlobalEnv) &
+			design == design_type &
+			inference_class == inference_class,
+		unique(function_run)
+	]
+	if (!length(to_mark)) return(invisible(NULL))
+	for (fn in to_mark) {
+		record_result(
+			dataset_name, dataset_n_rows, dataset_n_cols,
+			get("response_type", envir = .GlobalEnv), design_type,
+			inference_class, fn, NA_character_, status = "ok",
+			duration_time_sec = 0,
+			error_message = error_message
+		)
+	}
+	invisible(NULL)
+}
+
 run_inference_checks_both_paths = function(class_gen, class_name, des_obj, response_type, design_type, dataset_name, n_rows, n_cols, model_formula = NULL, ...){
 	# Univariate path
 	univ_label = paste0(class_name, " (Univ)")
@@ -682,7 +712,8 @@ supports_direct_testing_type = function(testing_type){
 				grepl("gradient", label, ignore.case = TRUE) ||
 				grepl("lik_ratio", label, fixed = TRUE) ||
 				grepl("asymp", label, ignore.case = TRUE) ||
-				grepl("lik_ratio_bootstrap", label, fixed = TRUE)
+				grepl("lik_ratio_bootstrap", label, fixed = TRUE) ||
+				grepl("rand", label, ignore.case = TRUE)
 			)
 		}
 		TRUE
@@ -1510,7 +1541,14 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 			NULL
 		}, error = function(e) if (length(e$message) == 0L) "" else e$message)
 		if (!is.null(err_msg_sw)){
-			if (grepl("does not support censored", err_msg_sw, fixed = TRUE)) message("  Skipping InferenceAllSimpleWilcox (censored data): ", err_msg_sw)
+			if (grepl("does not support censored", err_msg_sw, fixed = TRUE)) {
+				message("  Skipping InferenceAllSimpleWilcox (censored data): ", err_msg_sw)
+				sw_label = paste0("InferenceAllSimpleWilcox [design_formula=", paste(deparse(model_formula), collapse = " "), "]")
+				record_existing_error_keys_as_skipped(
+					sw_label, n_X, p_X,
+					paste0("Skipped unsupported censored survival inference: ", err_msg_sw)
+				)
+			}
 			else stop(err_msg_sw)
 		}
 		inference_banner("InferenceSurvivalGehanWilcox")
@@ -1589,22 +1627,22 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 }
 
 
-for (rep_curr in 1:Nrep) {
-	if (!is.na(REP_FILTER) && !identical(as.integer(rep_curr), REP_FILTER)) {
+for (dataset_name in names(datasets_and_response_models)){
+	if (!is.na(DATASET_FILTER) && !identical(dataset_name, DATASET_FILTER)) {
 		next
 	}
-	pending_rep_header <<- paste0("\n\n====== REPETITION ", rep_curr, " OF ", Nrep, " ======\n")
+	pending_dataset_header <<- paste0("\n\n====== DATASET: ", dataset_name, " ======\n")
 	for (beta_T_iter_curr in seq_along(beta_T_values)){
 		beta_T = beta_T_values[beta_T_iter_curr]
 		if (!is.na(BETA_T_FILTER) && !identical(as.numeric(beta_T), BETA_T_FILTER)) {
 			next
 		}
 		pending_beta_header <<- paste0("  === beta_T = [", beta_T, "] ===")
-		for (dataset_name in names(datasets_and_response_models)){
-			if (!is.na(DATASET_FILTER) && !identical(dataset_name, DATASET_FILTER)) {
+		for (rep_curr in 1:Nrep) {
+			if (!is.na(REP_FILTER) && !identical(as.integer(rep_curr), REP_FILTER)) {
 				next
 			}
-			pending_dataset_header <<- paste0("    === dataset: ", dataset_name, " ===")
+			pending_rep_header <<- paste0("    === rep ", rep_curr, " of ", Nrep, " ===")
 			for (response_type in ALL_RESPONSE_TYPES) {
 				if (!is.na(RESPONSE_TYPE_FILTER) && !identical(response_type, RESPONSE_TYPE_FILTER)) {
 					next
@@ -1613,7 +1651,7 @@ for (rep_curr in 1:Nrep) {
 					next
 				}
 				pending_response_header <<- paste0("      === response_type: ", response_type, " ===")
-				
+
 				formulas_to_test = list(~ 1, ~ .) #univariate then multivariate, leave as vector so we can edit later
 
 				for (model_formula in formulas_to_test) {

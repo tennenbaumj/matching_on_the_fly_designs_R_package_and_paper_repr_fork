@@ -488,25 +488,46 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 		#' @description Computes a design-conservative score confidence interval.
 		#' @param alpha Significance level.
 		compute_score_confidence_interval = function(alpha = 0.05){
-			ci_model = super$compute_score_confidence_interval(alpha = alpha)
 			private$shared_combined_hurdle()
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
 			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			ci_model = tryCatch(super$compute_score_confidence_interval(alpha = alpha), error = function(e) c(NA_real_, NA_real_))
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (all(is.finite(ci_design[1:2]))) private$clear_nonestimable_state()
 			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
 		},
 		#' @description Computes a design-conservative likelihood-ratio confidence interval.
 		#' @param alpha Significance level.
 		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
-			ci_model = super$compute_lik_ratio_confidence_interval(alpha = alpha)
 			private$shared_combined_hurdle()
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
 			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			ci_model = tryCatch(super$compute_lik_ratio_confidence_interval(alpha = alpha), error = function(e) c(NA_real_, NA_real_))
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (all(is.finite(ci_design[1:2]))) private$clear_nonestimable_state()
 			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
 		},
 		#' @description Computes a design-conservative gradient confidence interval.
 		#' @param alpha Significance level.
 		compute_gradient_confidence_interval = function(alpha = 0.05){
-			ci_model = super$compute_gradient_confidence_interval(alpha = alpha)
 			private$shared_combined_hurdle()
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
 			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			ci_model = tryCatch(super$compute_gradient_confidence_interval(alpha = alpha), error = function(e) c(NA_real_, NA_real_))
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (all(is.finite(ci_design[1:2]))) private$clear_nonestimable_state()
 			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
 		},
 		#' @description Compute asymp two sided pval
@@ -529,25 +550,46 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 		#' @description Computes a design-conservative score p-value.
 		#' @param delta Null treatment effect value.
 		compute_score_two_sided_pval = function(delta = 0){
-			p_model = super$compute_score_two_sided_pval(delta = delta)
 			private$shared_combined_hurdle()
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
 			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			p_model = tryCatch(super$compute_score_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (is.finite(p_design)) private$clear_nonestimable_state()
 			.conservative_kk_onelik_pval(p_model, p_design)
 		},
 		#' @description Computes a design-conservative likelihood-ratio p-value.
 		#' @param delta Null treatment effect value.
 		compute_lik_ratio_two_sided_pval = function(delta = 0){
-			p_model = super$compute_lik_ratio_two_sided_pval(delta = delta)
 			private$shared_combined_hurdle()
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
 			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			p_model = tryCatch(super$compute_lik_ratio_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (is.finite(p_design)) private$clear_nonestimable_state()
 			.conservative_kk_onelik_pval(p_model, p_design)
 		},
 		#' @description Computes a design-conservative gradient p-value.
 		#' @param delta Null treatment effect value.
 		compute_gradient_two_sided_pval = function(delta = 0){
-			p_model = super$compute_gradient_two_sided_pval(delta = delta)
 			private$shared_combined_hurdle()
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
 			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			p_model = tryCatch(super$compute_gradient_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (is.finite(p_design)) private$clear_nonestimable_state()
 			.conservative_kk_onelik_pval(p_model, p_design)
 		},
 		#' @description Compute asymp confidence interval
@@ -770,6 +812,61 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 			val = sum((eig$vectors[j, pos]^2) / eig$values[pos])
 			if (is.finite(val) && val >= 0) val else NA_real_
 		},
+		record_combined_hurdle_fit_summary = function(fit, X_model, X_fit, fallback_used = FALSE, fallback_reason = NULL){
+			model_names = colnames(X_model)
+			fit_names = colnames(X_fit)
+			if (is.null(model_names)) model_names = paste0("V", seq_len(ncol(X_model)))
+			if (is.null(fit_names)) fit_names = paste0("V", seq_len(ncol(X_fit)))
+			beta_fit = as.numeric(fit$b %||% fit$params[seq_along(fit_names)])
+			if (length(beta_fit) < length(fit_names)) return(invisible(NULL))
+			beta_full = rep(NA_real_, length(model_names))
+			names(beta_full) = model_names
+			beta_full[match(fit_names, model_names)] = beta_fit[seq_along(fit_names)]
+			
+			se_full = rep(NA_real_, length(model_names))
+			names(se_full) = model_names
+			vcov_fit = tryCatch({
+				info = as.matrix(fit$fisher_information %||% fit$information %||% fit$observed_information)
+				solve(info)
+			}, error = function(e) NULL)
+			se_log_sigma = NA_real_
+			if (!is.null(vcov_fit) && all(is.finite(vcov_fit))) {
+				diag_v = diag(vcov_fit)
+				if (length(diag_v) >= length(fit_names)) {
+					se_fit = sqrt(pmax(0, diag_v[seq_along(fit_names)]))
+					se_full[match(fit_names, model_names)] = se_fit
+				}
+				if (length(diag_v) >= length(fit_names) + 1L) {
+					se_log_sigma = sqrt(max(0, as.numeric(diag_v[length(fit_names) + 1L])))
+				}
+			}
+			
+			log_sigma = as.numeric(fit$log_sigma %||% fit$params[length(fit$params)] %||% NA_real_)[1L]
+			coef_all = c(beta_full, log_sigma = log_sigma)
+			se_all = c(se_full, log_sigma = se_log_sigma)
+			summary_table = matrix(NA_real_, nrow = length(coef_all), ncol = 4L)
+			rownames(summary_table) = names(coef_all)
+			colnames(summary_table) = c("Value", "Std. Error", "z value", "Pr(>|z|)")
+			summary_table[, 1L] = coef_all
+			summary_table[, 2L] = se_all
+			ok = is.finite(coef_all) & is.finite(se_all) & se_all > 0
+			summary_table[ok, 3L] = coef_all[ok] / se_all[ok]
+			summary_table[ok, 4L] = 2 * stats::pnorm(-abs(summary_table[ok, 3L]))
+			private$cached_values$full_coefficients = beta_full
+			private$cached_values$summary_table = summary_table
+			private$cached_values$model_fit_fallback = NULL
+			if (isTRUE(fallback_used)) {
+				private$cached_values$model_fit_fallback = list(
+					used = TRUE,
+					reason = fallback_reason %||% "full_kk_hurdle_poisson_onelik_fit_failed_to_converge",
+					requested_model = "full covariate-adjusted KK combined hurdle-Poisson likelihood",
+					fitted_model = "treatment-only KK combined hurdle-Poisson likelihood",
+					omitted_conditional = setdiff(model_names, fit_names),
+					family = "KK combined hurdle-Poisson"
+				)
+			}
+			invisible(NULL)
+		},
 		fit_combined_hurdle = function(dat, estimate_only = FALSE, fixed_idx = NULL, fixed_values = NULL, warm_start_params = NULL){
 			p = ncol(dat$X_fit)
 			n_params = p + 1L
@@ -867,6 +964,8 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))
 			if (!estimate_only && !is.null(private$cached_values$s_beta_hat_T)) return(invisible(NULL))
 			private$cached_values$likelihood_test_context = NULL
+			private$cached_values$model_fit_fallback = NULL
+			private$cached_mod = NULL
 			X_full = private$build_model_matrix()
 			reduced = private$reduce_design_matrix_preserving_treatment(X_full)
 			X_fit = reduced$X
@@ -875,8 +974,32 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 				private$cache_nonestimable_estimate("kk_hurdle_poisson_onelik_design_unusable")
 				return(invisible(NULL))
 			}
+			X_model = X_fit
 			dat = private$build_combined_hurdle_data(X_fit, reduced$j_treat)
 			fit = private$fit_combined_hurdle(dat, estimate_only = estimate_only)
+			fallback_used = FALSE
+			fallback_reason = NULL
+			if ((is.null(fit) || !isTRUE(fit$converged) || length(fit$b) < dat$j_treat || !is.finite(fit$b[dat$j_treat])) &&
+			    ncol(X_fit) > 2L) {
+				keep = sort(unique(c(1L, reduced$j_treat)))
+				if (length(keep) == 2L) {
+					X_fit_fallback = X_fit[, keep, drop = FALSE]
+					j_treat_fallback = match(colnames(X_fit)[reduced$j_treat], colnames(X_fit_fallback))
+					if (length(j_treat_fallback) == 1L && is.finite(j_treat_fallback)) {
+						dat_fallback = private$build_combined_hurdle_data(X_fit_fallback, j_treat_fallback)
+						fit_fallback = private$fit_combined_hurdle(dat_fallback, estimate_only = estimate_only)
+						if (!is.null(fit_fallback) && isTRUE(fit_fallback$converged) &&
+						    length(fit_fallback$b) >= dat_fallback$j_treat &&
+						    is.finite(fit_fallback$b[dat_fallback$j_treat])) {
+							X_fit = X_fit_fallback
+							dat = dat_fallback
+							fit = fit_fallback
+							fallback_used = TRUE
+							fallback_reason = "full_kk_hurdle_poisson_onelik_fit_failed_to_converge"
+						}
+					}
+				}
+			}
 			if (is.null(fit) || !isTRUE(fit$converged) || length(fit$b) < dat$j_treat || !is.finite(fit$b[dat$j_treat])) {
 				private$cache_nonestimable_estimate("kk_hurdle_poisson_onelik_fit_failed")
 				return(invisible(NULL))
@@ -886,6 +1009,13 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 			private$cached_values$df = Inf
 			private$set_fit_warm_start(as.numeric(fit$params), "params", fisher = fit$fisher_information)
 			private$cached_values$likelihood_test_context = dat
+			private$record_combined_hurdle_fit_summary(
+				fit = fit,
+				X_model = X_model,
+				X_fit = X_fit,
+				fallback_used = fallback_used,
+				fallback_reason = fallback_reason
+			)
 			if (!estimate_only) {
 				se = sqrt(as.numeric(fit$ssq_b_T))
 				private$cached_values$s_beta_hat_T = if (is.finite(se) && se > 0 && se <= private$max_abs_reasonable_coef) se else NA_real_
@@ -913,6 +1043,24 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 			}
 			dat = private$build_weighted_combined_hurdle_data(X_fit, reduced$j_treat, row_weights = row_weights)
 			fit = private$fit_combined_hurdle(dat, estimate_only = estimate_only)
+			if ((is.null(fit) || !isTRUE(fit$converged) || length(fit$b) < dat$j_treat || !is.finite(fit$b[dat$j_treat])) &&
+			    ncol(X_fit) > 2L) {
+				keep = sort(unique(c(1L, reduced$j_treat)))
+				if (length(keep) == 2L) {
+					X_fit_fallback = X_fit[, keep, drop = FALSE]
+					j_treat_fallback = match(colnames(X_fit)[reduced$j_treat], colnames(X_fit_fallback))
+					if (length(j_treat_fallback) == 1L && is.finite(j_treat_fallback)) {
+						dat_fallback = private$build_weighted_combined_hurdle_data(X_fit_fallback, j_treat_fallback, row_weights = row_weights)
+						fit_fallback = private$fit_combined_hurdle(dat_fallback, estimate_only = estimate_only)
+						if (!is.null(fit_fallback) && isTRUE(fit_fallback$converged) &&
+						    length(fit_fallback$b) >= dat_fallback$j_treat &&
+						    is.finite(fit_fallback$b[dat_fallback$j_treat])) {
+							dat = dat_fallback
+							fit = fit_fallback
+						}
+					}
+				}
+			}
 			if (is.null(fit) || !isTRUE(fit$converged) || length(fit$b) < dat$j_treat || !is.finite(fit$b[dat$j_treat])) {
 				private$cache_nonestimable_estimate("kk_hurdle_poisson_onelik_weighted_fit_failed")
 				return(NA_real_)
@@ -1054,32 +1202,92 @@ InferenceCountKKCondPoissonOneLik = R6::R6Class("InferenceCountKKCondPoissonOneL
 		#' @description Computes a design-adjusted score confidence interval.
 		#' @param alpha Numeric. Significance level (default 0.05).
 		compute_score_confidence_interval = function(alpha = 0.05){
-			self$compute_wald_confidence_interval(alpha = alpha)
+			private$shared_combined_cpoisson(estimate_only = FALSE)
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
+			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			ci_model = tryCatch(super$compute_score_confidence_interval(alpha = alpha), error = function(e) c(NA_real_, NA_real_))
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (all(is.finite(ci_design[1:2]))) private$clear_nonestimable_state()
+			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
 		},
 		#' @description Computes a design-adjusted likelihood-ratio confidence interval.
 		#' @param alpha Numeric. Significance level (default 0.05).
 		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
-			self$compute_wald_confidence_interval(alpha = alpha)
+			private$shared_combined_cpoisson(estimate_only = FALSE)
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
+			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			ci_model = tryCatch(super$compute_lik_ratio_confidence_interval(alpha = alpha), error = function(e) c(NA_real_, NA_real_))
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (all(is.finite(ci_design[1:2]))) private$clear_nonestimable_state()
+			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
 		},
 		#' @description Computes a design-adjusted gradient confidence interval.
 		#' @param alpha Numeric. Significance level (default 0.05).
 		compute_gradient_confidence_interval = function(alpha = 0.05){
-			self$compute_wald_confidence_interval(alpha = alpha)
+			private$shared_combined_cpoisson(estimate_only = FALSE)
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
+			ci_design = private$compute_z_or_t_ci_from_s_and_df(alpha)
+			ci_model = tryCatch(super$compute_gradient_confidence_interval(alpha = alpha), error = function(e) c(NA_real_, NA_real_))
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (all(is.finite(ci_design[1:2]))) private$clear_nonestimable_state()
+			.conservative_kk_onelik_ci(ci_model, ci_design, alpha)
 		},
 		#' @description Computes a design-adjusted score p-value.
 		#' @param delta Numeric. Null treatment effect value (default 0).
 		compute_score_two_sided_pval = function(delta = 0){
-			self$compute_wald_two_sided_pval(delta = delta)
+			private$shared_combined_cpoisson(estimate_only = FALSE)
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
+			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			p_model = tryCatch(super$compute_score_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (is.finite(p_design)) private$clear_nonestimable_state()
+			.conservative_kk_onelik_pval(p_model, p_design)
 		},
 		#' @description Computes a design-adjusted likelihood-ratio p-value.
 		#' @param delta Numeric. Null treatment effect value (default 0).
 		compute_lik_ratio_two_sided_pval = function(delta = 0){
-			self$compute_wald_two_sided_pval(delta = delta)
+			private$shared_combined_cpoisson(estimate_only = FALSE)
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
+			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			p_model = tryCatch(super$compute_lik_ratio_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (is.finite(p_design)) private$clear_nonestimable_state()
+			.conservative_kk_onelik_pval(p_model, p_design)
 		},
 		#' @description Computes a design-adjusted gradient p-value.
 		#' @param delta Numeric. Null treatment effect value (default 0).
 		compute_gradient_two_sided_pval = function(delta = 0){
-			self$compute_wald_two_sided_pval(delta = delta)
+			private$shared_combined_cpoisson(estimate_only = FALSE)
+			beta_design = private$cached_values$beta_hat_T
+			se_design = private$cached_values$s_beta_hat_T
+			df_design = private$cached_values$df
+			p_design = private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			p_model = tryCatch(super$compute_gradient_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			private$cached_values$beta_hat_T = beta_design
+			private$cached_values$s_beta_hat_T = se_design
+			private$cached_values$df = df_design
+			if (is.finite(p_design)) private$clear_nonestimable_state()
+			.conservative_kk_onelik_pval(p_model, p_design)
 		},
 		#' @description Creates the bootstrap distribution of the estimate for the treatment effect.
 		#' @param B Integer. Number of bootstrap samples (default 501).

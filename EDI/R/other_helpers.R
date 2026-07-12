@@ -521,13 +521,6 @@ NULL
 	}
 
 	# --- Fast path 2: inference-level structural cache (bootstrap case) ---
-	if (!is.null(private_env$xm_structural) &&
-	    identical(m_vec, private_env$xm_m_vec) &&
-	    ncol(X) == ncol(private_env$xm_structural$X_reservoir)){
-		wy = compute_matching_wy_stats_cpp(as.integer(w), as.numeric(y), as.integer(m_vec))
-		return(c(private_env$xm_structural, wy))
-	}
-
 	# --- Full computation ---
 	full = compute_zhang_match_data_cpp(as.matrix(X), as.numeric(y), as.integer(w), as.integer(m_vec))
 	structural = full[c("m", "X_matched_diffs", "X_matched_diffs_full", "X_reservoir")]
@@ -541,13 +534,7 @@ NULL
 		if (identical(m_vec, des_m)){
 			des_priv$xm_structural = structural
 			des_priv$xm_m_vec      = m_vec
-		} else {
-			private_env$xm_structural = structural
-			private_env$xm_m_vec      = m_vec
 		}
-	} else {
-		private_env$xm_structural = structural
-		private_env$xm_m_vec      = m_vec
 	}
 	full
 }
@@ -573,13 +560,6 @@ NULL
 		return(c(des_priv$lin_xm_structural, wy))
 	}
 
-	if (!is.null(private_env$lin_xm_structural) &&
-	    identical(m_vec, private_env$lin_xm_m_vec) &&
-	    ncol(X) == ncol(private_env$lin_xm_structural$X_reservoir)){
-		wy = compute_matching_lin_wy_stats_cpp(as.integer(w), as.numeric(y), as.integer(m_vec))
-		return(c(private_env$lin_xm_structural, wy))
-	}
-
 	full = compute_matching_lin_match_data_cpp(as.matrix(X), as.numeric(y), as.integer(w), as.integer(m_vec))
 	structural = full[c("m", "X_matched_diffs_full", "X_matched_means_full", "X_reservoir")]
 
@@ -590,13 +570,7 @@ NULL
 		if (identical(m_vec, des_m)){
 			des_priv$lin_xm_structural = structural
 			des_priv$lin_xm_m_vec      = m_vec
-		} else {
-			private_env$lin_xm_structural = structural
-			private_env$lin_xm_m_vec      = m_vec
 		}
-	} else {
-		private_env$lin_xm_structural = structural
-		private_env$lin_xm_m_vec      = m_vec
 	}
 	full
 }

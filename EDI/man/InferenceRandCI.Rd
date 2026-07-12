@@ -136,19 +136,28 @@ Computes a randomization-based confidence interval.
 \item{\code{args_for_type}}{Optional arguments keyed by \code{type}.}
 
 \item{\code{ci_search_control}}{Optional control list for randomization-CI search. Supported
-entries are \code{fallback}, \code{seed}, \code{max_radius_se_mult},
-\code{max_radius_scale_mult}, \code{max_expansions}, \code{seed_boot_B},
-Monte Carlo settings \code{mc_enable}, \code{mc_batch_size},
+entries are \code{fallback}, \code{seed}, \code{max_radius_se_mult} (default 25),
+\code{max_radius_scale_mult} (default 6), \code{max_expansions} (default 7),
+\code{seed_boot_B}, Monte Carlo settings \code{mc_enable}, \code{mc_batch_size},
 \code{mc_min_draws}, and \code{mc_conf_level}, midpoint-cache settings
 \code{pval_cache_enable} and \code{pval_cache_resolution}, and model-fit
 reuse settings \code{fit_warm_start_enable} and
 \code{fit_reuse_factorizations}. Set \code{mc_enable = FALSE} to force
-full enumeration of all requested randomization draws.}
+full enumeration of all requested randomization draws.
+The search radius is \code{max(max_radius_se_mult * se_guess, max_radius_scale_mult * sd(y))}.
+When the randomization p-value does not drop below \code{alpha/2} anywhere within
+the search radius (e.g. the test has low power or the design has few unique
+permutations), a \emph{conservative} CI bound is returned at the search boundary
+rather than \code{NA}. This guarantees a valid (though possibly wide) interval.
+Each such event emits a \code{message()} and increments the private field
+\code{rand_ci_conservative_count} for monitoring.}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-Randomization CI.
+Randomization CI. Bounds may be conservative (wider than necessary) when the
+  p-value inversion cannot be completed within the search radius; see
+  \code{ci_search_control} for details.
 }
 }
 \if{html}{\out{<hr>}}

@@ -126,7 +126,7 @@ InferenceOrdinalCloglogRegr = R6::R6Class("InferenceOrdinalCloglogRegr",
 						fast_ordinal_cloglog_regression_cpp(
 							X_fit, y_sim,
 							warm_start_params = start %||% full_fit_boot$params,
-							fixed_idx = j, fixed_values = d,
+							fixed_idx = j, fixed_values = -d,
 							smart_cold_start = TRUE
 						),
 						error = function(e) NULL
@@ -152,7 +152,7 @@ InferenceOrdinalCloglogRegr = R6::R6Class("InferenceOrdinalCloglogRegr",
 					res = tryCatch(
 						fast_ordinal_cloglog_regression_cpp(
 							X_fit, y,
-							fixed_idx = j_treat, fixed_values = delta,
+							fixed_idx = j_treat, fixed_values = -delta,
 							warm_start_params = start %||% private$get_fit_warm_start_for_length("params", length(ctx$full_params)),
 							warm_start_fisher_info = private$get_fit_warm_start_fisher(length(ctx$full_params)),
 							smart_cold_start = private$smart_cold_start_default
@@ -166,7 +166,7 @@ InferenceOrdinalCloglogRegr = R6::R6Class("InferenceOrdinalCloglogRegr",
 					as.numeric(fit$params)
 				},
 				score = function(fit){
-					get_ordinal_cloglog_regression_score_cpp(X_fit, y, as.numeric(fit$params))
+					-get_ordinal_cloglog_regression_score_cpp(X_fit, y, as.numeric(fit$params))
 				},
 				observed_information = function(fit){
 					-get_ordinal_cloglog_regression_hessian_cpp(X_fit, y, as.numeric(fit$params))

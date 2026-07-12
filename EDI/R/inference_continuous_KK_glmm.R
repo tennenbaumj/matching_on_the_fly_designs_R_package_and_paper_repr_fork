@@ -32,13 +32,26 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 		#' @param use_rcpp Logical. If \code{TRUE} (default), use the optimised Rcpp
 		#'   Gaussian LMM implementation (no external package required). If \code{FALSE},
 		#'   use \pkg{glmmTMB}.
+		#' @param use_gls_fast_path Logical. If \code{TRUE} (default), use a fast GLS
+		#'   estimator (no optimisation) for \code{estimate_only} calls during
+		#'   randomisation inference once variance components are cached from a prior
+		#'   full fit.  Statistically exact: fixing VC at the null-fit MLE and
+		#'   permuting only the treatment assignment gives a valid permutation test by
+		#'   exchangeability.  Set \code{FALSE} to always run full L-BFGS.
+		#' @param use_gls_fast_path_bootstrap Logical. If \code{TRUE}, also use the
+		#'   fast GLS estimator for non-studentised bootstrap draws
+		#'   (\code{estimate_only = TRUE} weighted calls).  Asymptotically valid by
+		#'   the plug-in principle (VC orthogonal to beta_T in the Fisher information),
+		#'   but not exact in finite samples.  Default \code{FALSE}.
 		#' @param verbose Whether to print progress messages.
 		#' @param smart_cold_start_default Whether to use smart cold start values.
 		#' @param optimization_alg The optimization algorithm to use. Default is dispatched via policy.
-		initialize = function(des_obj, model_formula = NULL, use_rcpp = TRUE, verbose = FALSE, smart_cold_start_default = NULL, optimization_alg = NULL){
+		initialize = function(des_obj, model_formula = NULL, use_rcpp = TRUE, use_gls_fast_path = TRUE, use_gls_fast_path_bootstrap = FALSE, verbose = FALSE, smart_cold_start_default = NULL, optimization_alg = NULL){
 			if (should_run_asserts()) {
 				assertFormula(model_formula, null.ok = TRUE)
 				assertFlag(use_rcpp)
+				assertFlag(use_gls_fast_path)
+				assertFlag(use_gls_fast_path_bootstrap)
 			}
 			# If using Rcpp, skip glmmTMB package check in the parent initialize.
 			if (use_rcpp) private$skip_glmm_pkg_check = TRUE
@@ -46,6 +59,8 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 			super$initialize(des_obj, model_formula = model_formula, verbose = verbose, smart_cold_start_default = smart_cold_start_default)
 			private$init_kk_glmm_shared(des_obj)
 			private$use_rcpp = use_rcpp
+			private$use_gls_fast_path = use_gls_fast_path
+			private$use_gls_fast_path_bootstrap = use_gls_fast_path_bootstrap
 		},
 		#' @description Compute the treatment effect estimate.
 		#' @param estimate_only If TRUE, skip variance component calculations.
@@ -63,6 +78,21 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 				self$compute_estimate(estimate_only = estimate_only)
 				beta_hat_T = as.numeric(private$cached_values$beta_hat_T)[1L]
 				if (is.finite(beta_hat_T)) {
+					private$cached_values$df = Inf
+					private$cached_values$summary_table = NULL
+					return(private$cached_values$beta_hat_T)
+				}
+			}
+			if (isTRUE(private$use_rcpp)) {
+				rcpp_result = private$weighted_rcpp_estimate(row_weights, estimate_only = estimate_only)
+				if (!is.null(rcpp_result)) {
+					if (is.list(rcpp_result)) {
+						private$cached_values$beta_hat_T = rcpp_result$beta
+						private$cached_values$s_beta_hat_T = rcpp_result$se
+					} else {
+						private$cached_values$beta_hat_T = as.numeric(rcpp_result)[1L]
+						private$cached_values$s_beta_hat_T = NA_real_
+					}
 					private$cached_values$df = Inf
 					private$cached_values$summary_table = NULL
 					return(private$cached_values$beta_hat_T)
@@ -95,6 +125,9 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 	)),
 	private = utils::modifyList(as.list(InferenceMixinKKGLMMShared$private), list(
 		use_rcpp = TRUE,
+		use_gls_fast_path = TRUE,
+		use_gls_fast_path_bootstrap = FALSE,
+		cached_vc_params = NULL,   # c(log_sigma_e, log_sigma_b) from last full Rcpp fit
 		glmm_response_type = function() "continuous",
 		glmm_family        = function() stats::gaussian(link = "identity"),
 		get_complexity_tier = function() "heavy",
@@ -135,8 +168,33 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 			if (length(j_T_r) == 0L) j_T_r = 2L   # fallback: second column
 			
 			start_len = ncol(X_fit) + 2L # beta + log_sigma + log_tau
+
+			# GLS fast path: skip L-BFGS for estimate_only calls when VC is cached.
+			# Exact for permutation tests: fixing VC at null-fit MLE and permuting w
+			# gives a valid test statistic by exchangeability.
+			if (estimate_only && isTRUE(private$use_gls_fast_path) && !is.null(private$cached_vc_params)) {
+				gls_b = tryCatch(
+					EDI:::fast_gaussian_lmm_gls_cpp(
+						X            = X_fit,
+						y            = as.numeric(private$y),
+						group_id     = as.integer(group_id),
+						log_sigma_e  = private$cached_vc_params[1L],
+						log_sigma_b  = private$cached_vc_params[2L]
+					),
+					error = function(e) NULL
+				)
+				if (!is.null(gls_b) && all(is.finite(gls_b))) {
+					beta_hat_T_gls = as.numeric(gls_b[j_T_r])
+					if (is.finite(beta_hat_T_gls) && abs(beta_hat_T_gls) <= private$max_abs_reasonable_coef) {
+						private$cached_values$beta_hat_T = beta_hat_T_gls
+						private$cached_values$df = Inf
+						return(invisible(NULL))
+					}
+				}
+			}
+
 			ws_args = private$get_optimal_warm_start_config(start_len)
-			
+
 			fit = tryCatch(
 				fast_gaussian_lmm_cpp(
 					X             = X_fit,
@@ -159,6 +217,8 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 				return(private$shared_glmm_tmb(estimate_only = estimate_only))
 			}
 			private$cached_mod = fit
+			p_ncol = ncol(X_fit)
+			private$cached_vc_params = as.numeric(fit$b[c(p_ncol + 1L, p_ncol + 2L)])
 			full_params = as.numeric(c(fit$b, fit$log_sigma, fit$log_tau))
 			private$set_fit_warm_start(full_params, "params", fisher = fit$fisher_information)
 			private$cached_values$likelihood_test_context = list(
@@ -224,6 +284,70 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 					as.numeric(fit$neg_loglik %||% fit$neg_ll)
 				}
 			)
+		},
+		# Fast weighted LMM fit for bootstrap iterations — avoids glmmTMB entirely.
+		weighted_rcpp_estimate = function(row_weights, estimate_only = TRUE){
+			m_vec = private$m
+			if (is.null(m_vec)) m_vec = rep(NA_integer_, private$n)
+			m_vec[is.na(m_vec)] = 0L
+			group_id = m_vec
+			reservoir_idx = which(group_id == 0L)
+			if (length(reservoir_idx) > 0L)
+				group_id[reservoir_idx] = max(group_id) + seq_along(reservoir_idx)
+			X_fit = private$create_design_matrix()
+			if ("treatment" %in% colnames(X_fit))
+				colnames(X_fit)[colnames(X_fit) == "treatment"] = "w"
+			X_fit = as.matrix(X_fit)
+			j_T_r = which(colnames(X_fit) == "w")
+			if (length(j_T_r) == 0L) j_T_r = 2L
+
+			# GLS fast path for non-studentised bootstrap (opt-in, default FALSE).
+			# Asymptotically valid via plug-in principle; not exact in finite samples.
+			if (estimate_only && isTRUE(private$use_gls_fast_path_bootstrap) && !is.null(private$cached_vc_params)) {
+				gls_b = tryCatch(
+					EDI:::fast_gaussian_lmm_gls_cpp(
+						X            = X_fit,
+						y            = as.numeric(private$y),
+						group_id     = as.integer(group_id),
+						log_sigma_e  = private$cached_vc_params[1L],
+						log_sigma_b  = private$cached_vc_params[2L],
+						weights      = as.numeric(row_weights)
+					),
+					error = function(e) NULL
+				)
+				if (!is.null(gls_b) && all(is.finite(gls_b))) {
+					beta_hat_T_gls = as.numeric(gls_b[j_T_r])
+					if (is.finite(beta_hat_T_gls) && abs(beta_hat_T_gls) <= private$max_abs_reasonable_coef) {
+						return(beta_hat_T_gls)
+					}
+				}
+			}
+
+			start_len = ncol(X_fit) + 2L
+			ws_args = private$get_optimal_warm_start_config(start_len)
+			fit = tryCatch(
+				EDI:::fast_gaussian_lmm_cpp(
+					X             = X_fit,
+					y             = as.numeric(private$y),
+					group_id      = as.integer(group_id),
+					warm_start_params = ws_args$start_params,
+					estimate_only = estimate_only,
+					maxit         = 300L,
+					eps_g         = 1e-6,
+					optimization_alg = private$optimization_alg,
+					warm_start_fisher_info = ws_args$warm_start_fisher_info,
+					weights       = as.numeric(row_weights)
+				),
+				error = function(e) NULL
+			)
+			if (is.null(fit) || !isTRUE(fit$converged)) return(NULL)
+			beta_hat_T = as.numeric(fit$b[j_T_r])
+			if (!is.finite(beta_hat_T) || abs(beta_hat_T) > private$max_abs_reasonable_coef) return(NULL)
+			if (estimate_only) return(beta_hat_T)
+			vcov = fit$vcov
+			se = if (!is.null(vcov) && is.finite(vcov[j_T_r, j_T_r]) && vcov[j_T_r, j_T_r] > 0)
+				sqrt(vcov[j_T_r, j_T_r]) else NA_real_
+			list(beta = beta_hat_T, se = se)
 		},
 		supports_lik_ratio_param_bootstrap = function() isTRUE(private$use_rcpp),
 		simulate_under_lik_null = function(spec, delta, null_fit){

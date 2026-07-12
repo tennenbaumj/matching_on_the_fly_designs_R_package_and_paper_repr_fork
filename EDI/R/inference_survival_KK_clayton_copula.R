@@ -101,24 +101,121 @@ InferenceSurvivalKKClaytonCopulaIVWC = R6::R6Class("InferenceSurvivalKKClaytonCo
 		best_par = NULL,
 		best_X_colnames = NULL,
 		cached_mod = NULL,
+		best_X_colnames_matched = NULL,
+		best_X_colnames_reservoir = NULL,
+		cached_vc_params_matched = NULL,
+		cached_vc_params_reservoir = NULL,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		supports_likelihood_tests = function() FALSE,
 		max_abs_reasonable_coef = 1e4,
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
-			# Re-read design variables which might have been transformed during randomization
 			private$w = private$des_obj_priv_int$w
 			private$y = private$des_obj_priv_int$y
 			private$dead = private$des_obj_priv_int$dead
-			
-			# Recompute basic match data for the new w/y/dead
 			private$compute_basic_match_data()
-			
-			# Clear cached design candidates to allow recalculation if needed
-			private$cached_values$clayton_design_candidates = NULL
-			
-			# Use the same joint-likelihood logic for the point estimate
-			private$shared(estimate_only = estimate_only)
-			private$cached_values$beta_hat_T
+			if (is.null(private$best_X_colnames_matched) && is.null(private$best_X_colnames_reservoir)){
+				private$shared()
+			}
+			if (is.null(private$best_X_colnames_matched) && is.null(private$best_X_colnames_reservoir)){
+				return(NA_real_)
+			}
+			KKstats = private$cached_values$KKstats
+			if (is.null(KKstats)) return(NA_real_)
+			m = KKstats$m
+			nRT = KKstats$nRT
+			nRC = KKstats$nRC
+			X_data = private$get_X()
+			m_vec = private$m
+			if (is.null(m_vec)) m_vec = rep(NA_integer_, private$n)
+			m_vec[is.na(m_vec)] = 0L
+			# Matched component
+			beta_m = NA_real_
+			if (m > 0 && !is.null(private$best_X_colnames_matched)) {
+				i_matched = which(m_vec > 0L)
+				cov_cols_m = setdiff(private$best_X_colnames_matched, "w")
+				X_cand_m = cbind(w = private$w[i_matched], X_data[i_matched, intersect(cov_cols_m, colnames(X_data)), drop = FALSE])
+				if (!is.null(private$cached_vc_params_matched) && all(is.finite(private$cached_vc_params_matched))) {
+					X_m_int = cbind("(Intercept)" = 1, X_cand_m)
+					p_m = ncol(X_m_int)
+					pair_idx_m_r = .complete_pair_index_matrix(m_vec[i_matched])
+					pair_idx_m_0 = if (nrow(pair_idx_m_r) > 0L) pair_idx_m_r - 1L else matrix(0L, 0L, 2L)
+					warm_m = private$get_fit_warm_start_for_length("params", p_m + 2L)
+					if (is.null(warm_m) || length(warm_m) != p_m + 2L)
+						warm_m = c(rep(0, p_m), private$cached_vc_params_matched)
+					fit_fast_m = tryCatch(
+						fast_clayton_weibull_aft_optim_cpp(
+							X = as.matrix(X_m_int),
+							y = as.numeric(private$y[i_matched]),
+							dead = as.numeric(private$dead[i_matched]),
+							pair_idx = pair_idx_m_0,
+							singleton_rows = integer(0),
+							warm_start_params = warm_m,
+							estimate_only = TRUE,
+							optimization_alg = private$optimization_alg,
+							fixed_idx = as.integer(c(p_m + 1L, p_m + 2L)),
+							fixed_values = as.numeric(private$cached_vc_params_matched)
+						), error = function(e) NULL
+					)
+					if (!is.null(fit_fast_m) && isTRUE(fit_fast_m$converged) && length(fit_fast_m$params) >= 2L)
+						beta_m = as.numeric(fit_fast_m$params[2L])
+				}
+				if (!is.finite(beta_m)) {
+					fit_m = .fit_clayton_weibull_aft(
+						y = private$y[i_matched], dead = private$dead[i_matched],
+						X = X_cand_m, pair_id = m_vec[i_matched], estimate_only = TRUE,
+						optimization_alg = private$optimization_alg
+					)
+					if (!is.null(fit_m) && is.finite(fit_m$beta)) beta_m = fit_m$beta
+				}
+			}
+			# Reservoir component
+			beta_r = NA_real_
+			if (nRT > 0 && nRC > 0 && !is.null(private$best_X_colnames_reservoir)) {
+				i_reservoir = which(m_vec == 0L)
+				y_r = private$y[i_reservoir]
+				w_r = private$w[i_reservoir]
+				dead_r = private$dead[i_reservoir]
+				cov_cols_r = setdiff(private$best_X_colnames_reservoir, "w")
+				X_cov_r = X_data[i_reservoir, intersect(cov_cols_r, colnames(X_data)), drop = FALSE]
+				X_r = cbind(w = w_r, X_cov_r)
+				if (!is.null(private$cached_vc_params_reservoir) && is.finite(private$cached_vc_params_reservoir[1L])) {
+					X_r_int = cbind("(Intercept)" = 1, as.matrix(X_r))
+					p_r = ncol(X_r_int)
+					fit_fast_r = tryCatch(
+						fast_weibull_regression_cpp(
+							y = as.numeric(y_r), dead = as.numeric(dead_r), X = X_r_int,
+							estimate_only = TRUE,
+							fixed_idx = as.integer(p_r),
+							fixed_values = as.numeric(private$cached_vc_params_reservoir[1L])
+						), error = function(e) NULL
+					)
+					if (!is.null(fit_fast_r) && isTRUE(fit_fast_r$converged) && length(fit_fast_r$b) >= 2L)
+						beta_r = as.numeric(fit_fast_r$b[2L])
+				}
+				if (!is.finite(beta_r)) {
+					fit_r = .fit_standard_weibull_aft_from_matrix(
+						y = y_r, dead = dead_r, X = X_r, estimate_only = TRUE
+					)
+					if (!is.null(fit_r) && is.finite(fit_r$beta)) beta_r = fit_r$beta
+				}
+			}
+			# Pooling
+			m_ok = is.finite(beta_m)
+			r_ok = is.finite(beta_r)
+			if (m_ok && r_ok) {
+				ssq_m_orig = private$cached_values$ssq_beta_T_matched
+				ssq_r_orig = private$cached_values$ssq_beta_T_reservoir
+				if (!is.null(ssq_m_orig) && !is.null(ssq_r_orig) && is.finite(ssq_m_orig) && is.finite(ssq_r_orig)) {
+					w_star = ssq_r_orig / (ssq_r_orig + ssq_m_orig)
+					return(w_star * beta_m + (1 - w_star) * beta_r)
+				}
+				return(0.5 * beta_m + 0.5 * beta_r)
+			} else if (m_ok) {
+				return(beta_m)
+			} else if (r_ok) {
+				return(beta_r)
+			}
+			NA_real_
 		},
 		assert_finite_se = function(){
 			if (!is.finite(private$cached_values$s_beta_hat_T)){
@@ -249,6 +346,9 @@ InferenceSurvivalKKClaytonCopulaIVWC = R6::R6Class("InferenceSurvivalKKClaytonCo
 			if (!is.null(fit) && is.finite(fit$beta)){
 				private$cached_values$beta_T_matched = fit$beta
 				private$cached_values$ssq_beta_T_matched = if (estimate_only) NA_real_ else fit$ssq
+				private$best_X_colnames_matched = colnames(X_fit)
+				if (!is.null(fit$best_par) && length(fit$best_par) >= 3L)
+					private$cached_vc_params_matched = as.numeric(tail(fit$best_par, 2L))
 			}
 		},
 		weibull_for_reservoir = function(estimate_only = FALSE){
@@ -291,13 +391,26 @@ InferenceSurvivalKKClaytonCopulaIVWC = R6::R6Class("InferenceSurvivalKKClaytonCo
 					dead = dead_r,
 					X = Xcand,
 					estimate_only = estimate_only,
-					starts = if (!is.null(private$get_fit_warm_start_for_length("params", n_params))) 
+					starts = if (!is.null(private$get_fit_warm_start_for_length("params", n_params)))
 					             list(private$get_fit_warm_start_for_length("params", n_params)) else NULL,
 					warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params)
 				)
 				if (!is.null(fit) && is.finite(fit$beta) && (estimate_only || (is.finite(fit$ssq) && fit$ssq > 0))){
 					private$cached_values$beta_T_reservoir = fit$beta
 					private$cached_values$ssq_beta_T_reservoir = fit$ssq
+					private$best_X_colnames_reservoir = colnames(Xcand)
+					X_r_int = cbind("(Intercept)" = 1, as.matrix(Xcand))
+					res_log_s = tryCatch(
+						fast_weibull_regression_cpp(
+							y    = as.numeric(y_r),
+							dead = as.numeric(dead_r),
+							X    = X_r_int,
+							estimate_only = TRUE
+						),
+						error = function(e) NULL
+					)
+					if (!is.null(res_log_s) && isTRUE(res_log_s$converged))
+						private$cached_vc_params_reservoir = as.numeric(res_log_s$log_sigma)
 					return(invisible(NULL))
 				}
 			}
@@ -375,15 +488,51 @@ InferenceSurvivalKKClaytonCopulaOneLik = R6::R6Class("InferenceSurvivalKKClayton
 		cached_mod = NULL,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
-			# Re-read design variables which might have been transformed during randomization
 			private$w = private$des_obj_priv_int$w
 			private$y = private$des_obj_priv_int$y
 			private$dead = private$des_obj_priv_int$dead
-			
-			# Recompute basic match data for the new w/y/dead
 			private$compute_basic_match_data()
-			
-			# Use the same joint-likelihood logic for the point estimate
+			# Fixed-VC fast path: private$best_par and private$best_X_colnames survive duplicate()
+			if (!is.null(private$best_par) && length(private$best_par) >= 3L &&
+			    !is.null(private$best_X_colnames) && all(is.finite(tail(private$best_par, 2L)))) {
+				m_vec = private$m
+				if (is.null(m_vec)) m_vec = rep(NA_integer_, private$n)
+				m_vec[is.na(m_vec)] = 0L
+				X_data = private$get_X()
+				cov_cols = setdiff(private$best_X_colnames, "w")
+				X_cand = matrix(private$w, ncol = 1L, dimnames = list(NULL, "w"))
+				if (length(cov_cols) > 0L)
+					X_cand = cbind(X_cand, X_data[, intersect(cov_cols, colnames(X_data)), drop = FALSE])
+				X_full = cbind("(Intercept)" = 1, X_cand)
+				p_full = ncol(X_full)
+				vc_vals = as.numeric(tail(private$best_par, 2L))
+				pair_idx_r = .complete_pair_index_matrix(m_vec)
+				singleton_rows_r = setdiff(seq_len(private$n), sort(unique(as.vector(pair_idx_r)))) - 1L
+				pair_idx_0 = if (nrow(pair_idx_r) > 0L) pair_idx_r - 1L else matrix(0L, 0L, 2L)
+				warm = private$get_fit_warm_start_for_length("params", p_full + 2L)
+				if (is.null(warm) || length(warm) != p_full + 2L)
+					warm = c(rep(0, p_full), vc_vals)
+				fit_fast = tryCatch(
+					fast_clayton_weibull_aft_optim_cpp(
+						X               = as.matrix(X_full),
+						y               = as.numeric(private$y),
+						dead            = as.numeric(private$dead),
+						pair_idx        = pair_idx_0,
+						singleton_rows  = as.integer(singleton_rows_r),
+						warm_start_params = warm,
+						estimate_only   = TRUE,
+						optimization_alg = private$optimization_alg,
+						fixed_idx       = as.integer(c(p_full + 1L, p_full + 2L)),
+						fixed_values    = vc_vals
+					),
+					error = function(e) NULL
+				)
+				if (!is.null(fit_fast) && isTRUE(fit_fast$converged)) {
+					b_w = as.numeric(fit_fast$params[2L])
+					if (is.finite(b_w) && abs(b_w) <= private$max_abs_reasonable_coef)
+						return(b_w)
+				}
+			}
 			private$shared(estimate_only = estimate_only)
 			private$cached_values$beta_hat_T
 		},

@@ -304,6 +304,10 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				return(NA_real_)
 			}
 			if (length(boot_distr) == 0L) return(NA_real_)
+			if (private$bootstrap_estimates_extreme(boot_distr, est = est)) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bootstrap_extreme_finite_estimates")
+				return(NA_real_)
+			}
 			if (type == "percentile") {
 				# Shift bootstrap distribution to be centred at delta (null hypothesis)
 				boot_null = boot_distr - mean(boot_distr) + delta
@@ -323,7 +327,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				D_obs = abs(est - delta)
 				D_boot = abs(boot_distr - mean(boot_distr))
 				n_bs = length(D_boot)
-				pval = min(1, max(1 / n_bs, mean(D_boot >= D_obs)))
+				pval = min(1, max(2 / n_bs, mean(D_boot >= D_obs)))
 				if (!is.finite(pval)) {
 					if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bootstrap_pvalue_unavailable")
 					return(NA_real_)
@@ -366,7 +370,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 						if (isTRUE(private$harden)) private$cache_nonestimable_se("bootstrap_unstable_studentized_standard_errors")
 						return(NA_real_)
 					}
-					min(1, max(1 / length(t_boot), mean(t_boot >= t_obs)))
+					min(1, max(2 / length(t_boot), mean(t_boot >= t_obs)))
 				} else if (type == "bca") {
 				# BCa p-value via closed-form CI inversion (Efron 1987; Efron & Tibshirani 1993).
 				pval = tryCatch(
@@ -462,6 +466,12 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				}
 				stop("Bootstrap confidence interval returned NA bounds")
 			}
+			if (private$bootstrap_estimates_extreme(boot_distr, est = est)) {
+				if (isTRUE(private$harden)) {
+					return(private$missing_bootstrap_ci(alpha, "bootstrap_extreme_finite_estimates", stage = "estimate"))
+				}
+				stop("Bootstrap estimates are numerically unstable.")
+			}
 			ci = tryCatch({
 				if (type == "percentile") {
 					private$ci_from_boot_distribution(boot_distr, alpha, "percentile")
@@ -513,6 +523,13 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 					}
 					stop("Studentized bootstrap interval is numerically unstable.")
 				}
+				if (private$bootstrap_confidence_interval_extreme(ci, est = est)) {
+					if (isTRUE(private$harden)) {
+						stage = if (type %in% c("studentized", "bootstrap-t", "symmetric-percentile-t")) "se" else "estimate"
+						return(private$missing_bootstrap_ci(alpha, "bootstrap_extreme_confidence_interval", stage = stage))
+					}
+					stop("Bootstrap confidence interval is numerically unstable.")
+				}
 				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 				ci
 			}
@@ -521,6 +538,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 		# Cache for bootstrap distributions
 		boot_distr_cache = list(),
 		jack_distr_cache = list(),
+		bootstrap_extreme_estimate_threshold = 1e6,
 		assert_valid_bootstrap_type = function(bootstrap_type){
 			if (is.null(bootstrap_type)) return(invisible(NULL))
 			if (should_run_asserts()) {
@@ -584,6 +602,28 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			ci = c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			ci
+		},
+		bootstrap_estimates_extreme = function(theta, est = NA_real_, max_abs = private$bootstrap_extreme_estimate_threshold){
+			theta = as.numeric(theta)
+			theta = theta[is.finite(theta)]
+			if (!length(theta)) return(FALSE)
+			max_abs = as.numeric(max_abs)[1L]
+			if (!is.finite(max_abs) || max_abs <= 0) max_abs = 1e6
+			if (any(abs(theta) > max_abs)) return(TRUE)
+			scale_ref = max(1, abs(as.numeric(est)[1L]), stats::median(abs(theta)), na.rm = TRUE)
+			if (!is.finite(scale_ref) || scale_ref <= 0) scale_ref = 1
+			theta_width = diff(stats::quantile(theta, probs = c(0.025, 0.975), names = FALSE, type = 8))
+			is.finite(theta_width) && theta_width > max_abs * scale_ref
+		},
+		bootstrap_confidence_interval_extreme = function(ci, est = NA_real_, max_abs = private$bootstrap_extreme_estimate_threshold){
+			ci = as.numeric(ci)
+			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) return(FALSE)
+			max_abs = as.numeric(max_abs)[1L]
+			if (!is.finite(max_abs) || max_abs <= 0) max_abs = 1e6
+			if (any(abs(ci[1:2]) > max_abs)) return(TRUE)
+			scale_ref = max(1, abs(as.numeric(est)[1L]), na.rm = TRUE)
+			width = abs(diff(ci[1:2]))
+			is.finite(width) && width > max_abs * scale_ref
 		},
 		supports_reusable_bootstrap_worker = function(){
 			FALSE
@@ -1080,7 +1120,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				2 * est - stats::quantile(boot_distr, probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
 				}
 			},
-			studentized_interval_scale_unstable = function(theta, ci = NULL, se_hat = NULL, pivots = NULL, est = 0, alpha = 0.05, max_width_ratio = 50){
+			studentized_interval_scale_unstable = function(theta, ci = NULL, se_hat = NULL, pivots = NULL, est = 0, alpha = 0.05, max_width_ratio = 10){
 				theta = as.numeric(theta)
 				theta = theta[is.finite(theta)]
 				if (length(theta) < 5L) return(FALSE)
@@ -1323,7 +1363,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				return(NA_real_)
 			}
 			p_raw = min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
-			min(1, max(1 / length(boot_distr), p_raw))
+			min(1, max(2 / length(boot_distr), p_raw))
 		}
 	)
 )

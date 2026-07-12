@@ -230,47 +230,87 @@ Hurdle negative-binomial delete-one refits are unstable for
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountHurdleNegBin$compute_jackknife_estimate(unit = "auto")}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountHurdleNegBin-compute_jackknife_corrected_estimate"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountHurdleNegBin-compute_jackknife_corrected_estimate}{}}}
 \subsection{Method \code{compute_jackknife_corrected_estimate()}}{
+Non-estimable jackknife bias-corrected estimate.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountHurdleNegBin$compute_jackknife_corrected_estimate(unit = "auto")}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountHurdleNegBin-compute_jackknife_bias_estimate"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountHurdleNegBin-compute_jackknife_bias_estimate}{}}}
 \subsection{Method \code{compute_jackknife_bias_estimate()}}{
+Non-estimable jackknife bias estimate.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountHurdleNegBin$compute_jackknife_bias_estimate(unit = "auto")}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountHurdleNegBin-compute_jackknife_std_error"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountHurdleNegBin-compute_jackknife_std_error}{}}}
 \subsection{Method \code{compute_jackknife_std_error()}}{
+Non-estimable jackknife standard error.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountHurdleNegBin$compute_jackknife_std_error(unit = "auto")}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountHurdleNegBin-compute_jackknife_standard_error"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountHurdleNegBin-compute_jackknife_standard_error}{}}}
 \subsection{Method \code{compute_jackknife_standard_error()}}{
+Alias for \code{compute_jackknife_std_error()}.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountHurdleNegBin$compute_jackknife_standard_error(unit = "auto")}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountHurdleNegBin-compute_jackknife_wald_two_sided_pval"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountHurdleNegBin-compute_jackknife_wald_two_sided_pval}{}}}
 \subsection{Method \code{compute_jackknife_wald_two_sided_pval()}}{
+Non-estimable jackknife Wald two-sided p-value.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountHurdleNegBin$compute_jackknife_wald_two_sided_pval(
   delta = 0,
@@ -278,11 +318,21 @@ Hurdle negative-binomial delete-one refits are unstable for
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment-effect value. Default 0.}
+
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountHurdleNegBin-compute_jackknife_wald_confidence_interval"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceCountHurdleNegBin-compute_jackknife_wald_confidence_interval}{}}}
 \subsection{Method \code{compute_jackknife_wald_confidence_interval()}}{
+Non-estimable jackknife Wald confidence interval.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceCountHurdleNegBin$compute_jackknife_wald_confidence_interval(
   alpha = 0.05,
@@ -290,6 +340,15 @@ Hurdle negative-binomial delete-one refits are unstable for
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountHurdleNegBin-clone"></a>}}

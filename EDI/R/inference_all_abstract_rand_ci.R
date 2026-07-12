@@ -63,15 +63,24 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 		#' @param type Optional incidence-specific exact randomization type.
 		#' @param args_for_type Optional arguments keyed by \code{type}.
 		#' @param ci_search_control Optional control list for randomization-CI search. Supported
-		#'   entries are \code{fallback}, \code{seed}, \code{max_radius_se_mult},
-		#'   \code{max_radius_scale_mult}, \code{max_expansions}, \code{seed_boot_B},
-		#'   Monte Carlo settings \code{mc_enable}, \code{mc_batch_size},
+		#'   entries are \code{fallback}, \code{seed}, \code{max_radius_se_mult} (default 25),
+		#'   \code{max_radius_scale_mult} (default 6), \code{max_expansions} (default 7),
+		#'   \code{seed_boot_B}, Monte Carlo settings \code{mc_enable}, \code{mc_batch_size},
 		#'   \code{mc_min_draws}, and \code{mc_conf_level}, midpoint-cache settings
 		#'   \code{pval_cache_enable} and \code{pval_cache_resolution}, and model-fit
 		#'   reuse settings \code{fit_warm_start_enable} and
 		#'   \code{fit_reuse_factorizations}. Set \code{mc_enable = FALSE} to force
 		#'   full enumeration of all requested randomization draws.
-		#' @return 	Randomization CI.
+		#'   The search radius is \code{max(max_radius_se_mult * se_guess, max_radius_scale_mult * sd(y))}.
+		#'   When the randomization p-value does not drop below \code{alpha/2} anywhere within
+		#'   the search radius (e.g. the test has low power or the design has few unique
+		#'   permutations), a \emph{conservative} CI bound is returned at the search boundary
+		#'   rather than \code{NA}. This guarantees a valid (though possibly wide) interval.
+		#'   Each such event emits a \code{message()} and increments the private field
+		#'   \code{rand_ci_conservative_count} for monitoring.
+		#' @return Randomization CI. Bounds may be conservative (wider than necessary) when the
+		#'   p-value inversion cannot be completed within the search radius; see
+		#'   \code{ci_search_control} for details.
 		compute_rand_confidence_interval = function(alpha = 0.05, r = 501, pval_epsilon = 0.005, show_progress = TRUE, type = NULL, args_for_type = NULL, ci_search_control = NULL){
 			if (should_run_asserts()) {
 				private$assert_design_supports_resampling("Randomization inference")
@@ -209,9 +218,9 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 			defaults = list(
 				fallback = "fallback",
 				seed = "asymp_then_boot",
-				max_radius_se_mult = 12,
+				max_radius_se_mult = 25,
 				max_radius_scale_mult = 6,
-				max_expansions = 5L,
+				max_expansions = 7L,
 				seed_boot_B = max(51L, min(as.integer(r), 201L)),
 				pval_cache_enable = TRUE,
 				pval_cache_resolution = pval_epsilon,
@@ -383,7 +392,9 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 				if (is.finite(pval_candidate) && pval_candidate < target_pval) return(candidate)
 				if (step >= max_radius) break
 			}
-			NA_real_
+			# Conservative fallback: no bracket found within max_radius.
+			# Return the search boundary so the bisection can detect and report it.
+			if (lower) est - max_radius else est + max_radius
 		},
 			compute_ci_by_inverting_the_randomization_test_iteratively = function(r, l, u, pval_th, tol, transform_responses, lower, show_progress = TRUE, permutations = NULL, ci_search_control = NULL, ci_pval_cache = NULL){
 			evaluate_pval = function(delta) {
@@ -398,6 +409,23 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 				if (is.na(pval_u)) { u = (l + u) / 2; pval_u = evaluate_pval(u) }
 			}
 			if (is.na(pval_l) || is.na(pval_u) || !all(is.finite(c(l, u)))) return(NA_real_)
+			# Conservative bound: p-value at the search boundary still >= alpha/2,
+			# meaning the true CI bound lies beyond the search radius.
+			# Return the boundary as a valid (conservative) one-sided limit.
+			if (lower && is.finite(pval_l) && pval_l >= pval_th) {
+				message(sprintf(
+					"Randomization CI lower bound is conservative: p-value at search boundary delta=%.4g is %.4g >= %.4g. True CI lower bound may extend further left. (rand_ci_conservative_count++)",
+					l, pval_l, pval_th))
+				private[["rand_ci_conservative_count"]] = (if (is.null(private[["rand_ci_conservative_count"]])) 0L else private[["rand_ci_conservative_count"]]) + 1L
+				return(l)
+			}
+			if (!lower && is.finite(pval_u) && pval_u >= pval_th) {
+				message(sprintf(
+					"Randomization CI upper bound is conservative: p-value at search boundary delta=%.4g is %.4g >= %.4g. True CI upper bound may extend further right. (rand_ci_conservative_count++)",
+					u, pval_u, pval_th))
+				private[["rand_ci_conservative_count"]] = (if (is.null(private[["rand_ci_conservative_count"]])) 0L else private[["rand_ci_conservative_count"]]) + 1L
+				return(u)
+			}
 			iter = 0; progress_label = if (lower) "CI lower" else "CI upper"
 			repeat {
 				pval_span = abs(pval_u - pval_l)

@@ -103,28 +103,43 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 		},
 		#' @description Jackknife bias correction is unstable for the
 		#'   Hodges-Lehmann estimator; report explicit non-estimability.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_estimate = function(unit = "auto"){
 			private$cache_nonestimable_estimate("wilcox_hl_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Non-estimable jackknife bias-corrected estimate.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_corrected_estimate = function(unit = "auto"){
 			self$compute_jackknife_estimate(unit = unit)
 		},
+		#' @description Non-estimable jackknife bias estimate.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_bias_estimate = function(unit = "auto"){
 			private$cache_nonestimable_estimate("wilcox_hl_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Non-estimable jackknife standard error.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_std_error = function(unit = "auto"){
 			private$cache_nonestimable_se("wilcox_hl_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Alias for \code{compute_jackknife_std_error()}.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_standard_error = function(unit = "auto"){
 			self$compute_jackknife_std_error(unit = unit)
 		},
+		#' @description Non-estimable jackknife Wald two-sided p-value.
+		#' @param delta Null treatment-effect value. Default 0.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
 			private$cache_nonestimable_se("wilcox_hl_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Non-estimable jackknife Wald confidence interval.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
 			private$cache_nonestimable_se("wilcox_hl_jackknife_not_supported")
 			c(NA_real_, NA_real_)

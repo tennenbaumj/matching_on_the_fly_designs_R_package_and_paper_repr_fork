@@ -26,6 +26,7 @@ namespace {
 struct GroupInfo {
     int    size;       // m_i  (1 or 2)
     int    warm_start_params;      // index into sorted-obs arrays
+    double w;          // case weight for this group (1.0 = unweighted)
 };
 
 // ── Core data object (passed by const-ref to all functions) ──────────────────
@@ -40,7 +41,8 @@ struct LMMData {
 
     LMMData(const Eigen::Ref<const VectorXd>& y,
             const Eigen::Ref<const MatrixXd>& X,
-            const std::vector<int>& gid)   // 0-based group ids, length n
+            const std::vector<int>& gid,              // 0-based group ids, length n
+            const std::vector<double>& obs_weights = {}) // per-obs case weights (empty = uniform 1)
         : n(y.size()), p(X.cols())
     {
         // Sort observations by group id
@@ -56,7 +58,8 @@ struct LMMData {
             X_s.row(i) = X.row(ord[i]);
         }
 
-        // Build group list
+        // Build group list; all obs in a matched pair share the same case weight
+        const bool have_weights = ((int)obs_weights.size() == n);
         int prev = -1, gi = 0;
         for (int i = 0; i < n; ++i) {
             int g = gid[ord[i]];
@@ -64,6 +67,7 @@ struct LMMData {
                 GroupInfo info;
                 info.warm_start_params = i;
                 info.size  = 1;
+                info.w     = have_weights ? obs_weights[ord[i]] : 1.0;
                 grps.push_back(info);
                 prev = g;
                 gi++;
@@ -131,32 +135,26 @@ double neg_ll_and_grad(const LMMData& dat,
         const double vb_over_a = v_b / a;   // ∈ [0, 1]: avoids v_e*a underflow below
         const double W      = Q - vb_over_a * S * S;
         const double inv_a  = 1.0 / a;
+        const double gw     = g.w;  // case weight for this group
 
-        // --- neg_ll contribution ---
-        neg_ll += 0.5 * ((m - 1) * 2.0 * lse + std::log(a));  // det term
-        neg_ll += W / (2.0 * v_e);                              // quadratic term
+        // --- neg_ll contribution (weighted) ---
+        neg_ll += gw * (0.5 * ((m - 1) * 2.0 * lse + std::log(a)) + W / (2.0 * v_e));
 
-        // --- gradient for β ---
+        // --- gradient for β (weighted) ---
         // Use (v_b/a)/v_e instead of v_b/(v_e*a) to avoid v_e*a underflowing to 0
         // which would produce Inf, and then Inf*0 = NaN when S≈0.
-        const double coeff_S = (vb_over_a / v_e) * S;
+        const double coeff_S = gw * (vb_over_a / v_e) * S;
         for (int j = s; j < s + m; ++j) {
-            const double w_j = -r[j] / v_e + coeff_S;
+            const double w_j = gw * (-r[j] / v_e) + coeff_S;
             // grad_beta -= w_j * x_j  (remember: neg_ll, so ∂neg_ll/∂β = -score)
             grad_beta -= w_j * dat.X_s.row(j).transpose();
         }
 
-        // --- gradient for log σ_e ---
-        // ∂neg_ll/∂lse = Σ_g [(m_g-1) + v_e/a_g + v_b·S_g²/a_g² - W_g/v_e]
-        // Derivation: ∂/∂lse of [(m-1)·lse + ½log(a) + W/(2v_e)]
-        //   det:  (m-1) + v_e/a   (chain ∂v_e/∂lse = 2v_e)
-        //   quad: v_b·S²/a²  (from ∂W/∂lse through a) − W/v_e
-        // Use vb_over_a*S^2*inv_a instead of v_b*S^2*inv_a^2 to avoid inv_a^2 overflowing.
-        d_lse += (m - 1) + v_e * inv_a + vb_over_a * (S * S) * inv_a / v_e - W / v_e;
+        // --- gradient for log σ_e (weighted) ---
+        d_lse += gw * ((m - 1) + v_e * inv_a + vb_over_a * (S * S) * inv_a / v_e - W / v_e);
 
-        // --- gradient for log σ_b ---
-        // ∂neg_ll/∂lsb = Σ_g(m·v_b/a) - v_b·Σ_g(S²/a²)
-        d_lsb += (m * v_b * inv_a) - vb_over_a * (S * S) * inv_a;
+        // --- gradient for log σ_b (weighted) ---
+        d_lsb += gw * ((m * v_b * inv_a) - vb_over_a * (S * S) * inv_a);
     }
 
     grad.head(p) = -grad_beta;
@@ -218,6 +216,7 @@ Eigen::MatrixXd lmm_analytic_hessian(const LMMData& dat,
     for (int gi = 0; gi < dat.G; ++gi) {
         const int m = dat.grps[gi].size;
         const int s = dat.grps[gi].warm_start_params;
+        const double gw = dat.grps[gi].w;  // case weight for this group
 
         // All per-group matrices are SM2 (stack-allocated ≤2×2)
         const SM2 P = lmm_P_analytic(m, v_e, v_b);
@@ -241,16 +240,16 @@ Eigen::MatrixXd lmm_analytic_hessian(const LMMData& dat,
         tmp.noalias() = PJ * P;
         dP_b = (-2.0 * v_b) * tmp;
 
-        // β-β block: Xg^T * P * Xg  (buf_XtA reused, no Xg copy)
+        // β-β block: gw * Xg^T * P * Xg  (buf_XtA reused, no Xg copy)
         buf_XtA.leftCols(m).noalias() = dat.X_s.middleRows(s, m).transpose() * P;
-        H.topLeftCorner(p, p).noalias() += buf_XtA.leftCols(m) * dat.X_s.middleRows(s, m);
+        H.topLeftCorner(p, p).noalias() += gw * (buf_XtA.leftCols(m) * dat.X_s.middleRows(s, m));
 
-        // β-σ blocks: -Xg^T * dP_a * rg  (SV2 on stack, no rg copy)
+        // β-σ blocks: -gw * Xg^T * dP_a * rg  (SV2 on stack, no rg copy)
         SV2 sv(m);
         sv.noalias() = dP_e * buf_r.segment(s, m);
-        H.topRightCorner(p, 1).noalias() -= dat.X_s.middleRows(s, m).transpose() * sv;
+        H.topRightCorner(p, 1).noalias() -= gw * (dat.X_s.middleRows(s, m).transpose() * sv);
         sv.noalias() = dP_b * buf_r.segment(s, m);
-        H.block(0, p + 1, p, 1).noalias() -= dat.X_s.middleRows(s, m).transpose() * sv;
+        H.block(0, p + 1, p, 1).noalias() -= gw * (dat.X_s.middleRows(s, m).transpose() * sv);
 
         // σ-σ block: loop (a,b) ∈ {(e,e),(e,b),(b,b)}
         const SM2* dV_arr[2]  = {&dV_e,   &dV_b};
@@ -272,8 +271,8 @@ Eigen::MatrixXd lmm_analytic_hessian(const LMMData& dat,
 
                 sv.noalias() = term * buf_r.segment(s, m);
                 const double h_ab = h_tr - 0.5 * buf_r.segment(s, m).dot(sv);
-                H(p + a, p + b) += h_ab;
-                if (a != b) H(p + b, p + a) += h_ab;
+                H(p + a, p + b) += gw * h_ab;
+                if (a != b) H(p + b, p + a) += gw * h_ab;
             }
         }
     }
@@ -371,7 +370,8 @@ List fast_gaussian_lmm_cpp(
     Rcpp::Nullable<Rcpp::IntegerVector> fixed_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> fixed_values = R_NilValue,
     std::string optimization_alg = "lbfgs",
-    Rcpp::Nullable<Rcpp::NumericMatrix> warm_start_fisher_info = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericMatrix> warm_start_fisher_info = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights = R_NilValue  // per-obs case weights (NULL = uniform)
 ) {
     NumericMatrix X_mat(X_r);
     NumericVector y_vec(y_r);
@@ -395,7 +395,12 @@ List fast_gaussian_lmm_cpp(
             gid[i] = (int)(std::lower_bound(uniq.begin(), uniq.end(), gid_r[i]) - uniq.begin());
     }
 
-    LMMData dat(y, X, gid);
+    std::vector<double> w_vec;
+    if (weights.isNotNull()) {
+        NumericVector wts(weights);
+        w_vec.assign(wts.begin(), wts.end());
+    }
+    LMMData dat(y, X, gid, w_vec);
     GaussianLMMObjective obj(dat);
 
     // Starting point
@@ -483,6 +488,93 @@ List fast_gaussian_lmm_cpp(
         Named("niter")     = niter,
         Named("fisher_information") = H
     );
+}
+
+// ── R-exported: GLS estimator with fixed variance components ─────────────────
+// Given fixed log_sigma_e and log_sigma_b (from a prior full fit), solve for
+// beta via GLS without any L-BFGS optimization.  ~100x faster than full MLE.
+// Valid for permutation tests (VC fixed at null-fit MLE — exact test by
+// exchangeability) and for non-studentised bootstrap (VC approximated).
+//
+// GLS normal equations with V_g = v_e*I + v_b*J:
+//   A     = sum_g gw * [ X_g'X_g - c_g * sx_g sx_g' ]   (v_e cancels)
+//   b_rhs = sum_g gw * [ X_g'y_g - c_g * sx_g sy_g  ]
+// where a_g = v_e + m_g*v_b,  c_g = v_b/(v_e*a_g),
+//       sx_g = X_g'1_m,  sy_g = 1_m'y_g.
+// [[Rcpp::export]]
+Rcpp::NumericVector fast_gaussian_lmm_gls_cpp(
+    SEXP X_r,
+    SEXP y_r,
+    SEXP group_id_r,
+    double log_sigma_e,
+    double log_sigma_b,
+    Rcpp::Nullable<Rcpp::NumericVector> weights = R_NilValue
+) {
+    NumericMatrix X_mat(X_r);
+    NumericVector y_vec(y_r);
+    IntegerVector group_id_int(group_id_r);
+    Eigen::Map<const Eigen::MatrixXd> X(X_mat.begin(), X_mat.nrow(), X_mat.ncol());
+    Eigen::Map<const Eigen::VectorXd> y(y_vec.begin(), y_vec.size());
+
+    const int n = y.size(), p = X.cols();
+
+    std::vector<int> gid(n);
+    {
+        const int* gid_ptr = group_id_int.begin();
+        std::vector<int> gid_r(gid_ptr, gid_ptr + n);
+        std::vector<int> uniq = gid_r;
+        std::sort(uniq.begin(), uniq.end());
+        uniq.erase(std::unique(uniq.begin(), uniq.end()), uniq.end());
+        for (int i = 0; i < n; ++i)
+            gid[i] = (int)(std::lower_bound(uniq.begin(), uniq.end(), gid_r[i]) - uniq.begin());
+    }
+
+    std::vector<double> w_vec;
+    if (weights.isNotNull()) {
+        NumericVector wts(weights);
+        w_vec.assign(wts.begin(), wts.end());
+    }
+    LMMData dat(y, X, gid, w_vec);
+
+    const double v_e = std::exp(2.0 * log_sigma_e);
+    const double v_b = std::exp(2.0 * log_sigma_b);
+    if (!std::isfinite(v_e) || !std::isfinite(v_b) || v_e < 1e-300)
+        return Rcpp::NumericVector(p, NA_REAL);
+
+    Eigen::MatrixXd A     = Eigen::MatrixXd::Zero(p, p);
+    Eigen::VectorXd b_rhs = Eigen::VectorXd::Zero(p);
+    Eigen::VectorXd sx(p);
+
+    for (int gi = 0; gi < dat.G; ++gi) {
+        const GroupInfo& g = dat.grps[gi];
+        const int m = g.size, s = g.warm_start_params;
+        const double gw = g.w;
+        const double a_g = v_e + m * v_b;
+        const double c_g = v_b / (v_e * a_g);
+
+        sx.noalias() = dat.X_s.middleRows(s, m).colwise().sum().transpose();
+        const double sy = dat.y_s.segment(s, m).sum();
+
+        A.noalias()     += gw * (dat.X_s.middleRows(s, m).transpose() * dat.X_s.middleRows(s, m)
+                                 - c_g * (sx * sx.transpose()));
+        b_rhs.noalias() += gw * (dat.X_s.middleRows(s, m).transpose() * dat.y_s.segment(s, m)
+                                 - c_g * (sx * sy));
+    }
+
+    Eigen::LDLT<Eigen::MatrixXd> ldlt(A);
+    if (ldlt.info() != Eigen::Success)
+        return Rcpp::NumericVector(p, NA_REAL);
+    Eigen::VectorXd beta = ldlt.solve(b_rhs);
+
+    NumericVector result(p);
+    CharacterVector names(p);
+    for (int i = 0; i < p; ++i) {
+        if (!std::isfinite(beta[i])) return Rcpp::NumericVector(p, NA_REAL);
+        result[i] = beta[i];
+        names[i]  = "b" + std::to_string(i);
+    }
+    result.names() = names;
+    return result;
 }
 
 // ── R-exported: score (gradient of log_lik) at arbitrary par ─────────────────

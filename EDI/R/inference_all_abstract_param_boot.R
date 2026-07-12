@@ -110,6 +110,11 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 					private$cache_nonestimable_se("lik_ratio_bootstrap_observed_lr_nonfinite")
 				return(NA_real_)
 			}
+			if (private$param_bootstrap_lr_extreme(lr_obs)) {
+				if (!isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("lik_ratio_bootstrap_observed_lr_extreme")
+				return(NA_real_)
+			}
 			null_fit = eval_obs$null_fit
 
 			actual_cores = private$effective_parallel_cores("param_bootstrap", self$num_cores)
@@ -191,6 +196,17 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 			}
 
 			lr_boots = vapply(results, function(res) as.numeric(res$lr %||% NA_real_)[1L], numeric(1))
+			extreme_lr = is.finite(lr_boots) & private$param_bootstrap_lr_extreme(lr_boots)
+			if (any(extreme_lr)) {
+				for (idx in which(extreme_lr)) {
+					results[[idx]] = private$param_boot_failure_result(
+						"extreme_lr",
+						attempts = results[[idx]]$attempts %||% NA_integer_,
+						details = results[[idx]]$details %||% NULL
+					)
+				}
+				lr_boots[extreme_lr] = NA_real_
+			}
 			finite_lr = lr_boots[is.finite(lr_boots)]
 			n_finite = length(finite_lr)
 			private$cached_values$last_param_bootstrap_diagnostics =
@@ -216,7 +232,7 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 				return(NA_real_)
 			}
 			n_exceed = sum(finite_lr >= lr_obs)
-			(1 + n_exceed) / (1 + n_finite)
+			min(1, max(2 / (1 + n_finite), (1 + n_exceed) / (1 + n_finite)))
 		},
 
 		#' @description Bootstrap-calibrated likelihood-ratio confidence interval.
@@ -389,6 +405,13 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 		}
 	),
 	private = list(
+		param_bootstrap_extreme_lr_threshold = 1e6,
+		param_bootstrap_lr_extreme = function(lr, max_abs = private$param_bootstrap_extreme_lr_threshold){
+			lr = as.numeric(lr)
+			max_abs = as.numeric(max_abs)[1L]
+			if (!is.finite(max_abs) || max_abs <= 0) max_abs = 1e6
+			is.finite(lr) & abs(lr) > max_abs
+		},
 		simulate_param_boot_bernoulli_y = function(mu){
 			mu = as.numeric(mu)
 			if (!length(mu) || any(!is.finite(mu))) return(NULL)
@@ -769,7 +792,7 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 			attempts = vapply(results, function(res) as.integer(res$attempts %||% NA_integer_)[1L], integer(1))
 			lrs = vapply(results, function(res) as.numeric(res$lr %||% NA_real_)[1L], numeric(1))
 			success = is.finite(lrs)
-			reason_levels = c("success", "simulated_data_failure", "full_refit_failure", "null_refit_failure", "non_finite_lr", "unknown_failure")
+			reason_levels = c("success", "simulated_data_failure", "full_refit_failure", "null_refit_failure", "non_finite_lr", "extreme_lr", "unknown_failure")
 			reason_factor = factor(ifelse(reasons %in% reason_levels, reasons, "unknown_failure"), levels = reason_levels)
 			reason_counts = as.list(as.integer(table(reason_factor)))
 			names(reason_counts) = reason_levels

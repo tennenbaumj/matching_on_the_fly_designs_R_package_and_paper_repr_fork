@@ -100,12 +100,11 @@ InferenceAbstractKKWeibullFrailtyIVWC = R6::R6Class("InferenceAbstractKKWeibullF
 		supports_lik_ratio_param_bootstrap = function() isTRUE(private$use_rcpp),
 		supports_likelihood_tests = function() FALSE,
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
-			# Ensure we have the best design and parameters from the original data
-			if (is.null(private$cached_values$best_X_colnames_matched) && is.null(private$cached_values$best_X_colnames_reservoir)){
+			# Use private fields (survive duplicate()) instead of cached_values
+			if (is.null(private$best_X_colnames_matched) && is.null(private$best_X_colnames_reservoir)){
 				private$shared()
 			}
-			# If we still don't have enough (e.g., initial fit failed), fall back to standard
-			if (is.null(private$cached_values$best_X_colnames_matched) && is.null(private$cached_values$best_X_colnames_reservoir)){
+			if (is.null(private$best_X_colnames_matched) && is.null(private$best_X_colnames_reservoir)){
 				return(self$compute_estimate(estimate_only = estimate_only))
 			}
 			if (is.null(private$cached_values$KKstats)){
@@ -117,51 +116,87 @@ InferenceAbstractKKWeibullFrailtyIVWC = R6::R6Class("InferenceAbstractKKWeibullF
 			nRT = KKstats$nRT
 			nRC = KKstats$nRC
 			X_data = private$get_X()
+			m_vec = private$m
+			if (is.null(m_vec)) m_vec = rep(NA_integer_, private$n)
+			m_vec[is.na(m_vec)] = 0L
 			# Matched pairs component
 			beta_m = NA_real_
 			ssq_m = NA_real_
-			if (m > 0 && !is.null(private$cached_values$best_X_colnames_matched)){
-				m_vec = private$m
-				if (is.null(m_vec)) m_vec = rep(NA_integer_, private$n)
-				m_vec[is.na(m_vec)] = 0L
+			if (m > 0 && !is.null(private$best_X_colnames_matched)){
 				i_matched = which(m_vec > 0L)
-				X_cov = X_data[i_matched, intersect(private$cached_values$best_X_colnames_matched, colnames(X_data)), drop = FALSE]
-				X = cbind(w = private$w[i_matched], X_cov)
-				fit_m = .fit_weibull_frailty(
-					y = private$y[i_matched],
-					dead = private$dead[i_matched],
-					X = X,
-					pair_id = m_vec[i_matched],
-					estimate_only = estimate_only,
-					optimization_alg = private$optimization_alg
-				)
-				if (!is.null(fit_m) && is.finite(fit_m$beta)){
-					beta_m = fit_m$beta
-					if (!estimate_only && !is.null(fit_m$ssq) && is.finite(fit_m$ssq) && fit_m$ssq > 0){
-						ssq_m = fit_m$ssq
+				X_cov = X_data[i_matched, intersect(private$best_X_colnames_matched, colnames(X_data)), drop = FALSE]
+				X_m = cbind(w = private$w[i_matched], X_cov)
+				# Fixed-VC fast path
+				if (!is.null(private$cached_vc_params_matched) && all(is.finite(private$cached_vc_params_matched))) {
+					p_m = ncol(X_m)
+					group_m = m_vec[i_matched]
+					fit_fast_m = tryCatch(
+						fast_weibull_frailty_cpp(
+							X = as.matrix(X_m),
+							y = private$y[i_matched], dead = private$dead[i_matched],
+							group_id = as.integer(group_m),
+							estimate_only = TRUE,
+							optimization_alg = private$optimization_alg,
+							fixed_idx    = as.integer(c(p_m + 1L, p_m + 2L)),
+							fixed_values = as.numeric(private$cached_vc_params_matched)
+						),
+						error = function(e) NULL
+					)
+					if (!is.null(fit_fast_m) && isTRUE(fit_fast_m$converged) && length(fit_fast_m$b) >= 1L && is.finite(fit_fast_m$b[1L]))
+						beta_m = as.numeric(fit_fast_m$b[1L])
+				}
+				if (!is.finite(beta_m)) {
+					fit_m = .fit_weibull_frailty(
+						y = private$y[i_matched],
+						dead = private$dead[i_matched],
+						X = X_m,
+						pair_id = m_vec[i_matched],
+						estimate_only = estimate_only,
+						optimization_alg = private$optimization_alg
+					)
+					if (!is.null(fit_m) && is.finite(fit_m$beta)){
+						beta_m = fit_m$beta
+						if (!estimate_only && !is.null(fit_m$ssq) && is.finite(fit_m$ssq) && fit_m$ssq > 0)
+							ssq_m = fit_m$ssq
 					}
 				}
 			}
 			# Reservoir component
 			beta_r = NA_real_
 			ssq_r = NA_real_
-			if (nRT > 0 && nRC > 0 && !is.null(private$cached_values$best_X_colnames_reservoir)){
-				m_vec = private$m
-				if (is.null(m_vec)) m_vec = rep(NA_integer_, private$n)
-				m_vec[is.na(m_vec)] = 0L
+			if (nRT > 0 && nRC > 0 && !is.null(private$best_X_colnames_reservoir)){
 				i_reservoir = which(m_vec == 0L)
-				X_cov = X_data[i_reservoir, intersect(private$cached_values$best_X_colnames_reservoir, colnames(X_data)), drop = FALSE]
-				X = cbind(w = private$w[i_reservoir], X_cov)
-				fit_r = .fit_standard_weibull_aft_from_matrix(
-					y = private$y[i_reservoir],
-					dead = private$dead[i_reservoir],
-					X = X,
-					estimate_only = estimate_only
-				)
-				if (!is.null(fit_r) && is.finite(fit_r$beta)){
-					beta_r = fit_r$beta
-					if (!estimate_only && !is.null(fit_r$ssq) && is.finite(fit_r$ssq) && fit_r$ssq > 0){
-						ssq_r = fit_r$ssq
+				X_cov_r = X_data[i_reservoir, intersect(private$best_X_colnames_reservoir, colnames(X_data)), drop = FALSE]
+				X_r = cbind(w = private$w[i_reservoir], X_cov_r)
+				# Fixed-VC fast path (Weibull regression, X must include intercept)
+				if (!is.null(private$cached_vc_params_reservoir) && is.finite(private$cached_vc_params_reservoir[1L])) {
+					X_r_int = cbind("(Intercept)" = 1, as.matrix(X_r))
+					p_r = ncol(X_r_int)
+					fit_fast_r = tryCatch(
+						fast_weibull_regression_cpp(
+							y    = as.numeric(private$y[i_reservoir]),
+							dead = as.numeric(private$dead[i_reservoir]),
+							X    = X_r_int,
+							estimate_only = TRUE,
+							fixed_idx    = as.integer(p_r),
+							fixed_values = as.numeric(private$cached_vc_params_reservoir[1L])
+						),
+						error = function(e) NULL
+					)
+					if (!is.null(fit_fast_r) && isTRUE(fit_fast_r$converged) && length(fit_fast_r$b) >= 2L && is.finite(fit_fast_r$b[2L]))
+						beta_r = as.numeric(fit_fast_r$b[2L])
+				}
+				if (!is.finite(beta_r)) {
+					fit_r = .fit_standard_weibull_aft_from_matrix(
+						y = private$y[i_reservoir],
+						dead = private$dead[i_reservoir],
+						X = X_r,
+						estimate_only = estimate_only
+					)
+					if (!is.null(fit_r) && is.finite(fit_r$beta)){
+						beta_r = fit_r$beta
+						if (!estimate_only && !is.null(fit_r$ssq) && is.finite(fit_r$ssq) && fit_r$ssq > 0)
+							ssq_r = fit_r$ssq
 					}
 				}
 			}
@@ -189,6 +224,8 @@ InferenceAbstractKKWeibullFrailtyIVWC = R6::R6Class("InferenceAbstractKKWeibullF
 		},
 		best_X_colnames_matched = NULL,
 		best_X_colnames_reservoir = NULL,
+		cached_vc_params_matched = NULL,
+		cached_vc_params_reservoir = NULL,
 		max_abs_reasonable_coef = 1e4,
 		frailty_for_matched_pairs = function(estimate_only = FALSE){
 			m_vec = private$m
@@ -224,7 +261,11 @@ InferenceAbstractKKWeibullFrailtyIVWC = R6::R6Class("InferenceAbstractKKWeibullF
 			if (!is.null(attempt$fit)){
 				private$cached_values$beta_T_matched = attempt$fit$beta
 				private$cached_values$ssq_beta_T_matched = attempt$fit$ssq
-				private$cached_values$best_X_colnames_matched = setdiff(colnames(attempt$X_fit), "w")
+				best_cols = setdiff(colnames(attempt$X_fit), "w")
+				private$cached_values$best_X_colnames_matched = best_cols
+				private$best_X_colnames_matched = best_cols
+				if (!is.null(attempt$fit$log_sigma_eps) && !is.null(attempt$fit$log_sigma_u))
+					private$cached_vc_params_matched = as.numeric(c(attempt$fit$log_sigma_eps, attempt$fit$log_sigma_u))
 			}
 		},
 		weibull_for_reservoir = function(estimate_only = FALSE){
@@ -259,7 +300,21 @@ InferenceAbstractKKWeibullFrailtyIVWC = R6::R6Class("InferenceAbstractKKWeibullF
 			if (!is.null(attempt$fit)){
 				private$cached_values$beta_T_reservoir = attempt$fit$beta
 				private$cached_values$ssq_beta_T_reservoir = attempt$fit$ssq
-				private$cached_values$best_X_colnames_reservoir = setdiff(colnames(attempt$X_fit), "w")
+				best_cols_r = setdiff(colnames(attempt$X_fit), "w")
+				private$cached_values$best_X_colnames_reservoir = best_cols_r
+				private$best_X_colnames_reservoir = best_cols_r
+				X_r_int = cbind("(Intercept)" = 1, as.matrix(attempt$X_fit))
+				res_log_s = tryCatch(
+					fast_weibull_regression_cpp(
+						y    = as.numeric(private$y[i_reservoir]),
+						dead = as.numeric(private$dead[i_reservoir]),
+						X    = X_r_int,
+						estimate_only = TRUE
+					),
+					error = function(e) NULL
+				)
+				if (!is.null(res_log_s) && isTRUE(res_log_s$converged))
+					private$cached_vc_params_reservoir = as.numeric(res_log_s$log_sigma)
 			}
 		},
 		shared = function(estimate_only = FALSE){
@@ -417,6 +472,7 @@ InferenceAbstractKKWeibullFrailtyOneLik = R6::R6Class("InferenceAbstractKKWeibul
 		any_censoring = NULL,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		use_rcpp = TRUE,
+		cached_vc_params = NULL,
 		max_abs_reasonable_coef = 1e4,
 		shared_combined_likelihood = function(estimate_only = FALSE){
 			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))
@@ -469,6 +525,8 @@ InferenceAbstractKKWeibullFrailtyOneLik = R6::R6Class("InferenceAbstractKKWeibul
 			if (!is.null(res)){
 				private$cached_values$best_X_colnames = setdiff(colnames(attempt$X), "w")
 				private$cached_mod = res
+				if (!is.null(res$log_sigma_eps) && !is.null(res$log_sigma_u))
+					private$cached_vc_params = as.numeric(c(res$log_sigma_eps, res$log_sigma_u))
 				private$cached_values$likelihood_test_context = list(
 					X = attempt$X,
 					y = private$y,
@@ -609,6 +667,23 @@ InferenceAbstractKKWeibullFrailtyOneLik = R6::R6Class("InferenceAbstractKKWeibul
 			X_full = matrix(private$w, ncol = 1L, dimnames = list(NULL, "w"))
 			X_covs = X_data[, intersect(private$cached_values$best_X_colnames, colnames(X_data)), drop = FALSE]
 			if (ncol(X_covs) > 0L) X_full = cbind(X_full, X_covs)
+			p_ncol = ncol(X_full)
+			if (!is.null(private$cached_vc_params) && all(is.finite(private$cached_vc_params))) {
+				fit_fast = tryCatch(
+					fast_weibull_frailty_cpp(
+						X = as.matrix(X_full),
+						y = private$y, dead = private$dead,
+						group_id = as.integer(group_id),
+						estimate_only = TRUE,
+						optimization_alg = private$optimization_alg,
+						fixed_idx    = as.integer(c(p_ncol + 1L, p_ncol + 2L)),
+						fixed_values = as.numeric(private$cached_vc_params)
+					),
+					error = function(e) NULL
+				)
+				if (!is.null(fit_fast) && isTRUE(fit_fast$converged) && length(fit_fast$b) >= 1L && is.finite(fit_fast$b[1L]))
+					return(as.numeric(fit_fast$b[1L]))
+			}
 			fit = tryCatch(
 				fast_weibull_frailty_cpp(
 					X = as.matrix(X_full),

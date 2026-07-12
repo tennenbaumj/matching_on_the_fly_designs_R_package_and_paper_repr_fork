@@ -238,16 +238,26 @@ InferenceSurvivalCoxPHRegr = R6::R6Class("InferenceSurvivalCoxPHRegr",
 				private$y, private$dead, X_fit, row_weights,
 				warm_start_beta = private$get_fit_warm_start_for_length("params", ncol(X_fit)) %||% private$get_fit_warm_start_for_length("beta", ncol(X_fit))
 			)
-			private$cached_values$beta_hat_T = if (is.null(fit)) NA_real_ else as.numeric(fit$beta_hat)
+			beta_hat_T = if (is.null(fit)) NA_real_ else as.numeric(fit$beta_hat)
+			if (!is.finite(beta_hat_T) || private$cox_coefficients_extreme(beta_hat_T)) {
+				private$cache_nonestimable_estimate("coxph_weighted_extreme_coefficients")
+				beta_hat_T = NA_real_
+			}
+			private$cached_values$beta_hat_T = beta_hat_T
 			private$cached_values$s_beta_hat_T = NA_real_
 			private$cached_values$beta_hat_T
 		}
 	),
 	private = list(
 		use_rcpp = TRUE,
+		cox_extreme_coef_threshold = 20,
 		cox_X_fit_cache = NULL,
 		cox_data_cache = NULL,
 		cox_w_cache = NULL,
+		cox_coefficients_extreme = function(coefs){
+			coefs = as.numeric(coefs)
+			any(!is.finite(coefs)) || any(abs(coefs) > private$cox_extreme_coef_threshold)
+		},
 		supports_likelihood_tests = function(){
 			isTRUE(private$use_rcpp)
 		},
@@ -361,6 +371,19 @@ InferenceSurvivalCoxPHRegr = R6::R6Class("InferenceSurvivalCoxPHRegr",
 				)
 				
 				coefs = as.numeric(fit$coefficients %||% fit$b)
+				if (private$cox_coefficients_extreme(coefs)) {
+					private$cache_nonestimable_estimate("coxph_extreme_coefficients")
+					private$cached_values$likelihood_test_context = NULL
+					return(list(
+						beta_hat_T = NA_real_,
+						ssq_b_2 = NA_real_,
+						b = rep(NA_real_, ncol(X_fit) + 1L),
+						params = rep(NA_real_, ncol(X_fit)),
+						neg_log_lik = NA_real_,
+						fisher_information = NULL,
+						vcov = if (estimate_only) NULL else matrix(NA_real_, ncol(X_fit) + 1L, ncol(X_fit) + 1L)
+					))
+				}
 				return(list(
 					beta_hat_T = coefs[1L],
 					ssq_b_2 = if (estimate_only) NA_real_ else fit$vcov[1, 1],
@@ -380,6 +403,10 @@ InferenceSurvivalCoxPHRegr = R6::R6Class("InferenceSurvivalCoxPHRegr",
 				coxph_mod = suppressWarnings(survival::coxph(surv_obj ~ X_fit))
 				if (estimate_only) {
 					coefs = stats::coef(coxph_mod)
+					if (private$cox_coefficients_extreme(coefs)) {
+						private$cache_nonestimable_estimate("coxph_extreme_coefficients")
+						return(list(beta_hat_T = NA_real_, b = rep(NA_real_, ncol(X_fit) + 1L), ssq_b_2 = NA_real_, vcov = NULL))
+					}
 					list(
 						beta_hat_T = as.numeric(coefs[1]),
 						b = c(0, coefs),
@@ -388,6 +415,16 @@ InferenceSurvivalCoxPHRegr = R6::R6Class("InferenceSurvivalCoxPHRegr",
 					)
 				} else {
 					coefs = stats::coef(coxph_mod)
+					if (private$cox_coefficients_extreme(coefs)) {
+						private$cache_nonestimable_estimate("coxph_extreme_coefficients")
+						return(list(
+							beta_hat_T = NA_real_,
+							ssq_b_2 = NA_real_,
+							b = rep(NA_real_, ncol(X_fit) + 1L),
+							vcov = matrix(NA_real_, ncol(X_fit) + 1L, ncol(X_fit) + 1L),
+							neg_log_lik = NA_real_
+						))
+					}
 					vcov_mat = stats::vcov(coxph_mod)
 					v = matrix(0, ncol(X_fit) + 1, ncol(X_fit) + 1)
 					v[2:(ncol(X_fit) + 1), 2:(ncol(X_fit) + 1)] = vcov_mat

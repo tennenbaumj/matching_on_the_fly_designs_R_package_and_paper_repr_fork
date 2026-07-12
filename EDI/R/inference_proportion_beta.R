@@ -156,7 +156,7 @@ InferencePropBetaRegr = R6::R6Class("InferencePropBetaRegr",
 			n_params = ncol(X) + 1L
 			ws_args = private$get_backend_warm_start_args(n_params)
 			res = fast_beta_regression_cpp(
-				X = X, y = as.numeric(private$y),
+				X = X, y = sanitize_beta_response(as.numeric(private$y)),
 				warm_start_beta = ws_args$start_beta,
 				warm_start_fisher_info = ws_args$warm_start_fisher_info,
 				compute_std_errs = FALSE,
@@ -233,7 +233,7 @@ InferencePropBetaRegr = R6::R6Class("InferencePropBetaRegr",
 			ctx = private$cached_values$likelihood_test_context
 			if (is.null(ctx) || is.null(private$cached_mod)) return(NULL)
 			X_fit = ctx$X
-			y = as.numeric(private$y)
+			y = sanitize_beta_response(as.numeric(private$y))
 			j_treat = as.integer(ctx$j_treat)
 			list(
 				X = X_fit, y = y, j = j_treat,
@@ -279,6 +279,7 @@ InferencePropBetaRegr = R6::R6Class("InferencePropBetaRegr",
 		},
 		generate_mod = function(estimate_only = FALSE){
 			X_full = private$build_design_matrix()
+			y_san = sanitize_beta_response(as.numeric(private$y))
 			attempt = private$fit_with_hardened_qr_column_dropping(
 				X_full = X_full,
 				required_cols = 2L,
@@ -287,7 +288,7 @@ InferencePropBetaRegr = R6::R6Class("InferencePropBetaRegr",
 					ws_args = private$get_backend_warm_start_args(n_params)
 					if (estimate_only) {
 						res = fast_beta_regression_cpp(
-							X_fit, private$y,
+							X_fit, y_san,
 							warm_start_beta = ws_args$start_beta,
 							warm_start_fisher_info = ws_args$warm_start_fisher_info,
 							compute_std_errs = FALSE,
@@ -298,7 +299,7 @@ InferencePropBetaRegr = R6::R6Class("InferencePropBetaRegr",
 						list(b = res$coefficients, ssq_b_2 = NA_real_, phi = res$phi, neg_loglik = res$neg_loglik, fisher_information = res$fisher_information)
 					} else {
 						res = fast_beta_regression_with_var_cpp(
-							X_fit, private$y,
+							X_fit, y_san,
 							warm_start_beta = ws_args$start_beta,
 							warm_start_fisher_info = ws_args$warm_start_fisher_info,
 							smart_cold_start = private$smart_cold_start_default,

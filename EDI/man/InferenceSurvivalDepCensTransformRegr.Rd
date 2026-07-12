@@ -40,8 +40,16 @@ inf$compute_estimate()
 \item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_standard_error}{\code{InferenceSurvivalDepCensTransformRegr$compute_jackknife_standard_error()}}
 \item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_wald_two_sided_pval}{\code{InferenceSurvivalDepCensTransformRegr$compute_jackknife_wald_two_sided_pval()}}
 \item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_wald_confidence_interval}{\code{InferenceSurvivalDepCensTransformRegr$compute_jackknife_wald_confidence_interval()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_rand_two_sided_pval}{\code{InferenceSurvivalDepCensTransformRegr$compute_rand_two_sided_pval()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_rand_confidence_interval}{\code{InferenceSurvivalDepCensTransformRegr$compute_rand_confidence_interval()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval}{\code{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_basic}{\code{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval_basic()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_bca}{\code{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval_bca()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_studentized}{\code{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval_studentized()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-approximate_randomization_distribution_beta_hat_T}{\code{InferenceSurvivalDepCensTransformRegr$approximate_randomization_distribution_beta_hat_T()}}
 \item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_asymp_confidence_interval}{\code{InferenceSurvivalDepCensTransformRegr$compute_asymp_confidence_interval()}}
 \item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_asymp_two_sided_pval}{\code{InferenceSurvivalDepCensTransformRegr$compute_asymp_two_sided_pval()}}
+\item \href{#method-InferenceSurvivalDepCensTransformRegr-compute_score_two_sided_pval}{\code{InferenceSurvivalDepCensTransformRegr$compute_score_two_sided_pval()}}
 \item \href{#method-InferenceSurvivalDepCensTransformRegr-clone}{\code{InferenceSurvivalDepCensTransformRegr$clone()}}
 }
 }
@@ -64,13 +72,9 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="Inference" data-id="is_nonestimable"><a href='../..//html/Inference.html#method-Inference-is_nonestimable'><code>::Inference$is_nonestimable()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Inference" data-id="set_optimization_alg"><a href='../..//html/Inference.html#method-Inference-set_optimization_alg'><code>::Inference$set_optimization_alg()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Inference" data-id="set_seed"><a href='../..//html/Inference.html#method-Inference-set_seed'><code>::Inference$set_seed()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceRand" data-id="approximate_randomization_distribution_beta_hat_T"><a href='../..//html/InferenceRand.html#method-InferenceRand-approximate_randomization_distribution_beta_hat_T'><code>::InferenceRand$approximate_randomization_distribution_beta_hat_T()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceRand" data-id="set_custom_randomization_statistic_cpp"><a href='../..//html/InferenceRand.html#method-InferenceRand-set_custom_randomization_statistic_cpp'><code>::InferenceRand$set_custom_randomization_statistic_cpp()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceRand" data-id="set_custom_randomization_statistic_function"><a href='../..//html/InferenceRand.html#method-InferenceRand-set_custom_randomization_statistic_function'><code>::InferenceRand$set_custom_randomization_statistic_function()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceRandCI" data-id="compute_rand_confidence_interval"><a href='../..//html/InferenceRandCI.html#method-InferenceRandCI-compute_rand_confidence_interval'><code>::InferenceRandCI$compute_rand_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceRandCI" data-id="compute_rand_two_sided_pval"><a href='../..//html/InferenceRandCI.html#method-InferenceRandCI-compute_rand_two_sided_pval'><code>::InferenceRandCI$compute_rand_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceNonParamBootstrap" data-id="approximate_bootstrap_distribution_beta_hat_T"><a href='../..//html/InferenceNonParamBootstrap.html#method-InferenceNonParamBootstrap-approximate_bootstrap_distribution_beta_hat_T'><code>::InferenceNonParamBootstrap$approximate_bootstrap_distribution_beta_hat_T()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceNonParamBootstrap" data-id="compute_bootstrap_confidence_interval"><a href='../..//html/InferenceNonParamBootstrap.html#method-InferenceNonParamBootstrap-compute_bootstrap_confidence_interval'><code>::InferenceNonParamBootstrap$compute_bootstrap_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceNonParamBootstrap" data-id="compute_bootstrap_two_sided_pval"><a href='../..//html/InferenceNonParamBootstrap.html#method-InferenceNonParamBootstrap-compute_bootstrap_two_sided_pval'><code>::InferenceNonParamBootstrap$compute_bootstrap_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="approximate_bayesian_bootstrap_distribution_beta_hat_T"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-approximate_bayesian_bootstrap_distribution_beta_hat_T'><code>::InferenceBayesianBootstrap$approximate_bayesian_bootstrap_distribution_beta_hat_T()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceBayesianBootstrap" data-id="compute_bayesian_bootstrap_confidence_interval"><a href='../..//html/InferenceBayesianBootstrap.html#method-InferenceBayesianBootstrap-compute_bayesian_bootstrap_confidence_interval'><code>::InferenceBayesianBootstrap$compute_bayesian_bootstrap_confidence_interval()</code></a></span></li>
@@ -85,7 +89,6 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_two_sided_pval'><code>::InferenceAsympLik$compute_score_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_preference'><code>::InferenceAsympLik$get_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_information_source_used"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_information_source_used'><code>::InferenceAsympLik$get_information_source_used()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_supported_information_preferences"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_supported_information_preferences'><code>::InferenceAsympLik$get_supported_information_preferences()</code></a></span></li>
@@ -180,55 +183,95 @@ Reports jackknife bias correction as unavailable for this
 \if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_jackknife_estimate(unit = "auto")}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_corrected_estimate"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_corrected_estimate}{}}}
 \subsection{Method \code{compute_jackknife_corrected_estimate()}}{
+Reports jackknife bias-corrected estimate as unavailable for this model.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_jackknife_corrected_estimate(
   unit = "auto"
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_bias_estimate"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_bias_estimate}{}}}
 \subsection{Method \code{compute_jackknife_bias_estimate()}}{
+Reports jackknife bias estimate as unavailable for this model.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_jackknife_bias_estimate(
   unit = "auto"
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_std_error"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_std_error}{}}}
 \subsection{Method \code{compute_jackknife_std_error()}}{
+Reports jackknife standard error as unavailable for this model.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_jackknife_std_error(
   unit = "auto"
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_standard_error"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_standard_error}{}}}
 \subsection{Method \code{compute_jackknife_standard_error()}}{
+Alias for \code{compute_jackknife_std_error()}.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_jackknife_standard_error(
   unit = "auto"
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_wald_two_sided_pval"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_wald_two_sided_pval}{}}}
 \subsection{Method \code{compute_jackknife_wald_two_sided_pval()}}{
+Reports jackknife Wald two-sided p-value as unavailable for this model.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_jackknife_wald_two_sided_pval(
   delta = 0,
@@ -236,11 +279,21 @@ Reports jackknife bias correction as unavailable for this
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment-effect value. Default 0.}
+
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_wald_confidence_interval"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_jackknife_wald_confidence_interval}{}}}
 \subsection{Method \code{compute_jackknife_wald_confidence_interval()}}{
+Reports jackknife Wald confidence interval as unavailable for this model.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_jackknife_wald_confidence_interval(
   alpha = 0.05,
@@ -248,6 +301,249 @@ Reports jackknife bias correction as unavailable for this
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{unit}}{Deletion unit. Default \code{"auto"}.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_rand_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_rand_two_sided_pval}{}}}
+\subsection{Method \code{compute_rand_two_sided_pval()}}{
+Reports randomization inference as unavailable for this
+  model; each randomization draw requires a full dependent-censoring
+  likelihood refit and is not stable enough for the comprehensive suite.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_rand_two_sided_pval(
+  r = 501,
+  delta = 0,
+  transform_responses = "none",
+  na.rm = TRUE,
+  show_progress = TRUE,
+  permutations = NULL,
+  zero_one_logit_clamp = .Machine$double.eps
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{r}}{Number of randomization vectors. Default 501.}
+
+\item{\code{delta}}{Null treatment-effect value. Default 0.}
+
+\item{\code{transform_responses}}{Type of response transformation. Default \code{"none"}.}
+
+\item{\code{na.rm}}{Whether to remove non-finite bootstrap replicates.}
+
+\item{\code{show_progress}}{Whether to show a progress bar.}
+
+\item{\code{permutations}}{Optional pre-computed permutations. Default NULL.}
+
+\item{\code{zero_one_logit_clamp}}{Numerical clamp for logit transforms near 0/1.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_rand_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_rand_confidence_interval}{}}}
+\subsection{Method \code{compute_rand_confidence_interval()}}{
+Reports randomization confidence interval as unavailable for this model.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_rand_confidence_interval(
+  alpha = 0.05,
+  r = 501,
+  pval_epsilon = 0.005,
+  show_progress = TRUE,
+  ci_search_control = NULL
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{r}}{Number of randomization vectors. Default 501.}
+
+\item{\code{pval_epsilon}}{Bisection tolerance for the CI search.}
+
+\item{\code{show_progress}}{Whether to show a progress bar.}
+
+\item{\code{ci_search_control}}{Optional control list for the randomization-CI search.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval}{}}}
+\subsection{Method \code{compute_bootstrap_confidence_interval()}}{
+Bootstrap confidence interval, validated for this model.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval(
+  alpha = 0.05,
+  B = 1000,
+  min_number_usable_samples = 10,
+  show_progress = TRUE,
+  na.rm = TRUE,
+  type = NULL
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{B}}{Number of bootstrap replicates. Default 1000.}
+
+\item{\code{min_number_usable_samples}}{Minimum number of usable bootstrap samples. Default 10.}
+
+\item{\code{show_progress}}{Whether to show a progress bar.}
+
+\item{\code{na.rm}}{Whether to remove non-finite bootstrap replicates.}
+
+\item{\code{type}}{Optional bootstrap CI type. Default NULL.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_basic"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_basic}{}}}
+\subsection{Method \code{compute_bootstrap_confidence_interval_basic()}}{
+Basic bootstrap confidence interval, validated for this model.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval_basic(
+  alpha = 0.05,
+  B = 1000,
+  min_number_usable_samples = 10,
+  show_progress = TRUE,
+  na.rm = TRUE
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{B}}{Number of bootstrap replicates. Default 1000.}
+
+\item{\code{min_number_usable_samples}}{Minimum number of usable bootstrap samples. Default 10.}
+
+\item{\code{show_progress}}{Whether to show a progress bar.}
+
+\item{\code{na.rm}}{Whether to remove non-finite bootstrap replicates.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_bca"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_bca}{}}}
+\subsection{Method \code{compute_bootstrap_confidence_interval_bca()}}{
+BCa bootstrap confidence interval, validated for this model.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval_bca(
+  alpha = 0.05,
+  B = 1000,
+  min_number_usable_samples = 10,
+  show_progress = TRUE,
+  na.rm = TRUE
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{B}}{Number of bootstrap replicates. Default 1000.}
+
+\item{\code{min_number_usable_samples}}{Minimum number of usable bootstrap samples. Default 10.}
+
+\item{\code{show_progress}}{Whether to show a progress bar.}
+
+\item{\code{na.rm}}{Whether to remove non-finite bootstrap replicates.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_studentized"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_bootstrap_confidence_interval_studentized}{}}}
+\subsection{Method \code{compute_bootstrap_confidence_interval_studentized()}}{
+Studentized bootstrap confidence interval, validated for this model.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_bootstrap_confidence_interval_studentized(
+  alpha = 0.05,
+  B = 1000,
+  min_number_usable_samples = 10,
+  show_progress = TRUE,
+  na.rm = TRUE
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{B}}{Number of bootstrap replicates. Default 1000.}
+
+\item{\code{min_number_usable_samples}}{Minimum number of usable bootstrap samples. Default 10.}
+
+\item{\code{show_progress}}{Whether to show a progress bar.}
+
+\item{\code{na.rm}}{Whether to remove non-finite bootstrap replicates.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-approximate_randomization_distribution_beta_hat_T"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-approximate_randomization_distribution_beta_hat_T}{}}}
+\subsection{Method \code{approximate_randomization_distribution_beta_hat_T()}}{
+Reports the randomization distribution as unavailable for this model.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$approximate_randomization_distribution_beta_hat_T(
+  r = 501,
+  delta = 0,
+  transform_responses = "none",
+  show_progress = TRUE,
+  permutations = NULL,
+  debug = FALSE,
+  zero_one_logit_clamp = .Machine$double.eps
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{r}}{Number of randomization vectors. Default 501.}
+
+\item{\code{delta}}{Null treatment-effect value. Default 0.}
+
+\item{\code{transform_responses}}{Type of response transformation. Default \code{"none"}.}
+
+\item{\code{show_progress}}{Whether to show a progress bar.}
+
+\item{\code{permutations}}{Optional pre-computed permutations. Default NULL.}
+
+\item{\code{debug}}{If \code{TRUE}, return diagnostics.}
+
+\item{\code{zero_one_logit_clamp}}{Numerical clamp for logit transforms near 0/1.}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_asymp_confidence_interval"></a>}}
@@ -281,6 +577,23 @@ Computes an approximate two-sided p-value.
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{delta}}{Null treatment effect value.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceSurvivalDepCensTransformRegr-compute_score_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceSurvivalDepCensTransformRegr-compute_score_two_sided_pval}{}}}
+\subsection{Method \code{compute_score_two_sided_pval()}}{
+Computes a score two-sided p-value, falling back to the asymptotic test when unavailable.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceSurvivalDepCensTransformRegr$compute_score_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment-effect value. Default 0.}
 }
 \if{html}{\out{</div>}}
 }

@@ -480,8 +480,12 @@ fast_cpoisson_combined_with_var_cpp <- function(yT_v_r, n_k_v_r, X_diff_v_r, y_r
     .Call(`_EDI_fast_cpoisson_combined_with_var_cpp`, yT_v_r, n_k_v_r, X_diff_v_r, y_r_r, w_r_r, X_r_r, maxit, tol, fixed_idx, fixed_values, warm_start_fisher_info, warm_start_params, warm_start_beta, estimate_only)
 }
 
-fast_gaussian_lmm_cpp <- function(X_r, y_r, group_id_r, warm_start_params = NULL, warm_start_beta = NULL, estimate_only = FALSE, maxit = 300L, eps_g = 1e-6, fixed_idx = NULL, fixed_values = NULL, optimization_alg = "lbfgs", warm_start_fisher_info = NULL) {
-    .Call(`_EDI_fast_gaussian_lmm_cpp`, X_r, y_r, group_id_r, warm_start_params, warm_start_beta, estimate_only, maxit, eps_g, fixed_idx, fixed_values, optimization_alg, warm_start_fisher_info)
+fast_gaussian_lmm_cpp <- function(X_r, y_r, group_id_r, warm_start_params = NULL, warm_start_beta = NULL, estimate_only = FALSE, maxit = 300L, eps_g = 1e-6, fixed_idx = NULL, fixed_values = NULL, optimization_alg = "lbfgs", warm_start_fisher_info = NULL, weights = NULL) {
+    .Call(`_EDI_fast_gaussian_lmm_cpp`, X_r, y_r, group_id_r, warm_start_params, warm_start_beta, estimate_only, maxit, eps_g, fixed_idx, fixed_values, optimization_alg, warm_start_fisher_info, weights)
+}
+
+fast_gaussian_lmm_gls_cpp <- function(X_r, y_r, group_id_r, log_sigma_e, log_sigma_b, weights = NULL) {
+    .Call(`_EDI_fast_gaussian_lmm_gls_cpp`, X_r, y_r, group_id_r, log_sigma_e, log_sigma_b, weights)
 }
 
 get_gaussian_lmm_score_cpp <- function(X_r, y_r, group_id_r, par_sexp) {

@@ -65,38 +65,155 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		#' @description Reports jackknife bias correction as unavailable for this
 		#'   model; leave-one-out bias correction is unstable for the
 		#'   dependent-censoring transformation likelihood on small censored samples.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_estimate = function(unit = "auto"){
 			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
 			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Reports jackknife bias-corrected estimate as unavailable for this model.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_corrected_estimate = function(unit = "auto"){
 			self$compute_jackknife_estimate(unit = unit)
 		},
+		#' @description Reports jackknife bias estimate as unavailable for this model.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_bias_estimate = function(unit = "auto"){
 			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
 			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Reports jackknife standard error as unavailable for this model.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_std_error = function(unit = "auto"){
 			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
 			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Alias for \code{compute_jackknife_std_error()}.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_standard_error = function(unit = "auto"){
 			self$compute_jackknife_std_error(unit = unit)
 		},
+		#' @description Reports jackknife Wald two-sided p-value as unavailable for this model.
+		#' @param delta Null treatment-effect value. Default 0.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_wald_two_sided_pval = function(delta = 0, unit = "auto"){
 			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
 			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
 			NA_real_
 		},
+		#' @description Reports jackknife Wald confidence interval as unavailable for this model.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param unit Deletion unit. Default \code{"auto"}.
 		compute_jackknife_wald_confidence_interval = function(alpha = 0.05, unit = "auto"){
 			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
 			private$cache_nonestimable_se("dep_cens_transform_jackknife_not_supported")
 			ci = c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			ci
+		},
+		#' @description Reports randomization inference as unavailable for this
+		#'   model; each randomization draw requires a full dependent-censoring
+		#'   likelihood refit and is not stable enough for the comprehensive suite.
+		#' @param r Number of randomization vectors. Default 501.
+		#' @param delta Null treatment-effect value. Default 0.
+		#' @param transform_responses Type of response transformation. Default \code{"none"}.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		#' @param show_progress Whether to show a progress bar.
+		#' @param permutations Optional pre-computed permutations. Default NULL.
+		#' @param zero_one_logit_clamp Numerical clamp for logit transforms near 0/1.
+		compute_rand_two_sided_pval = function(r = 501, delta = 0, transform_responses = "none", na.rm = TRUE, show_progress = TRUE, permutations = NULL, zero_one_logit_clamp = .Machine$double.eps){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_randomization_not_supported")
+			NA_real_
+		},
+		#' @description Reports randomization confidence interval as unavailable for this model.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param r Number of randomization vectors. Default 501.
+		#' @param pval_epsilon Bisection tolerance for the CI search.
+		#' @param show_progress Whether to show a progress bar.
+		#' @param ci_search_control Optional control list for the randomization-CI search.
+		compute_rand_confidence_interval = function(alpha = 0.05, r = 501, pval_epsilon = 0.005, show_progress = TRUE, ci_search_control = NULL){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_randomization_not_supported")
+			ci = c(NA_real_, NA_real_)
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			ci
+		},
+		#' @description Bootstrap confidence interval, validated for this model.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of bootstrap replicates. Default 1000.
+		#' @param min_number_usable_samples Minimum number of usable bootstrap samples. Default 10.
+		#' @param show_progress Whether to show a progress bar.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		#' @param type Optional bootstrap CI type. Default NULL.
+		compute_bootstrap_confidence_interval = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE, na.rm = TRUE, type = NULL){
+			private$dep_cens_validate_bootstrap_ci(
+				super$compute_bootstrap_confidence_interval(
+					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
+					show_progress = show_progress, na.rm = na.rm, type = type
+				),
+				alpha = alpha
+			)
+		},
+		#' @description Basic bootstrap confidence interval, validated for this model.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of bootstrap replicates. Default 1000.
+		#' @param min_number_usable_samples Minimum number of usable bootstrap samples. Default 10.
+		#' @param show_progress Whether to show a progress bar.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		compute_bootstrap_confidence_interval_basic = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE, na.rm = TRUE){
+			private$dep_cens_validate_bootstrap_ci(
+				super$compute_bootstrap_confidence_interval_basic(
+					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
+					show_progress = show_progress, na.rm = na.rm
+				),
+				alpha = alpha
+			)
+		},
+		#' @description BCa bootstrap confidence interval, validated for this model.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of bootstrap replicates. Default 1000.
+		#' @param min_number_usable_samples Minimum number of usable bootstrap samples. Default 10.
+		#' @param show_progress Whether to show a progress bar.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		compute_bootstrap_confidence_interval_bca = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE, na.rm = TRUE){
+			private$dep_cens_validate_bootstrap_ci(
+				super$compute_bootstrap_confidence_interval_bca(
+					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
+					show_progress = show_progress, na.rm = na.rm
+				),
+				alpha = alpha
+			)
+		},
+		#' @description Studentized bootstrap confidence interval, validated for this model.
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of bootstrap replicates. Default 1000.
+		#' @param min_number_usable_samples Minimum number of usable bootstrap samples. Default 10.
+		#' @param show_progress Whether to show a progress bar.
+		#' @param na.rm Whether to remove non-finite bootstrap replicates.
+		compute_bootstrap_confidence_interval_studentized = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE, na.rm = TRUE){
+			private$dep_cens_validate_bootstrap_ci(
+				super$compute_bootstrap_confidence_interval_studentized(
+					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
+					show_progress = show_progress, na.rm = na.rm
+				),
+				alpha = alpha
+			)
+		},
+		#' @description Reports the randomization distribution as unavailable for this model.
+		#' @param r Number of randomization vectors. Default 501.
+		#' @param delta Null treatment-effect value. Default 0.
+		#' @param transform_responses Type of response transformation. Default \code{"none"}.
+		#' @param show_progress Whether to show a progress bar.
+		#' @param permutations Optional pre-computed permutations. Default NULL.
+		#' @param debug If \code{TRUE}, return diagnostics.
+		#' @param zero_one_logit_clamp Numerical clamp for logit transforms near 0/1.
+		approximate_randomization_distribution_beta_hat_T = function(r = 501, delta = 0, transform_responses = "none", show_progress = TRUE, permutations = NULL, debug = FALSE, zero_one_logit_clamp = .Machine$double.eps){
+			tryCatch(self$compute_estimate(estimate_only = TRUE), error = function(e) NA_real_)
+			private$cache_nonestimable_se("dep_cens_transform_randomization_not_supported")
+			rep(NA_real_, as.integer(r))
 		},
 		#' @description Computes an approximate confidence interval.
 		#' @param alpha Confidence level.
@@ -109,9 +226,33 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		compute_asymp_two_sided_pval = function(delta = 0){
 			private$shared(estimate_only = FALSE)
 			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+		},
+		#' @description Computes a score two-sided p-value, falling back to the asymptotic test when unavailable.
+		#' @param delta Null treatment-effect value. Default 0.
+		compute_score_two_sided_pval = function(delta = 0){
+			p = tryCatch(super$compute_score_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			if (!is.finite(p)) return(p)
+			asymp = tryCatch(super$compute_asymp_two_sided_pval(delta = delta), error = function(e) NA_real_)
+			if (is.finite(asymp) && asymp > 0.05 && p < 0.01) {
+				private$cache_nonestimable_se("dep_cens_transform_score_pvalue_unstable")
+				return(NA_real_)
+			}
+			p
 		}
 	),
 	private = list(
+		dep_cens_bootstrap_ci_max_abs = 2,
+		dep_cens_validate_bootstrap_ci = function(ci, alpha = 0.05){
+			ci = as.numeric(ci)
+			if (length(ci) < 2L || !all(is.finite(ci[1:2])) ||
+			    any(abs(ci[1:2]) > private$dep_cens_bootstrap_ci_max_abs)) {
+				private$cache_nonestimable_estimate("dep_cens_transform_bootstrap_ci_unstable")
+				out = c(NA_real_, NA_real_)
+				names(out) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+				return(out)
+			}
+			ci
+		},
 		best_X_colnames = NULL,
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			if (is.null(private$best_X_colnames)){

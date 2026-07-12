@@ -323,7 +323,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				D_obs = abs(est - delta)
 				D_boot = abs(boot_distr - mean(boot_distr))
 				n_bs = length(D_boot)
-				return(min(1, max(1 / n_bs, mean(D_boot >= D_obs))))
+				return(min(1, max(2 / n_bs, mean(D_boot >= D_obs))))
 			}
 			if (type == "bca") {
 				p_value = tryCatch(
@@ -343,7 +343,8 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_standard_error_unavailable")
 				return(NA_real_)
 			}
-			2 * stats::pnorm(-abs((est - delta) / se_boot))
+			n_bs = length(boot_distr)
+			min(1, max(2 / n_bs, 2 * stats::pnorm(-abs((est - delta) / se_boot))))
 		},
 		#' @description Computes a Bayesian-bootstrap confidence interval for the
 		#'   treatment effect.
@@ -400,11 +401,14 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 					private$ci_studentized(boot_stats, alpha, est, min_number_usable_samples = min_number_usable_samples),
 					error = function(e) private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_ci_unavailable", stage = "se")
 				)
-				if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
-					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_ci_unavailable", stage = "se"))
+					if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+						return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_ci_unavailable", stage = "se"))
+					}
+					if (private$studentized_interval_scale_unstable(theta = boot_stats$theta, ci = ci, est = est, alpha = alpha)) {
+						return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_unstable_studentized_interval", stage = "se"))
+					}
+					return(ci)
 				}
-				return(ci)
-			}
 			boot_distr = self$approximate_bayesian_bootstrap_distribution_beta_hat_T(
 				B = B,
 				show_progress = show_progress,
@@ -449,6 +453,19 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 		build_bayesian_bootstrap_context = function(weighting_unit_type = NULL){
 			n = private$des_obj$get_n()
 			design_obj = private$des_obj
+			if (isTRUE(private$has_match_structure)) {
+				m_vec = private$m
+				if (is.null(m_vec)) m_vec = private$des_obj_priv_int$m
+				if (is.null(m_vec)) m_vec = rep(0L, n)
+				cluster_ids = compute_cluster_ids_cpp(as.integer(m_vec))
+				row_to_unit = match(cluster_ids, unique(cluster_ids))
+				unit_group_id = rep(1L, max(row_to_unit))
+				return(list(
+					row_to_unit = as.integer(row_to_unit),
+					unit_group_id = as.integer(unit_group_id),
+					n_units = length(unit_group_id)
+				))
+			}
 			is_matching_design = is(design_obj, "DesignMatching") &&
 				isTRUE(tryCatch(design_obj$is_matching_design(), error = function(e) FALSE))
 			is_blocking_design = is(design_obj, "DesignBlocking") &&
@@ -716,7 +733,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				return(NA_real_)
 			}
 			p_raw = min(1, 2 * min(stats::pnorm(adj_z), 1 - stats::pnorm(adj_z)))
-			min(1, max(1 / length(boot_distr), p_raw))
+			min(1, max(2 / length(boot_distr), p_raw))
 		},
 		compute_bayesian_bootstrap_distribution_with_reused_workers = function(draws, actual_cores, show_progress = FALSE){
 			B = length(draws)

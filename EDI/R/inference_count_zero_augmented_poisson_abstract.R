@@ -224,7 +224,7 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 	),
 		private = list(
 		supports_reusable_bootstrap_worker = function(){
-			isTRUE(private$use_rcpp)
+			FALSE
 			},
 			cached_mod = NULL,
 			za_X_cov_all = NULL,

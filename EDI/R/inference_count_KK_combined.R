@@ -121,6 +121,7 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 	)),
 	private = utils::modifyList(as.list(InferenceMixinKKGLMMShared$private), list(
 		use_rcpp = TRUE,
+		cached_vc_params = NULL,
 		glmm_response_type = function() "count",
 		compute_weighted_glmm_bootstrap_estimate = function(row_weights){
 			if (!isTRUE(private$use_rcpp)) {
@@ -253,6 +254,7 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 				return(private$shared_glmm_tmb(estimate_only = estimate_only))
 			}
 			private$cached_mod = fit
+			private$cached_vc_params = as.numeric(fit$log_sigma)
 			private$set_fit_warm_start(as.numeric(c(fit$b, fit$log_sigma)), "params", fisher = fit$fisher_information)
 			private$cached_values$likelihood_test_context = list(
 				X = X_fit,
@@ -266,6 +268,51 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 			if (estimate_only) return(invisible(NULL))
 			ssq = fit$ssq_b_T
 			private$cached_values$s_beta_hat_T = if (!is.null(ssq) && is.finite(ssq) && ssq > 0) sqrt(ssq) else NA_real_
+		},
+		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
+			if (!isTRUE(private$use_rcpp) || is.null(private$cached_vc_params)) {
+				return(self$compute_estimate(estimate_only = estimate_only))
+			}
+			m_vec = private$m
+			if (is.null(m_vec)) m_vec = rep(NA_integer_, private$n)
+			m_vec[is.na(m_vec)] = 0L
+			group_id = m_vec
+			reservoir_idx = which(group_id == 0L)
+			if (length(reservoir_idx) > 0L)
+				group_id[reservoir_idx] = max(group_id) + seq_along(reservoir_idx)
+			if (ncol(as.matrix(private$X)) > 0) {
+				X_fit = private$create_design_matrix()
+			} else {
+				X_fit = cbind(`(Intercept)` = 1, w = private$w)
+			}
+			if ("treatment" %in% colnames(X_fit))
+				colnames(X_fit)[colnames(X_fit) == "treatment"] = "w"
+			X_fit = as.matrix(X_fit)
+			j_T_r = which(colnames(X_fit) == "w")
+			if (length(j_T_r) == 0L) j_T_r = 2L
+			j_T = as.integer(j_T_r - 1L)
+			p_ncol = ncol(X_fit)
+			fit = tryCatch(
+				fast_poisson_glmm_cpp(
+					X        = X_fit,
+					y        = as.numeric(private$y),
+					group_id = as.integer(group_id),
+					j_T      = j_T,
+					warm_start_params = private$get_fit_warm_start_for_length("params", p_ncol + 1L),
+					smart_cold_start  = private$smart_cold_start_default,
+					estimate_only     = TRUE,
+					optimization_alg  = private$optimization_alg,
+					fixed_idx         = as.integer(p_ncol + 1L),
+					fixed_values      = private$cached_vc_params[1L]
+				),
+				error = function(e) NULL
+			)
+			if (!is.null(fit) && isTRUE(fit$converged)) {
+				beta_hat_T = as.numeric(fit$b[j_T_r])
+				if (is.finite(beta_hat_T) && abs(beta_hat_T) <= private$max_abs_reasonable_coef)
+					return(beta_hat_T)
+			}
+			self$compute_estimate(estimate_only = estimate_only)
 		},
 		get_likelihood_test_spec = function(){
 			if (!isTRUE(private$use_rcpp)) return(NULL)

@@ -1035,8 +1035,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // fast_gaussian_lmm_cpp
-List fast_gaussian_lmm_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, Rcpp::Nullable<Rcpp::NumericVector> warm_start_params, Rcpp::Nullable<Rcpp::NumericVector> warm_start_beta, bool estimate_only, int maxit, double eps_g, Rcpp::Nullable<Rcpp::IntegerVector> fixed_idx, Rcpp::Nullable<Rcpp::NumericVector> fixed_values, std::string optimization_alg, Rcpp::Nullable<Rcpp::NumericMatrix> warm_start_fisher_info);
-RcppExport SEXP _EDI_fast_gaussian_lmm_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP warm_start_paramsSEXP, SEXP warm_start_betaSEXP, SEXP estimate_onlySEXP, SEXP maxitSEXP, SEXP eps_gSEXP, SEXP fixed_idxSEXP, SEXP fixed_valuesSEXP, SEXP optimization_algSEXP, SEXP warm_start_fisher_infoSEXP) {
+List fast_gaussian_lmm_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, Rcpp::Nullable<Rcpp::NumericVector> warm_start_params, Rcpp::Nullable<Rcpp::NumericVector> warm_start_beta, bool estimate_only, int maxit, double eps_g, Rcpp::Nullable<Rcpp::IntegerVector> fixed_idx, Rcpp::Nullable<Rcpp::NumericVector> fixed_values, std::string optimization_alg, Rcpp::Nullable<Rcpp::NumericMatrix> warm_start_fisher_info, Rcpp::Nullable<Rcpp::NumericVector> weights);
+RcppExport SEXP _EDI_fast_gaussian_lmm_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP warm_start_paramsSEXP, SEXP warm_start_betaSEXP, SEXP estimate_onlySEXP, SEXP maxitSEXP, SEXP eps_gSEXP, SEXP fixed_idxSEXP, SEXP fixed_valuesSEXP, SEXP optimization_algSEXP, SEXP warm_start_fisher_infoSEXP, SEXP weightsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1052,7 +1052,24 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type fixed_values(fixed_valuesSEXP);
     Rcpp::traits::input_parameter< std::string >::type optimization_alg(optimization_algSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type warm_start_fisher_info(warm_start_fisher_infoSEXP);
-    rcpp_result_gen = Rcpp::wrap(fast_gaussian_lmm_cpp(X_r, y_r, group_id_r, warm_start_params, warm_start_beta, estimate_only, maxit, eps_g, fixed_idx, fixed_values, optimization_alg, warm_start_fisher_info));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type weights(weightsSEXP);
+    rcpp_result_gen = Rcpp::wrap(fast_gaussian_lmm_cpp(X_r, y_r, group_id_r, warm_start_params, warm_start_beta, estimate_only, maxit, eps_g, fixed_idx, fixed_values, optimization_alg, warm_start_fisher_info, weights));
+    return rcpp_result_gen;
+END_RCPP
+}
+// fast_gaussian_lmm_gls_cpp
+Rcpp::NumericVector fast_gaussian_lmm_gls_cpp(SEXP X_r, SEXP y_r, SEXP group_id_r, double log_sigma_e, double log_sigma_b, Rcpp::Nullable<Rcpp::NumericVector> weights);
+RcppExport SEXP _EDI_fast_gaussian_lmm_gls_cpp(SEXP X_rSEXP, SEXP y_rSEXP, SEXP group_id_rSEXP, SEXP log_sigma_eSEXP, SEXP log_sigma_bSEXP, SEXP weightsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_r(X_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type y_r(y_rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type group_id_r(group_id_rSEXP);
+    Rcpp::traits::input_parameter< double >::type log_sigma_e(log_sigma_eSEXP);
+    Rcpp::traits::input_parameter< double >::type log_sigma_b(log_sigma_bSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type weights(weightsSEXP);
+    rcpp_result_gen = Rcpp::wrap(fast_gaussian_lmm_gls_cpp(X_r, y_r, group_id_r, log_sigma_e, log_sigma_b, weights));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4825,7 +4842,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_get_cpoisson_combined_score_cpp", (DL_FUNC) &_EDI_get_cpoisson_combined_score_cpp, 7},
     {"_EDI_get_cpoisson_combined_hessian_cpp", (DL_FUNC) &_EDI_get_cpoisson_combined_hessian_cpp, 7},
     {"_EDI_fast_cpoisson_combined_with_var_cpp", (DL_FUNC) &_EDI_fast_cpoisson_combined_with_var_cpp, 14},
-    {"_EDI_fast_gaussian_lmm_cpp", (DL_FUNC) &_EDI_fast_gaussian_lmm_cpp, 12},
+    {"_EDI_fast_gaussian_lmm_cpp", (DL_FUNC) &_EDI_fast_gaussian_lmm_cpp, 13},
+    {"_EDI_fast_gaussian_lmm_gls_cpp", (DL_FUNC) &_EDI_fast_gaussian_lmm_gls_cpp, 6},
     {"_EDI_get_gaussian_lmm_score_cpp", (DL_FUNC) &_EDI_get_gaussian_lmm_score_cpp, 4},
     {"_EDI_get_gaussian_lmm_fisher_cpp", (DL_FUNC) &_EDI_get_gaussian_lmm_fisher_cpp, 5},
     {"_EDI_gee_pairs_singletons_weighted_cpp", (DL_FUNC) &_EDI_gee_pairs_singletons_weighted_cpp, 9},

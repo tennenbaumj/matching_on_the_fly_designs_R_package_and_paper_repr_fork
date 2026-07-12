@@ -113,6 +113,8 @@ Initialize a KK GLMM inference object.
   des_obj,
   model_formula = NULL,
   use_rcpp = TRUE,
+  use_gls_fast_path = TRUE,
+  use_gls_fast_path_bootstrap = FALSE,
   verbose = FALSE,
   smart_cold_start_default = NULL,
   optimization_alg = NULL
@@ -132,6 +134,19 @@ design's imputed covariates.}
 \item{\code{use_rcpp}}{Logical. If \code{TRUE} (default), use the optimised Rcpp
 Gaussian LMM implementation (no external package required). If \code{FALSE},
 use \pkg{glmmTMB}.}
+
+\item{\code{use_gls_fast_path}}{Logical. If \code{TRUE} (default), use a fast GLS
+estimator (no optimisation) for \code{estimate_only} calls during
+randomisation inference once variance components are cached from a prior
+full fit.  Statistically exact: fixing VC at the null-fit MLE and
+permuting only the treatment assignment gives a valid permutation test by
+exchangeability.  Set \code{FALSE} to always run full L-BFGS.}
+
+\item{\code{use_gls_fast_path_bootstrap}}{Logical. If \code{TRUE}, also use the
+fast GLS estimator for non-studentised bootstrap draws
+(\code{estimate_only = TRUE} weighted calls).  Asymptotically valid by
+the plug-in principle (VC orthogonal to beta_T in the Fisher information),
+but not exact in finite samples.  Default \code{FALSE}.}
 
 \item{\code{verbose}}{Whether to print progress messages.}
 

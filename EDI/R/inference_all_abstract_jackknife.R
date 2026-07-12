@@ -250,7 +250,20 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 				return(summary)
 			}
 			theta_hat = as.numeric(self$compute_estimate(estimate_only = TRUE))[1L]
-			if (!is.finite(theta_hat) || any(!is.finite(jack))) {
+			if (!is.finite(theta_hat)) {
+				private$cache_nonestimable_estimate("jackknife_original_estimate_unavailable")
+				summary = list(estimate = NA_real_, bias = NA_real_, std_error = NA_real_, distribution = jack)
+				private$cached_values$jackknife_summary[[cache_key]] = summary
+				return(summary)
+			}
+			if (any(!is.finite(jack))) {
+				private$cache_nonestimable_se("jackknife_nonfinite_replicate_estimates")
+				summary = list(estimate = NA_real_, bias = NA_real_, std_error = NA_real_, distribution = jack)
+				private$cached_values$jackknife_summary[[cache_key]] = summary
+				return(summary)
+			}
+			if (private$bootstrap_estimates_extreme(jack, est = theta_hat)) {
+				private$cache_nonestimable_se("jackknife_extreme_finite_estimates")
 				summary = list(estimate = NA_real_, bias = NA_real_, std_error = NA_real_, distribution = jack)
 				private$cached_values$jackknife_summary[[cache_key]] = summary
 				return(summary)
@@ -260,6 +273,15 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 			theta_j = theta_hat - bias_j
 			var_j = ((n_units - 1) / n_units) * sum((jack - jack_bar)^2)
 			se_j = if (is.finite(var_j) && var_j >= 0) sqrt(var_j) else NA_real_
+			if (!is.finite(theta_j) || !is.finite(se_j) ||
+			    abs(theta_j) > private$bootstrap_extreme_estimate_threshold ||
+			    se_j > private$bootstrap_extreme_estimate_threshold ||
+			    abs(bias_j) > 3 * se_j) {
+				private$cache_nonestimable_se("jackknife_extreme_summary")
+				summary = list(estimate = NA_real_, bias = NA_real_, std_error = NA_real_, distribution = jack)
+				private$cached_values$jackknife_summary[[cache_key]] = summary
+				return(summary)
+			}
 			summary = list(estimate = theta_j, bias = bias_j, std_error = se_j, distribution = jack)
 			private$cached_values$jackknife_summary[[cache_key]] = summary
 			summary

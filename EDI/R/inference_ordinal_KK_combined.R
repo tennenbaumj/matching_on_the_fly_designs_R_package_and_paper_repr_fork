@@ -241,7 +241,46 @@ InferenceOrdinalKKGLMM = R6::R6Class("InferenceOrdinalKKGLMM",
 		#' @param estimate_only If \code{TRUE}, compute only the weighted point
 		#'   estimate.
 		compute_estimate_with_bootstrap_weights = function(subject_or_block_weights, estimate_only = FALSE){
-			eval(body(InferenceMixinKKGLMMShared$public$compute_estimate_with_bootstrap_weights))
+			row_weights = private$expand_subject_or_block_weights_to_row_weights(subject_or_block_weights)
+			if (weights_are_effectively_constant(row_weights)) {
+				self$compute_estimate(estimate_only = estimate_only)
+				beta_hat_T = as.numeric(private$cached_values$beta_hat_T)[1L]
+				if (is.finite(beta_hat_T)) {
+					private$cached_values$df = Inf
+					private$cached_values$summary_table = NULL
+					return(private$cached_values$beta_hat_T)
+				}
+			}
+			pred_df = private$glmm_predictors_df()
+			ok = is.finite(row_weights) & row_weights > 0 & is.finite(private$y)
+			if (!any(ok)) {
+				private$cached_values$beta_hat_T = NA_real_
+				private$cached_values$s_beta_hat_T = NA_real_
+				return(NA_real_)
+			}
+			X_fit = as.matrix(pred_df[ok, , drop = FALSE])
+			y_fit = as.numeric(private$y[ok])
+			n_params = ncol(X_fit) + length(sort(unique(y_fit))) - 1L
+			mod = tryCatch(
+				fast_ordinal_regression_weighted_cpp(
+					X = X_fit,
+					y = y_fit,
+					weights = as.numeric(row_weights[ok]),
+					warm_start_params = private$get_fit_warm_start_for_length("params", n_params),
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+					smart_cold_start = private$smart_cold_start_default
+				),
+				error = function(e) NULL
+			)
+			if (!is.null(mod) && !is.null(mod$params)) {
+				private$set_fit_warm_start(as.numeric(mod$params), "params", fisher = mod$fisher_information)
+			}
+			beta_hat_T = if (is.null(mod) || length(mod$b) < 1L) NA_real_ else as.numeric(mod$b[1L])
+			private$cached_values$beta_hat_T = beta_hat_T
+			private$cached_values$s_beta_hat_T = NA_real_
+			private$cached_values$df = Inf
+			private$cached_values$summary_table = NULL
+			private$cached_values$beta_hat_T
 		}
 	)),
 	private = utils::modifyList(as.list(InferenceMixinKKGLMMShared$private), list(
