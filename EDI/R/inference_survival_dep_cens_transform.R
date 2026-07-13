@@ -363,6 +363,10 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 				}
 			)
 			if (!is.null(attempt$fit)){
+				if (!is.finite(attempt$fit$b[2]) || abs(attempt$fit$b[2]) > 1) {
+					private$cached_values$likelihood_test_context = NULL
+					return(NULL)
+				}
 				private$set_fit_warm_start(attempt$fit$b, "params", fisher = attempt$fit$fisher_information)
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
 				private$cached_values$likelihood_test_context = list(X = attempt$X)

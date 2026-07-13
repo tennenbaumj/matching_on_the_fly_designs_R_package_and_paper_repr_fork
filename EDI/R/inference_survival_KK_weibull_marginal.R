@@ -116,6 +116,7 @@ InferenceSurvivalKKWeibullMarginal = R6::R6Class("InferenceSurvivalKKWeibullMarg
 	private = as.list(modifyList(as.list(InferenceMixinKKPassThrough$private), list(
 		cached_mod = NULL,
 		best_X_colnames = NULL,
+		cached_vc_params = NULL,
 		max_abs_reasonable_coef = 1e4,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		# Matched-pair members share a cluster id; reservoir (unmatched) subjects each
@@ -289,6 +290,8 @@ InferenceSurvivalKKWeibullMarginal = R6::R6Class("InferenceSurvivalKKWeibullMarg
 
 			private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
 			private$cached_mod = fit$fit_obj
+			log_s = tryCatch(as.numeric(fit$fit_obj$log_sigma), error = function(e) NULL)
+			if (!is.null(log_s) && is.finite(log_s)) private$cached_vc_params = log_s
 			private$cached_values$beta_hat_T = fit$beta_T
 
 			if (!estimate_only) {
@@ -331,6 +334,32 @@ InferenceSurvivalKKWeibullMarginal = R6::R6Class("InferenceSurvivalKKWeibullMarg
 				cbind(`(Intercept)` = 1, treatment = private$w)
 			} else {
 				cbind(`(Intercept)` = 1, treatment = private$w, X_cov)
+			}
+			# Fixed-VC fast path
+			if (!is.null(private$cached_vc_params) && is.finite(private$cached_vc_params[1L])) {
+				ok = is.finite(private$y) & is.finite(private$dead)
+				X_ok = as.matrix(X_fit[ok, , drop = FALSE])
+				n_params = ncol(X_ok) + 1L
+				res_fast = tryCatch(
+					fast_weibull_regression_cpp(
+						y    = as.numeric(private$y[ok]),
+						dead = as.numeric(private$dead[ok]),
+						X    = X_ok,
+						warm_start_params = private$get_fit_warm_start_for_length("params", n_params),
+						estimate_only = TRUE,
+						fixed_idx    = as.integer(n_params),
+						fixed_values = private$cached_vc_params[1L]
+					),
+					error = function(e) NULL
+				)
+				if (!is.null(res_fast) && isTRUE(res_fast$converged)) {
+					b = as.numeric(res_fast$b)
+					j_treat = match("treatment", colnames(X_fit))
+					if (!is.na(j_treat) && length(b) >= j_treat && is.finite(b[j_treat])) {
+						private$set_fit_warm_start(c(b, private$cached_vc_params[1L]), "params")
+						return(as.numeric(b[j_treat]))
+					}
+				}
 			}
 			fit = private$fit_weibull_marginal_cpp(X_fit, robust = FALSE, cluster_ids = NULL)
 			if (is.null(fit)) {

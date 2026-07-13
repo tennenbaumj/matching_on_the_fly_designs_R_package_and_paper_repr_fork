@@ -97,6 +97,8 @@ Collate:
     'inference_mixin_kk_passthrough_compound.R'
     'inference_all_abstract_KK_passthrough_compound.R'
     'inference_all_abstract_non_param_boot.R'
+    'inference_all_abstract_rand_bootstrap.R'
+    'inference_all_abstract_rand_bootstrap_ci.R'
     'inference_all_abstract_bayesian_bootstrap.R'
     'inference_all_abstract_jackknife.R'
     'inference_all_abstract_exact.R'

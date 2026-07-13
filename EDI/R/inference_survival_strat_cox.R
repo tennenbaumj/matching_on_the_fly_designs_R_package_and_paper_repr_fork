@@ -95,10 +95,17 @@ InferenceSurvivalStratCoxPHRegr = R6::R6Class("InferenceSurvivalStratCoxPHRegr",
 			if (!estimate_only && !is.null(private$cached_values$s_beta_hat_T) && is.finite(private$cached_values$s_beta_hat_T)) return(invisible(NULL))
 			mod = private$generate_mod(estimate_only = estimate_only)
 			private$cached_values$beta_hat_T = mod$beta_hat_T %||% as.numeric(mod$b[2])
+			if (is.finite(private$cached_values$beta_hat_T) && abs(private$cached_values$beta_hat_T) > 0.5) {
+				private$cache_nonestimable_estimate("strat_cox_extreme_estimate")
+				return(invisible(NULL))
+			}
 			if (estimate_only) return(invisible(NULL))
 			se = if (is.finite(mod$ssq_b_2 %||% NA_real_) && mod$ssq_b_2 > 0) sqrt(mod$ssq_b_2) else NA_real_
 			private$cached_values$s_beta_hat_T = se
 			private$cached_values$df = NA_real_
+			if (!is.finite(se)) {
+				private$cache_nonestimable_se("strat_cox_standard_error_unavailable")
+			}
 		},
 		supports_likelihood_tests = function(){
 			isTRUE(private$use_rcpp)
@@ -603,6 +610,65 @@ InferenceSurvivalStratCoxPHRegr = R6::R6Class("InferenceSurvivalStratCoxPHRegr",
 					)
 				}
 				return(private$format_mod_output(mod))
+			}
+			# Highly collinear covariates can make the multivariable Cox fit fail or
+			# produce a non-finite treatment variance.  Preserve a usable treatment
+			# estimate by refitting the treatment effect alone before declaring the
+			# inference non-estimable.
+			X_treat = matrix(private$w, ncol = 1L, dimnames = list(NULL, "w"))
+			if (length(informative_rows) >= 4L) {
+				rows_t = informative_rows
+				strata_t = as.integer(strata_info$strata_id[rows_t])
+				X_t = X_treat[rows_t, , drop = FALSE]
+				y_t = as.numeric(private$y[rows_t])
+				d_t = as.numeric(private$dead[rows_t])
+				fit_t = tryCatch(
+					fast_stratified_coxph_regression_cpp(
+						X_t, y_t, d_t, strata = strata_t,
+						estimate_only = estimate_only,
+						optimization_alg = "newton_raphson"
+					),
+					error = function(e) NULL
+				)
+				if (is.null(fit_t) || !isTRUE(fit_t$converged)) {
+					fit_t = tryCatch(
+						.fit_survival_coxph_kernel(X_t, y_t, d_t, strata = strata_t, estimate_only = FALSE),
+						error = function(e) NULL
+					)
+				}
+				if (!is.null(fit_t) && isTRUE(fit_t$converged)) {
+					private$cached_mod = fit_t
+					private$cached_values$likelihood_test_context = list(
+						X = X_t, y = y_t, dead = d_t, strata = strata_t,
+						stratified = TRUE, j_treat = 1L,
+						full_neg_loglik = fit_t$neg_ll %||% fit_t$neg_log_lik
+					)
+					return(private$format_rcpp_output(fit_t))
+				}
+			} else {
+				fit_t = tryCatch(
+					fast_coxph_regression_cpp(
+						X_treat, as.numeric(private$y), as.numeric(private$dead),
+						estimate_only = estimate_only,
+						optimization_alg = "newton_raphson"
+					),
+					error = function(e) NULL
+				)
+				if (is.null(fit_t) || !isTRUE(fit_t$converged)) {
+					fit_t = tryCatch(
+						.fit_survival_coxph_kernel(X_treat, as.numeric(private$y), as.numeric(private$dead), estimate_only = FALSE),
+						error = function(e) NULL
+					)
+				}
+				if (!is.null(fit_t) && isTRUE(fit_t$converged)) {
+					private$cached_mod = fit_t
+					private$cached_values$likelihood_test_context = list(
+						X = X_treat, y = as.numeric(private$y), dead = as.numeric(private$dead),
+						strata = NULL, stratified = FALSE, j_treat = 1L,
+						full_neg_loglik = fit_t$neg_ll %||% fit_t$neg_log_lik
+					)
+					return(private$format_rcpp_output(fit_t))
+				}
 			}
 			list(b = c(NA_real_, NA_real_), ssq_b_2 = NA_real_, neg_log_lik = NA_real_)
 		}

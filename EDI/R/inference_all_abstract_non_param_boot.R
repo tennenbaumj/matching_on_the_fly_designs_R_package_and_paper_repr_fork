@@ -278,6 +278,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				return(NA_real_)
 			}
 			est = est[1]
+			private$clear_nonestimable_state()
 			if (type %in% c("studentized", "bootstrap-t")) {
 				boot_stats = private$approximate_bootstrap_statistics_beta_hat_T(
 					B = B,

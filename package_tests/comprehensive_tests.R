@@ -78,10 +78,12 @@ canonicalize_test_family_filter = function(value){
 		likelihood_ratio = "lik_ratio",
 		bayes_bootstrap = "bayesian_bootstrap",
 		randomization = "rand",
+		brt = "rand_bootstrap",
+		bootstrap_randomization = "rand_bootstrap",
 		value
 	)
 }
-ALL_TEST_FAMILY_FILTERS = c("estimate", "exact", "asymp", "wald", "score", "lik_ratio", "gradient", "bootstrap", "bayesian_bootstrap", "parametric_bootstrap", "jackknife", "rand", "rand_custom")
+ALL_TEST_FAMILY_FILTERS = c("estimate", "exact", "asymp", "wald", "score", "lik_ratio", "gradient", "bootstrap", "bayesian_bootstrap", "parametric_bootstrap", "jackknife", "rand", "rand_custom", "rand_bootstrap")
 TEST_FAMILY_FILTER = if (length(args) >= 9 && args[9] != "NA") canonicalize_test_family_filter(args[9]) else NA_character_
 if (!is.na(TEST_FAMILY_FILTER) && !(TEST_FAMILY_FILTER %in% ALL_TEST_FAMILY_FILTERS)) {
 	stop(
@@ -1092,6 +1094,27 @@ call_direct_asymp = function(method_name, testing_type, ...){
 
 	if (should_run_test_family("rand") && !skip_slow && !skip_rand && !skip_ci && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "count")){
 		safe_call("compute_rand_confidence_interval", seq_des_inf$compute_rand_confidence_interval(r = r, pval_epsilon = pval_epsilon, show_progress = FALSE))
+	}
+	# Bootstrap randomization test (BRT): row bootstrap + fresh assignment draw from the design
+	if (should_run_test_family("rand_bootstrap") && !skip_slow && !skip_bootstrap && !skip_rand && !skip_rand_pval && response_type %in% c("continuous", "survival", "proportion")){
+		if (run_debug_resampling) {
+			safe_call_debug("approximate_rand_bootstrap_distribution_beta_hat_T_debug",
+						seq_des_inf$approximate_rand_bootstrap_distribution_beta_hat_T(B = B_debug, debug = TRUE, show_progress = FALSE))
+		}
+		safe_call("compute_rand_bootstrap_two_sided_pval", seq_des_inf$compute_rand_bootstrap_two_sided_pval(B = r, show_progress = FALSE))
+		transform_for_rand_bootstrap = switch(
+			response_type,
+			continuous = "none",
+			proportion = "logit",
+			count = "log",
+			survival = "log",
+			"none"
+		)
+		safe_call("compute_rand_bootstrap_two_sided_pval(delta=0.5)",
+				seq_des_inf$compute_rand_bootstrap_two_sided_pval(B = r, delta = 0.5, transform_responses = transform_for_rand_bootstrap, show_progress = FALSE))
+	}
+	if (should_run_test_family("rand_bootstrap") && !skip_slow && !skip_bootstrap && !skip_rand && !skip_ci && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "count")){
+		safe_call("compute_rand_bootstrap_confidence_interval", seq_des_inf$compute_rand_bootstrap_confidence_interval(B = r, pval_epsilon = pval_epsilon, show_progress = FALSE))
 	}
 	if (should_run_test_family("rand_custom") && response_type != "incidence"){
 		seq_des_inf$set_custom_randomization_statistic_cpp(welch_t_stat_cpp)

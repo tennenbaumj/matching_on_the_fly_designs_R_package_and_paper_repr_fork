@@ -6,7 +6,7 @@
 #' @keywords internal
 InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 	lock_objects = FALSE,
-	inherit = InferenceNonParamBootstrap,
+	inherit = InferenceRandBootstrapCI,
 	public = list(
 		#' @description Recomputes the treatment estimate under Bayesian-bootstrap
 		#'   subject-, block-, cluster-, or matched-set weights.
@@ -266,6 +266,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bayesian_bootstrap_original_estimate_unavailable")
 				return(NA_real_)
 			}
+			private$clear_nonestimable_state()
 			if (type == "bca" && private$mark_jackknife_nonestimable_if_block_unsupported(unit = "auto")) {
 				return(NA_real_)
 			}
