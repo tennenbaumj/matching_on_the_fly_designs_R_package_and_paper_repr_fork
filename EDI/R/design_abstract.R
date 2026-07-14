@@ -14,9 +14,10 @@
 #'
 #' @keywords internal
 #' @examples
+#' \dontrun{
 #' seq_des = Design$new(n = 6, response_type = 'continuous')
 #' seq_des$add_one_subject_to_experiment_and_assign(data.frame(x1 = rnorm(1)))
-#' @export
+#' }
 Design = R6::R6Class("Design",
 	lock_objects = FALSE,
 	public = list(

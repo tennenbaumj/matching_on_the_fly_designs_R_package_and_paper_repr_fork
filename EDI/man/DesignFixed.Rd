@@ -13,9 +13,11 @@ An abstract R6 Class encapsulating the data and functionality for a fixed experi
 This class takes care of whole-experiment randomization.
 }
 \examples{
+\dontrun{
 des = DesignFixed$new(n = 10, response_type = 'continuous')
 des$add_all_subjects_to_experiment(data.frame(x1 = rnorm(10)))
 des$assign_w_to_all_subjects()
+}
 }
 \keyword{internal}
 \section{Super classes}{

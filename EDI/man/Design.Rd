@@ -16,8 +16,10 @@ a control subject.  All public methods that return or accept \eqn{w}
 convention.
 }
 \examples{
+\dontrun{
 seq_des = Design$new(n = 6, response_type = 'continuous')
 seq_des$add_one_subject_to_experiment_and_assign(data.frame(x1 = rnorm(1)))
+}
 }
 \keyword{internal}
 \section{Active bindings}{

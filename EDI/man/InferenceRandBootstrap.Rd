@@ -58,6 +58,20 @@ arrival order; the i.i.d. resampling order plays that role, matching the i.i.d.-
 assumption of the KK designs. (3) Studentization is not needed for validity but, as with
 any bootstrap test, an asymptotically pivotal statistic improves the level's rate of
 convergence.
+
+Users do not instantiate this class directly: every concrete inference class in the
+package inherits from it, so its methods (\code{compute_rand_bootstrap_two_sided_pval},
+\code{approximate_rand_bootstrap_distribution_beta_hat_T}) are available on any
+inference object. See \code{\link{InferenceRandBootstrapCI}} for the companion
+confidence interval.
+}
+\examples{
+\dontrun{
+seq_des = DesignSeqOneByOneKK14$new(n = 100, response_type = "continuous")
+# ... run the experiment: add subjects and responses ...
+seq_des_inf = InferenceAllSimpleMeanDiff$new(seq_des)
+seq_des_inf$compute_rand_bootstrap_two_sided_pval(B = 501)
+}
 }
 \keyword{internal}
 \section{Super classes}{

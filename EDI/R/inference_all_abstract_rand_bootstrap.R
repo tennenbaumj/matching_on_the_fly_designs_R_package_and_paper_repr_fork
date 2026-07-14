@@ -55,6 +55,19 @@
 #' any bootstrap test, an asymptotically pivotal statistic improves the level's rate of
 #' convergence.
 #'
+#' Users do not instantiate this class directly: every concrete inference class in the
+#' package inherits from it, so its methods (\code{compute_rand_bootstrap_two_sided_pval},
+#' \code{approximate_rand_bootstrap_distribution_beta_hat_T}) are available on any
+#' inference object. See \code{\link{InferenceRandBootstrapCI}} for the companion
+#' confidence interval.
+#'
+#' @examples
+#' \dontrun{
+#' seq_des = DesignSeqOneByOneKK14$new(n = 100, response_type = "continuous")
+#' # ... run the experiment: add subjects and responses ...
+#' seq_des_inf = InferenceAllSimpleMeanDiff$new(seq_des)
+#' seq_des_inf$compute_rand_bootstrap_two_sided_pval(B = 501)
+#' }
 #' @keywords internal
 InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 	lock_objects = FALSE,
@@ -106,6 +119,11 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				return(private$cached_values$rand_boot_distr_cache[[cache_key]])
 			}
 			if (private$verbose) cat("Computing bootstrap randomization distribution...\n")
+			has_custom_randomization_statistic =
+				!is.null(private[["custom_randomization_statistic_function"]]) ||
+				!is.null(private[["compiled_cpp_stat_fn"]])
+			has_fast_kernel = !has_custom_randomization_statistic &&
+				private$has_private_method("compute_fast_rand_bootstrap_distr")
 			if (!draws_supplied) {
 				if (!is.null(private$seed)) {
 					had_seed = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
@@ -116,7 +134,9 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 					)
 					set.seed(private$seed)
 				}
-				rand_bootstrap_draws = private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = FALSE)
+				# The C++ batch kernel consumes pre-drawn assignment vectors, so materialize
+				# them at generation time when a fast kernel is available.
+				rand_bootstrap_draws = private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = has_fast_kernel)
 			}
 			# Under the sharp null with effect delta, the control potential outcomes are the
 			# observed responses with the delta shift removed from the treated subjects.
@@ -162,6 +182,21 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 					prop_iterations_with_warnings = mean(num_warnings_vec > 0),
 					prop_illegal_values = mean(!is.finite(values))
 				))
+			}
+			# Fastest path: a concrete class may provide a C++ batch kernel that evaluates the
+			# whole null distribution in one call from (y0, row-index matrix, assignment matrix).
+			# It returns NULL when it cannot handle the request (e.g. unmaterializable draws or
+			# an unsupported transform), in which case we fall through to the standard paths.
+			if (has_fast_kernel) {
+				fast_distr = tryCatch(
+					private$compute_fast_rand_bootstrap_distr(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp),
+					error = function(e) NULL
+				)
+				if (!is.null(fast_distr)) {
+					fast_distr = as.numeric(fast_distr)
+					private$cached_values$rand_boot_distr_cache[[cache_key]] = fast_distr
+					return(fast_distr)
+				}
 			}
 			# Fast path: reusable worker states avoid the per-iteration design/inference
 			# duplication that dominates the cost of the standard path. Custom randomization
@@ -260,6 +295,39 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("rand_bootstrap_observed_statistic_unavailable")
 				return(NA_real_)
 			}
+			# SMC early-stopping: evaluate the null distribution in batches; stop once the
+			# Clopper-Pearson 99% band around the p-value clears the mc_stop_threshold on
+			# one side. Activated by brt_mc_control (set by CI inversion or the user).
+			mc_ctrl = private$brt_mc_control
+			if (!is.null(mc_ctrl) && isTRUE(mc_ctrl$mc_enable) && is.finite(mc_ctrl$mc_stop_threshold)) {
+				# Ensure w_b is materialized so the prefix cache gives consistent per-draw values.
+				if (is.null(rand_bootstrap_draws)) {
+					if (!is.null(private$seed)) {
+						had_seed_smc = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+						if (had_seed_smc) old_seed_smc = get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+						on.exit(
+							if (had_seed_smc) assign(".Random.seed", old_seed_smc, envir = .GlobalEnv) else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) rm(".Random.seed", envir = .GlobalEnv),
+							add = TRUE
+						)
+						set.seed(private$seed)
+					}
+					rand_bootstrap_draws = private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = TRUE)
+				}
+				y0_full_smc = if (delta != 0) {
+					private$shift_randomization_responses(
+						y = private$y, w = private$w, delta = delta,
+						transform_responses = transform_responses,
+						response_type = private$des_obj_priv_int$response_type,
+						inverse = TRUE, zero_one_logit_clamp = zero_one_logit_clamp
+					)
+				} else {
+					private$y
+				}
+				smc_pval = private$compute_two_sided_brt_pval_with_sequential_mc(
+					t, B, delta, transform_responses, y0_full_smc, rand_bootstrap_draws, zero_one_logit_clamp
+				)
+				if (!is.null(smc_pval)) return(smc_pval)
+			}
 			t0s = self$approximate_rand_bootstrap_distribution_beta_hat_T(
 				B = B,
 				delta = delta,
@@ -275,19 +343,43 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 	),
 	private = list(
 		rand_boot_draws_counter = 0L,
+		brt_mc_control = NULL,
+		# Maps (transform_responses, response_type) to the shared C++ shift code used by all
+		# BRT batch kernels: 0 = additive, 1 = multiplicative (log), 2 = logit,
+		# 4 = multiplicative with count rounding. NULL = unsupported (callers fall back).
+		rand_bootstrap_transform_code = function(transform_responses){
+			if (identical(transform_responses, "none")) return(0L)
+			if (identical(transform_responses, "log")) {
+				return(if (identical(private$des_obj_priv_int$response_type, "count")) 4L else 1L)
+			}
+			if (identical(transform_responses, "logit")) return(2L)
+			NULL
+		},
+		# Packs materialized draws into the (row-index, assignment) matrices consumed by the
+		# C++ batch kernels; NULL if any draw lacks a full-size materialized assignment.
+		rand_bootstrap_draw_matrices = function(rand_bootstrap_draws){
+			n = as.integer(private$n)
+			B = length(rand_bootstrap_draws)
+			if (B == 0L) return(NULL)
+			i_mat = matrix(NA_integer_, nrow = n, ncol = B)
+			w_mat = matrix(NA_integer_, nrow = n, ncol = B)
+			for (b in seq_len(B)) {
+				draw = rand_bootstrap_draws[[b]]
+				if (is.null(draw$w_b) || length(draw$i_b) != n || length(draw$w_b) != n) return(NULL)
+				i_mat[, b] = as.integer(draw$i_b)
+				w_mat[, b] = as.integer(draw$w_b)
+			}
+			list(i_mat = i_mat, w_mat = w_mat)
+		},
 		# Generates B bootstrap randomization draws. Each draw holds the resampled row indices
 		# (i_b), the pair-aware resampled match structure (m_vec_b, matching designs only), and,
 		# when materialize_w = TRUE, a fresh assignment vector w_b drawn from the design run on
-		# the resampled covariates. Materialization is serial and is used by the CI inversion so
-		# that all delta evaluations share common random numbers; with materialize_w = FALSE the
-		# fresh w is drawn inside each (possibly parallel) iteration instead.
+		# the resampled covariates. Materialization is serial so that all delta evaluations in
+		# the CI inversion share common random numbers; with materialize_w = FALSE the fresh w
+		# is drawn inside each (possibly parallel) iteration instead.
 		generate_rand_bootstrap_draws = function(B, bootstrap_type = NULL, materialize_w = TRUE){
-			worker_state = if (isTRUE(materialize_w) && isTRUE(private$use_reusable_bootstrap_worker())) {
-				tryCatch(private$create_bootstrap_worker_state(), error = function(e) NULL)
-			} else {
-				NULL
-			}
-			draws = lapply(seq_len(as.integer(B)), function(b) {
+			B = as.integer(B)
+			draws = lapply(seq_len(B), function(b) {
 				boot_draw = private$bootstrap_sample_indices(private$n, bootstrap_type)
 				draw = if (is.list(boot_draw)) {
 					list(i_b = as.integer(boot_draw$i_b), m_vec_b = boot_draw$m_vec_b, w_b = NULL)
@@ -295,30 +387,43 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 					list(i_b = as.integer(boot_draw), m_vec_b = NULL, w_b = NULL)
 				}
 				if (isTRUE(materialize_w)) {
-					draw$w_b = if (!is.null(worker_state)) {
-						tryCatch({
-							private$load_bootstrap_sample_into_worker(worker_state, list(i_b = draw$i_b, m_vec_b = draw$m_vec_b))
-							# [[ ]] to avoid $ partial matching (worker_des -> worker_des_priv)
-							inf_priv = if (!is.null(worker_state[["worker_inf"]])) {
-								worker_state[["worker_inf"]]$.__enclos_env__$private
-							} else if (!is.null(worker_state[["worker_priv"]])) {
-								worker_state[["worker_priv"]]
-							} else {
-								worker_state[["worker"]]$.__enclos_env__$private
-							}
-							des_obj = if (!is.null(worker_state[["worker_des"]])) worker_state[["worker_des"]] else inf_priv$des_obj
-							(as.numeric(des_obj$draw_ws_according_to_design(1L)[, 1L]) + 1) / 2
-						}, error = function(e) NULL)
-					} else {
-						sub_inf = private$bootstrap_subset_inference(draw, smooth = FALSE)
-						if (is.null(sub_inf)) NULL else tryCatch({
-							sub_des = sub_inf$.__enclos_env__$private$des_obj
-							(as.numeric(sub_des$draw_ws_according_to_design(1L)[, 1L]) + 1) / 2
-						}, error = function(e) NULL)
-					}
+					draw$w_seed = sample.int(.Machine$integer.max, 1L)
 				}
 				draw
 			})
+			if (isTRUE(materialize_w) && B > 0L) {
+				use_worker = isTRUE(private$use_reusable_bootstrap_worker())
+				materialize_chunk = function(idxs) {
+					worker_state = if (use_worker) tryCatch(private$create_bootstrap_worker_state(), error = function(e) NULL) else NULL
+					lapply(idxs, function(idx) {
+						draw = draws[[idx]]
+						draw$w_b = tryCatch({
+							set.seed(draw$w_seed)
+							if (!is.null(worker_state)) {
+								private$load_bootstrap_sample_into_worker(worker_state, list(i_b = draw$i_b, m_vec_b = draw$m_vec_b))
+								# [[ ]] to avoid $ partial matching (worker_des -> worker_des_priv)
+								inf_priv = if (!is.null(worker_state[["worker_inf"]])) {
+									worker_state[["worker_inf"]]$.__enclos_env__$private
+								} else if (!is.null(worker_state[["worker_priv"]])) {
+									worker_state[["worker_priv"]]
+								} else {
+									worker_state[["worker"]]$.__enclos_env__$private
+								}
+								des_obj = if (!is.null(worker_state[["worker_des"]])) worker_state[["worker_des"]] else inf_priv$des_obj
+								(as.numeric(des_obj$draw_ws_according_to_design(1L)[, 1L]) + 1) / 2
+							} else {
+								sub_inf = private$bootstrap_subset_inference(list(i_b = draw$i_b, m_vec_b = draw$m_vec_b), smooth = FALSE)
+								if (is.null(sub_inf)) NULL else {
+									sub_des = sub_inf$.__enclos_env__$private$des_obj
+									(as.numeric(sub_des$draw_ws_according_to_design(1L)[, 1L]) + 1) / 2
+								}
+							}
+						}, error = function(e) NULL)
+						draw
+					})
+				}
+				draws = materialize_chunk(seq_len(B))
+			}
 			private$rand_boot_draws_counter = private$rand_boot_draws_counter + 1L
 			attr(draws, "draws_id") = paste0("rand_boot_draws_", private$rand_boot_draws_counter)
 			draws
@@ -408,6 +513,91 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				budget = 1L,
 				show_progress = show_progress
 			), use.names = FALSE))
+		},
+		# Evaluates draws[1:target] from a pre-materialized draw list, accumulating results in a
+		# prefix cache keyed by (draws_id, delta, transform). Dispatches the new batch through the
+		# same three-tier system as approximate_rand_bootstrap_distribution_beta_hat_T.
+		get_brt_distribution_prefix = function(draws, target, delta, transform_arg, y0_full, zero_one_logit_clamp){
+			draws_id = attr(draws, "draws_id")
+			delta_key = formatC(as.numeric(delta), digits = 17L, format = "fg", flag = "#")
+			cache_key = if (!is.null(draws_id)) paste(draws_id, delta_key, transform_arg, sep = "|") else NULL
+			if (is.null(private$cached_values[["brt_prefix_cache"]])) private$cached_values$brt_prefix_cache = list()
+			cached = if (!is.null(cache_key)) private$cached_values$brt_prefix_cache[[cache_key]] else NULL
+			have = length(cached)
+			if (have >= target) return(cached[seq_len(target)])
+			new_idxs = seq.int(have + 1L, as.integer(target))
+			sub_draws = draws[new_idxs]
+			attr(sub_draws, "draws_id") = if (!is.null(draws_id)) paste0(draws_id, "_smc") else NULL
+			has_custom = !is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])
+			has_fast_kernel = !has_custom && private$has_private_method("compute_fast_rand_bootstrap_distr")
+			new_vals = NULL
+			if (has_fast_kernel) {
+				new_vals = tryCatch({
+					v = private$compute_fast_rand_bootstrap_distr(y0_full, sub_draws, delta, transform_arg, zero_one_logit_clamp)
+					if (!is.null(v)) as.numeric(v) else NULL
+				}, error = function(e) NULL)
+			}
+			if (is.null(new_vals) && !has_custom && isTRUE(private$use_reusable_bootstrap_worker())) {
+				new_vals = tryCatch(
+					as.numeric(private$compute_rand_bootstrap_distribution_with_reused_workers(
+						rand_bootstrap_draws = sub_draws, delta = delta, transform_responses = transform_arg,
+						y0_full = y0_full,
+						actual_cores = private$effective_parallel_cores("bootstrap", self$num_cores),
+						show_progress = FALSE, zero_one_logit_clamp = zero_one_logit_clamp
+					)),
+					error = function(e) NULL
+				)
+			}
+			if (is.null(new_vals)) {
+				new_vals = vapply(seq_along(new_idxs), function(k) {
+					tryCatch(
+						suppressWarnings(private$run_rand_bootstrap_iteration(sub_draws[[k]], delta, transform_arg, y0_full, zero_one_logit_clamp)),
+						error = function(e) NA_real_
+					)
+				}, numeric(1L))
+			}
+			cached = c(cached, as.numeric(new_vals))
+			if (!is.null(cache_key)) private$cached_values$brt_prefix_cache[[cache_key]] = cached
+			cached[seq_len(target)]
+		},
+		# Computes the BRT two-sided p-value with Sequential Monte Carlo early stopping.
+		# Draws are evaluated in batches of mc_batch_size; after each batch (once min_draws
+		# are accumulated), a Clopper-Pearson band at mc_conf_level is computed. If the band
+		# lies entirely above or below mc_stop_threshold, the current p-value estimate is
+		# returned. Returns NULL when SMC is disabled, draws lack materialized w_b, or the
+		# batch size is >= B (which would be no batching at all).
+		compute_two_sided_brt_pval_with_sequential_mc = function(t, B, delta, transform_arg, y0_full, draws, zero_one_logit_clamp){
+			mc_ctrl = private$brt_mc_control
+			if (is.null(mc_ctrl) || !isTRUE(mc_ctrl$mc_enable) || !is.finite(mc_ctrl$mc_stop_threshold)) return(NULL)
+			if (length(draws) == 0L || is.null(draws[[1L]]$w_b)) return(NULL)
+			B_int = as.integer(B)
+			batch_size = min(B_int, as.integer(mc_ctrl$mc_batch_size))
+			min_draws_mc = min(B_int, as.integer(mc_ctrl$mc_min_draws))
+			if (batch_size <= 0L || batch_size >= B_int) return(NULL)
+			conf_level = mc_ctrl$mc_conf_level
+			threshold = mc_ctrl$mc_stop_threshold
+			# Short-circuit: if the full B-draw distribution is already cached, skip batching.
+			draws_id = attr(draws, "draws_id")
+			if (!is.null(draws_id) && !is.null(private$cached_values[["rand_boot_distr_cache"]])) {
+				delta_key = formatC(as.numeric(delta), digits = 17L, format = "fg", flag = "#")
+				full_key = paste(B_int, delta_key, transform_arg, draws_id, sep = "|")
+				full_distr = private$cached_values$rand_boot_distr_cache[[full_key]]
+				if (!is.null(full_distr) && length(full_distr) >= B_int) {
+					return(private$compute_two_sided_randomization_pval_from_t0s(full_distr, t))
+				}
+			}
+			target = 0L
+			repeat {
+				target = min(B_int, target + batch_size)
+				t0s = private$get_brt_distribution_prefix(draws, target, delta, transform_arg, y0_full, zero_one_logit_clamp)
+				p_hat = private$compute_two_sided_randomization_pval_from_t0s(t0s, t)
+				if (target >= B_int || !is.finite(p_hat)) return(p_hat)
+				n_valid = sum(is.finite(t0s))
+				if (n_valid >= min_draws_mc) {
+					band = private$compute_two_sided_randomization_pval_band(t0s, t, conf_level)
+					if (is.finite(band[1]) && is.finite(band[2]) && (band[2] < threshold || band[1] > threshold)) return(p_hat)
+				}
+			}
 		},
 		# One null draw: build the resampled sub-design/sub-inference, draw (or inject) a fresh
 		# w from the design, impose the sharp null shift on the treated, and compute the statistic.

@@ -279,3 +279,52 @@ double get_restricted_mean_se_diff(SEXP y_sexp, SEXP dead_sexp, SEXP w_sexp) {
     return sqrt(pow(se_treatment, 2.0) + pow(se_control, 2.0));
 }
 
+
+// BRT variant of the KM survival-statistic difference (median or restricted mean):
+// each replicate b resamples rows i_mat(., b) and pairs them with the fresh assignment
+// w_mat(., b); the sharp-null shift is multiplicative on the treated times (delta on the
+// log scale). Serial: get_survival_stat_for_group allocates R objects, which is not
+// thread-safe; the win over the R paths is eliminating per-replicate object duplication.
+// [[Rcpp::export]]
+NumericVector compute_survival_stat_diff_rand_bootstrap_serial_cpp(
+    const NumericVector& y0,
+    const IntegerVector& dead,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    double delta,
+    std::string requested_stat) {
+
+  const int n = i_mat.nrow();
+  const int nsim = i_mat.ncol();
+  NumericVector results(nsim, NA_REAL);
+  const double* y0_ptr = y0.begin();
+  const int* dead_ptr = dead.begin();
+  const int* i_ptr = i_mat.begin();
+  const int* w_ptr = w_mat.begin();
+  const double mult = std::exp(delta);
+
+  std::vector<double> y_t, y_c;
+  std::vector<int> d_t, d_c;
+
+  for (int b = 0; b < nsim; ++b) {
+    const int* i_col = i_ptr + (size_t)b * n;
+    const int* w_col = w_ptr + (size_t)b * n;
+    y_t.clear(); y_c.clear(); d_t.clear(); d_c.clear();
+    for (int i = 0; i < n; ++i) {
+      const int row0 = i_col[i] - 1; // i_mat is 1-based
+      if (w_col[i] == 1) {
+        y_t.push_back(delta != 0.0 ? y0_ptr[row0] * mult : y0_ptr[row0]);
+        d_t.push_back(dead_ptr[row0]);
+      } else {
+        y_c.push_back(y0_ptr[row0]);
+        d_c.push_back(dead_ptr[row0]);
+      }
+    }
+    if (y_t.empty() || y_c.empty()) continue;
+    const double stat_t = get_survival_stat_for_group(wrap(y_t), wrap(d_t), requested_stat);
+    const double stat_c = get_survival_stat_for_group(wrap(y_c), wrap(d_c), requested_stat);
+    if (std::isfinite(stat_t) && std::isfinite(stat_c)) results[b] = stat_t - stat_c;
+  }
+
+  return results;
+}

@@ -273,6 +273,11 @@ double apply_shift(double y_val, double delta, int transform_code, double zero_o
     if (transform_code == 3) {
         return (y_val + 1.0) * std::exp(delta) - 1.0;
     }
+    if (transform_code == 4) {
+        // count response: multiplicative shift with rounding, matching
+        // shift_randomization_responses' as.integer(round(y * exp(delta)))
+        return std::round(y_val * std::exp(delta));
+    }
     return y_val + delta;
 }
 
@@ -521,6 +526,64 @@ NumericVector compute_wilcox_matching_ivwc_bootstrap_parallel_cpp(
         } else if (r_ok) {
             res_ptr[b] = beta_r;
         }
+    }
+
+    return wrap(results_vec);
+}
+
+// BRT variant: each replicate b resamples rows i_mat(., b) of the sharp-null outcomes y0
+// and pairs them with the fresh assignment w_mat(., b); delta is the sharp-null shift
+// applied to the freshly treated on the transform_code scale (see apply_shift; code 4 =
+// count response, multiplicative with rounding).
+// [[Rcpp::export]]
+NumericVector compute_wilcox_hl_rand_bootstrap_parallel_cpp(
+    SEXP y0_sexp,
+    SEXP i_mat_sexp,
+    SEXP w_mat_sexp,
+    double delta,
+    int transform_code,
+    double zero_one_logit_clamp,
+    int num_cores) {
+
+	NumericVector y0_vec(y0_sexp);
+	IntegerMatrix i_int_mat(i_mat_sexp);
+	IntegerMatrix w_int_mat(w_mat_sexp);
+    Eigen::Map<const Eigen::VectorXd> y0(y0_vec.begin(), y0_vec.size());
+    Eigen::Map<const Eigen::MatrixXi> i_mat(i_int_mat.begin(), i_int_mat.nrow(), i_int_mat.ncol());
+    Eigen::Map<const Eigen::MatrixXi> w_mat(w_int_mat.begin(), w_int_mat.nrow(), w_int_mat.ncol());
+
+    const int n = i_mat.rows();
+    const int nsim = i_mat.cols();
+    std::vector<double> results_vec(nsim, NA_REAL);
+    const double* y0_ptr = y0.data();
+    const int* i_ptr = i_mat.data();
+    const int* w_ptr = w_mat.data();
+    double* res_ptr = results_vec.data();
+
+#ifdef _OPENMP
+    omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel for schedule(dynamic)
+    for (int b = 0; b < nsim; ++b) {
+        const int* i_col = i_ptr + (size_t)b * n;
+        const int* w_col = w_ptr + (size_t)b * n;
+        std::vector<double> y_t;
+        std::vector<double> y_c;
+        y_t.reserve(n);
+        y_c.reserve(n);
+
+        for (int i = 0; i < n; ++i) {
+            const double yv = y0_ptr[i_col[i] - 1]; // i_mat is 1-based
+            if (!std::isfinite(yv)) continue;
+            if (w_col[i] == 1) {
+                y_t.push_back(delta != 0.0 ? apply_shift(yv, delta, transform_code, zero_one_logit_clamp) : yv);
+            } else if (w_col[i] == 0) {
+                y_c.push_back(yv);
+            }
+        }
+
+        res_ptr[b] = hl_from_groups(std::move(y_t), std::move(y_c));
     }
 
     return wrap(results_vec);

@@ -82,6 +82,7 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 			private$cached_mod = attempt$fit
 			j_treat = match(2L, attempt$keep)
 			if (!isTRUE(private$is_identity_binomial_fit_reasonable(attempt$fit, attempt$X, j_treat))){
+				private$cached_mod = NULL
 				private$cache_nonestimable_estimate("binomial_identity_weighted_fit_unavailable")
 				return(NA_real_)
 			}
@@ -91,6 +92,17 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 			private$cached_values$s_beta_hat_T = if (!is.null(ssq) && is.finite(ssq) && ssq > 0) sqrt(ssq) else NA_real_
 			private$cached_values$df = NA_real_
 			private$cached_values$beta_hat_T
+		},
+		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
+			tryCatch(
+				super$compute_lik_ratio_confidence_interval(alpha = alpha),
+				error = function(e){
+					private$cache_nonestimable_se("lik_ratio_confidence_interval_unavailable")
+					ci = c(NA_real_, NA_real_)
+					names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+					ci
+				}
+			)
 		}
 	),
 	private = list(
@@ -151,6 +163,9 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 		},
 		supports_likelihood_tests = function(){
 			TRUE
+		},
+		get_supported_testing_types_impl = function(){
+			c("wald", "lik_ratio")
 		},
 		supports_lik_ratio_param_bootstrap = function(){
 			TRUE
@@ -270,6 +285,12 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 					is.finite(mod$ssq_b_j) && mod$ssq_b_j > 0
 				}
 			)
+			j_treat_attempt = if (!is.null(attempt$fit)) attempt$fit$j_treat else NA_integer_
+			attempt_ok = isTRUE(private$is_identity_binomial_fit_reasonable(attempt$fit, attempt$X, j_treat_attempt)) &&
+				(isTRUE(estimate_only) || (is.finite(attempt$fit$ssq_b_j) && attempt$fit$ssq_b_j > 0))
+			if (!isTRUE(attempt_ok)){
+				attempt$fit = NULL
+			}
 			if (!is.null(attempt$fit)){
 				private$set_fit_warm_start(attempt$fit$b, "beta", fisher = attempt$fit$fisher_information)
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))

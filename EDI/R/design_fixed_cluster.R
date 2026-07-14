@@ -50,6 +50,15 @@ DesignFixedCluster = R6::R6Class("DesignFixedCluster",
 	),
 	private = list(
 		cluster_col = NULL,
+		draw_bootstrap_indices = function(bootstrap_type = NULL){
+			# Assignment is at the cluster level and outcomes are correlated within
+			# clusters, so the exchangeable resampling unit is the cluster, not the row.
+			n = private$t
+			cluster_ids = as.character(private$Xraw[1:n, ][[private$cluster_col]])
+			group_id = match(cluster_ids, unique(cluster_ids))
+			i_b = resample_group_rows_cpp(as.integer(group_id), length(unique(group_id)))
+			list(i_b = as.integer(i_b), m_vec_b = NULL)
+		},
 		draw_ws_raw = function(r = 100){
 			private$maybe_set_seed()
 			if (should_run_asserts()) {

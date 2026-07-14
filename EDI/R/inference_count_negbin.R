@@ -194,13 +194,16 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 				X = cbind(1, treatment = private$w, X_cov)
 			}
 			ws_args = private$get_backend_warm_start_args(ncol(X) + 1L)
+			has_vc = isTRUE(is.finite(private$cached_vc_params))
 			res = tryCatch(
 				fast_neg_bin_cpp(
 					X = X, y = as.integer(private$y),
 					warm_start_params = ws_args$start_params,
 					warm_start_fisher_info = ws_args$warm_start_fisher_info,
 					smart_cold_start = private$smart_cold_start_default,
-					optimization_alg = private$optimization_alg
+					optimization_alg = private$optimization_alg,
+					fixed_idx    = if (has_vc) as.integer(ncol(X) + 1L) else NULL,
+					fixed_values = if (has_vc) as.numeric(private$cached_vc_params) else NULL
 				),
 				error = function(e) NULL
 			)
@@ -378,6 +381,8 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 					res$fisher_information = res$hess_fisher_info_matrix
 				}
 				private$best_X_colnames = setdiff(colnames(X_full), c("(Intercept)", "treatment"))
+				log_th = log(as.numeric(res$theta_hat))
+				if (isTRUE(is.finite(log_th))) private$cached_vc_params = log_th
 				private$clear_nonestimable_state()
 				private$cached_values$likelihood_test_context = list(X = X_full, j_treat = 2L)
 				return(res)
@@ -433,6 +438,8 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 			)
 			if (!is.null(attempt$fit)){
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
+				log_th = log(as.numeric(attempt$fit$theta_hat))
+				if (isTRUE(is.finite(log_th))) private$cached_vc_params = log_th
 				private$clear_nonestimable_state()
 				private$cached_values$likelihood_test_context = list(
 					X = attempt$X,

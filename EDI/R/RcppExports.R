@@ -574,6 +574,10 @@ exact_jonckheere_terpstra_pval_cpp <- function(y_sexp, w_sexp) {
     .Call(`_EDI_exact_jonckheere_terpstra_pval_cpp`, y_sexp, w_sexp)
 }
 
+compute_jt_rand_bootstrap_parallel_cpp <- function(y0, i_mat, w_mat, num_cores) {
+    .Call(`_EDI_compute_jt_rand_bootstrap_parallel_cpp`, y0, i_mat, w_mat, num_cores)
+}
+
 #' Fast KK Wilcoxon Statistic for Multiple Permutations
 #'
 #' @param w_mat Integer matrix of permuted treatment assignments (n x r).
@@ -847,6 +851,10 @@ fast_logistic_regression_with_var_cpp <- function(X_sexp, y_sexp, j = 2L, warm_s
 
 fast_logrank_stats_cpp <- function(w, y_r, dead) {
     .Call(`_EDI_fast_logrank_stats_cpp`, w, y_r, dead)
+}
+
+compute_logrank_rand_bootstrap_parallel_cpp <- function(y0, dead, i_mat, w_mat, delta, num_cores) {
+    .Call(`_EDI_compute_logrank_rand_bootstrap_parallel_cpp`, y0, dead, i_mat, w_mat, delta, num_cores)
 }
 
 matrix_rank_cpp <- function(A_r, tol = 1e-7) {
@@ -1517,6 +1525,10 @@ get_restricted_mean_se_diff <- function(y_sexp, dead_sexp, w_sexp) {
     .Call(`_EDI_get_restricted_mean_se_diff`, y_sexp, dead_sexp, w_sexp)
 }
 
+compute_survival_stat_diff_rand_bootstrap_serial_cpp <- function(y0, dead, i_mat, w_mat, delta, requested_stat) {
+    .Call(`_EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp`, y0, dead, i_mat, w_mat, delta, requested_stat)
+}
+
 get_weibull_frailty_neg_loglik_cpp <- function(X_sexp, y_sexp, dead_sexp, group_id_sexp, params_sexp, n_gh = 20L, max_abs_log_sigma = 8.0) {
     .Call(`_EDI_get_weibull_frailty_neg_loglik_cpp`, X_sexp, y_sexp, dead_sexp, group_id_sexp, params_sexp, n_gh, max_abs_log_sigma)
 }
@@ -1607,6 +1619,10 @@ compute_wilcox_hl_distr_parallel_cpp <- function(w_mat_sexp, y_sexp, delta, tran
 
 compute_wilcox_matching_ivwc_bootstrap_parallel_cpp <- function(w_sexp, y_sexp, m_vec_sexp, indices_mat_sexp, m_mat_sexp, num_cores) {
     .Call(`_EDI_compute_wilcox_matching_ivwc_bootstrap_parallel_cpp`, w_sexp, y_sexp, m_vec_sexp, indices_mat_sexp, m_mat_sexp, num_cores)
+}
+
+compute_wilcox_hl_rand_bootstrap_parallel_cpp <- function(y0_sexp, i_mat_sexp, w_mat_sexp, delta, transform_code, zero_one_logit_clamp, num_cores) {
+    .Call(`_EDI_compute_wilcox_hl_rand_bootstrap_parallel_cpp`, y0_sexp, i_mat_sexp, w_mat_sexp, delta, transform_code, zero_one_logit_clamp, num_cores)
 }
 
 compute_wilcox_distr_parallel_cpp <- function(w_mat_sexp, y_sexp, delta, num_cores) {
@@ -2123,6 +2139,14 @@ qr_reduce_preserve_cols_cpp <- function(X_sexp, required_cols) {
     .Call(`_EDI_qr_reduce_preserve_cols_cpp`, X_sexp, required_cols)
 }
 
+compute_rand_bootstrap_mean_diff_parallel_cpp <- function(y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores) {
+    .Call(`_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp`, y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores)
+}
+
+compute_rand_bootstrap_ols_parallel_cpp <- function(y0, Xc, i_mat, w_mat, delta, num_cores) {
+    .Call(`_EDI_compute_rand_bootstrap_ols_parallel_cpp`, y0, Xc, i_mat, w_mat, delta, num_cores)
+}
+
 random_block_size_redraw_w_cpp <- function(strata_keys_sexp, block_sizes_sexp, prob_T_sexp) {
     .Call(`_EDI_random_block_size_redraw_w_cpp`, strata_keys_sexp, block_sizes_sexp, prob_T_sexp)
 }
@@ -2173,6 +2197,10 @@ compute_ridit_distr_parallel_cpp <- function(y, w_mat, reference, num_cores) {
 
 compute_ridit_bootstrap_parallel_cpp <- function(w, y, indices_mat, reference, num_cores) {
     .Call(`_EDI_compute_ridit_bootstrap_parallel_cpp`, w, y, indices_mat, reference, num_cores)
+}
+
+compute_ridit_rand_bootstrap_parallel_cpp <- function(y0, i_mat, w_mat, reference, num_cores) {
+    .Call(`_EDI_compute_ridit_rand_bootstrap_parallel_cpp`, y0, i_mat, w_mat, reference, num_cores)
 }
 
 ols_hc2_setup_cpp <- function(X_fit_sexp) {

@@ -160,6 +160,7 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 				} else {
 					ci = sort(fallback_ci[1:2])
 				}
+				if (length(ci) != 2L) ci = c(NA_real_, NA_real_)
 				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 				return(ci)
 			}
@@ -173,8 +174,9 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 					r, bounds$est, bounds$u, alpha / 2, pval_epsilon, transform_arg, FALSE, show_progress, perms, ci_search_control, ci_pval_cache
 				)
 			)
-			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+			if (length(ci) != 2L || !all(is.finite(ci[1:2]))) {
 				private$cache_nonestimable_se("rand_ci_bisection_failed")
+				ci = c(NA_real_, NA_real_)
 			}
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			ci

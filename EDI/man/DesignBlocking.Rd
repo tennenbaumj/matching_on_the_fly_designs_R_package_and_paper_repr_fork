@@ -9,7 +9,9 @@ An abstract R6 Class encapsulating shared blocking state and functionality for
 experimental designs that may define block identifiers.
 }
 \examples{
+\dontrun{
 des = DesignBlocking$new(n = 6, response_type = "continuous")
+}
 }
 \keyword{internal}
 \section{Super class}{

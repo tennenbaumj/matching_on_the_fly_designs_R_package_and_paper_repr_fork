@@ -1361,6 +1361,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compute_jt_rand_bootstrap_parallel_cpp
+NumericVector compute_jt_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, int num_cores);
+RcppExport SEXP _EDI_compute_jt_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_jt_rand_bootstrap_parallel_cpp(y0, i_mat, w_mat, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
 // compute_matching_wilcox_distr_parallel_cpp
 NumericVector compute_matching_wilcox_distr_parallel_cpp(SEXP w_mat_sexp, SEXP m_mat_sexp, SEXP y_sexp, double delta, int transform_code, double zero_one_logit_clamp, bool is_fixed_matching, int num_cores);
 RcppExport SEXP _EDI_compute_matching_wilcox_distr_parallel_cpp(SEXP w_mat_sexpSEXP, SEXP m_mat_sexpSEXP, SEXP y_sexpSEXP, SEXP deltaSEXP, SEXP transform_codeSEXP, SEXP zero_one_logit_clampSEXP, SEXP is_fixed_matchingSEXP, SEXP num_coresSEXP) {
@@ -1809,6 +1823,22 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const NumericVector& >::type y_r(y_rSEXP);
     Rcpp::traits::input_parameter< const IntegerVector& >::type dead(deadSEXP);
     rcpp_result_gen = Rcpp::wrap(fast_logrank_stats_cpp(w, y_r, dead));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_logrank_rand_bootstrap_parallel_cpp
+NumericVector compute_logrank_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
+RcppExport SEXP _EDI_compute_logrank_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type dead(deadSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_logrank_rand_bootstrap_parallel_cpp(y0, dead, i_mat, w_mat, delta, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2987,6 +3017,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compute_survival_stat_diff_rand_bootstrap_serial_cpp
+NumericVector compute_survival_stat_diff_rand_bootstrap_serial_cpp(const NumericVector& y0, const IntegerVector& dead, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, std::string requested_stat);
+RcppExport SEXP _EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP requested_statSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type dead(deadSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type requested_stat(requested_statSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_survival_stat_diff_rand_bootstrap_serial_cpp(y0, dead, i_mat, w_mat, delta, requested_stat));
+    return rcpp_result_gen;
+END_RCPP
+}
 // get_weibull_frailty_neg_loglik_cpp
 double get_weibull_frailty_neg_loglik_cpp(SEXP X_sexp, SEXP y_sexp, SEXP dead_sexp, SEXP group_id_sexp, SEXP params_sexp, int n_gh, double max_abs_log_sigma);
 RcppExport SEXP _EDI_get_weibull_frailty_neg_loglik_cpp(SEXP X_sexpSEXP, SEXP y_sexpSEXP, SEXP dead_sexpSEXP, SEXP group_id_sexpSEXP, SEXP params_sexpSEXP, SEXP n_ghSEXP, SEXP max_abs_log_sigmaSEXP) {
@@ -3179,6 +3225,23 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< SEXP >::type m_mat_sexp(m_mat_sexpSEXP);
     Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
     rcpp_result_gen = Rcpp::wrap(compute_wilcox_matching_ivwc_bootstrap_parallel_cpp(w_sexp, y_sexp, m_vec_sexp, indices_mat_sexp, m_mat_sexp, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_wilcox_hl_rand_bootstrap_parallel_cpp
+NumericVector compute_wilcox_hl_rand_bootstrap_parallel_cpp(SEXP y0_sexp, SEXP i_mat_sexp, SEXP w_mat_sexp, double delta, int transform_code, double zero_one_logit_clamp, int num_cores);
+RcppExport SEXP _EDI_compute_wilcox_hl_rand_bootstrap_parallel_cpp(SEXP y0_sexpSEXP, SEXP i_mat_sexpSEXP, SEXP w_mat_sexpSEXP, SEXP deltaSEXP, SEXP transform_codeSEXP, SEXP zero_one_logit_clampSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type y0_sexp(y0_sexpSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type i_mat_sexp(i_mat_sexpSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type w_mat_sexp(w_mat_sexpSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type transform_code(transform_codeSEXP);
+    Rcpp::traits::input_parameter< double >::type zero_one_logit_clamp(zero_one_logit_clampSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_wilcox_hl_rand_bootstrap_parallel_cpp(y0_sexp, i_mat_sexp, w_mat_sexp, delta, transform_code, zero_one_logit_clamp, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4287,6 +4350,39 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compute_rand_bootstrap_mean_diff_parallel_cpp
+NumericVector compute_rand_bootstrap_mean_diff_parallel_cpp(const NumericVector& y0, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int transform_code, double zero_one_logit_clamp, int num_cores);
+RcppExport SEXP _EDI_compute_rand_bootstrap_mean_diff_parallel_cpp(SEXP y0SEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP transform_codeSEXP, SEXP zero_one_logit_clampSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type transform_code(transform_codeSEXP);
+    Rcpp::traits::input_parameter< double >::type zero_one_logit_clamp(zero_one_logit_clampSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_rand_bootstrap_mean_diff_parallel_cpp(y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_rand_bootstrap_ols_parallel_cpp
+NumericVector compute_rand_bootstrap_ols_parallel_cpp(const NumericVector& y0, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
+RcppExport SEXP _EDI_compute_rand_bootstrap_ols_parallel_cpp(SEXP y0SEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type Xc(XcSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_rand_bootstrap_ols_parallel_cpp(y0, Xc, i_mat, w_mat, delta, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
 // random_block_size_redraw_w_cpp
 NumericVector random_block_size_redraw_w_cpp(SEXP strata_keys_sexp, SEXP block_sizes_sexp, SEXP prob_T_sexp);
 RcppExport SEXP _EDI_random_block_size_redraw_w_cpp(SEXP strata_keys_sexpSEXP, SEXP block_sizes_sexpSEXP, SEXP prob_T_sexpSEXP) {
@@ -4467,6 +4563,21 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type reference(referenceSEXP);
     Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
     rcpp_result_gen = Rcpp::wrap(compute_ridit_bootstrap_parallel_cpp(w, y, indices_mat, reference, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_ridit_rand_bootstrap_parallel_cpp
+NumericVector compute_ridit_rand_bootstrap_parallel_cpp(const IntegerVector& y0, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, std::string reference, int num_cores);
+RcppExport SEXP _EDI_compute_ridit_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP referenceSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const IntegerVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< std::string >::type reference(referenceSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_ridit_rand_bootstrap_parallel_cpp(y0, i_mat, w_mat, reference, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4861,6 +4972,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_get_hurdle_poisson_glmm_weighted_neg_loglik_cpp", (DL_FUNC) &_EDI_get_hurdle_poisson_glmm_weighted_neg_loglik_cpp, 6},
     {"_EDI_fast_hurdle_poisson_glmm_cpp", (DL_FUNC) &_EDI_fast_hurdle_poisson_glmm_cpp, 14},
     {"_EDI_exact_jonckheere_terpstra_pval_cpp", (DL_FUNC) &_EDI_exact_jonckheere_terpstra_pval_cpp, 2},
+    {"_EDI_compute_jt_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_jt_rand_bootstrap_parallel_cpp, 4},
     {"_EDI_compute_matching_wilcox_distr_parallel_cpp", (DL_FUNC) &_EDI_compute_matching_wilcox_distr_parallel_cpp, 8},
     {"_EDI_get_log_binomial_regression_score_cpp", (DL_FUNC) &_EDI_get_log_binomial_regression_score_cpp, 3},
     {"_EDI_get_log_binomial_regression_hessian_cpp", (DL_FUNC) &_EDI_get_log_binomial_regression_hessian_cpp, 3},
@@ -4888,6 +5000,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_fast_logistic_regression_weighted_cpp", (DL_FUNC) &_EDI_fast_logistic_regression_weighted_cpp, 12},
     {"_EDI_fast_logistic_regression_with_var_cpp", (DL_FUNC) &_EDI_fast_logistic_regression_with_var_cpp, 10},
     {"_EDI_fast_logrank_stats_cpp", (DL_FUNC) &_EDI_fast_logrank_stats_cpp, 3},
+    {"_EDI_compute_logrank_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_logrank_rand_bootstrap_parallel_cpp, 6},
     {"_EDI_matrix_rank_cpp", (DL_FUNC) &_EDI_matrix_rank_cpp, 2},
     {"_EDI_get_negbin_regression_score_cpp", (DL_FUNC) &_EDI_get_negbin_regression_score_cpp, 3},
     {"_EDI_get_negbin_regression_hessian_cpp", (DL_FUNC) &_EDI_get_negbin_regression_hessian_cpp, 3},
@@ -4959,6 +5072,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_get_survival_stat_diff", (DL_FUNC) &_EDI_get_survival_stat_diff, 4},
     {"_EDI_get_restricted_mean_se_for_group", (DL_FUNC) &_EDI_get_restricted_mean_se_for_group, 2},
     {"_EDI_get_restricted_mean_se_diff", (DL_FUNC) &_EDI_get_restricted_mean_se_diff, 3},
+    {"_EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp", (DL_FUNC) &_EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp, 6},
     {"_EDI_get_weibull_frailty_neg_loglik_cpp", (DL_FUNC) &_EDI_get_weibull_frailty_neg_loglik_cpp, 7},
     {"_EDI_get_weibull_frailty_score_cpp", (DL_FUNC) &_EDI_get_weibull_frailty_score_cpp, 7},
     {"_EDI_get_weibull_frailty_hessian_cpp", (DL_FUNC) &_EDI_get_weibull_frailty_hessian_cpp, 7},
@@ -4971,6 +5085,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_compute_wilcox_hl_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_wilcox_hl_bootstrap_parallel_cpp, 4},
     {"_EDI_compute_wilcox_hl_distr_parallel_cpp", (DL_FUNC) &_EDI_compute_wilcox_hl_distr_parallel_cpp, 6},
     {"_EDI_compute_wilcox_matching_ivwc_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_wilcox_matching_ivwc_bootstrap_parallel_cpp, 6},
+    {"_EDI_compute_wilcox_hl_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_wilcox_hl_rand_bootstrap_parallel_cpp, 7},
     {"_EDI_compute_wilcox_distr_parallel_cpp", (DL_FUNC) &_EDI_compute_wilcox_distr_parallel_cpp, 4},
     {"_EDI_compute_wilcox_distr_from_list_parallel_cpp", (DL_FUNC) &_EDI_compute_wilcox_distr_from_list_parallel_cpp, 4},
     {"_EDI_get_zero_augmented_poisson_score_cpp", (DL_FUNC) &_EDI_get_zero_augmented_poisson_score_cpp, 5},
@@ -5050,6 +5165,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_pocock_simon_redraw_w_cpp", (DL_FUNC) &_EDI_pocock_simon_redraw_w_cpp, 5},
     {"_EDI_qr_reduce_full_rank_cpp", (DL_FUNC) &_EDI_qr_reduce_full_rank_cpp, 1},
     {"_EDI_qr_reduce_preserve_cols_cpp", (DL_FUNC) &_EDI_qr_reduce_preserve_cols_cpp, 2},
+    {"_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp", (DL_FUNC) &_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp, 7},
+    {"_EDI_compute_rand_bootstrap_ols_parallel_cpp", (DL_FUNC) &_EDI_compute_rand_bootstrap_ols_parallel_cpp, 6},
     {"_EDI_random_block_size_redraw_w_cpp", (DL_FUNC) &_EDI_random_block_size_redraw_w_cpp, 3},
     {"_EDI_randomization_loop_cpp", (DL_FUNC) &_EDI_randomization_loop_cpp, 5},
     {"_EDI_complete_randomization_forced_balanced_cpp", (DL_FUNC) &_EDI_complete_randomization_forced_balanced_cpp, 3},
@@ -5063,6 +5180,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_result_key_store_size_cpp", (DL_FUNC) &_EDI_result_key_store_size_cpp, 0},
     {"_EDI_compute_ridit_distr_parallel_cpp", (DL_FUNC) &_EDI_compute_ridit_distr_parallel_cpp, 4},
     {"_EDI_compute_ridit_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_ridit_bootstrap_parallel_cpp, 5},
+    {"_EDI_compute_ridit_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_ridit_rand_bootstrap_parallel_cpp, 5},
     {"_EDI_ols_hc2_setup_cpp", (DL_FUNC) &_EDI_ols_hc2_setup_cpp, 1},
     {"_EDI_ols_hc2_post_fit_precomputed_cpp", (DL_FUNC) &_EDI_ols_hc2_post_fit_precomputed_cpp, 6},
     {"_EDI_ols_hc2_post_fit_cpp", (DL_FUNC) &_EDI_ols_hc2_post_fit_cpp, 4},

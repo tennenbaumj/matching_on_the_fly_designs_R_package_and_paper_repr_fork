@@ -97,6 +97,44 @@ InferenceIncidLogBinomial = R6::R6Class("InferenceIncidLogBinomial",
 			private$cached_values$s_beta_hat_T = if (!is.null(ssq) && is.finite(ssq) && ssq > 0) sqrt(ssq) else NA_real_
 			private$cached_values$df = NA_real_
 			private$cached_values$beta_hat_T
+		},
+		compute_score_confidence_interval = function(alpha = 0.05){
+			ci = tryCatch(
+				super$compute_score_confidence_interval(alpha = alpha),
+				error = function(e){
+					msg = if (length(e$message) == 0L) "" else e$message
+					if (grepl("'names' attribute", msg, fixed = TRUE) ||
+					    grepl("must be the same length as the vector", msg, fixed = TRUE)) {
+						private$cache_nonestimable_se("score_confidence_interval_unavailable")
+						return(c(NA_real_, NA_real_))
+					}
+					stop(e)
+				}
+			)
+			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+				private$cache_nonestimable_se("score_confidence_interval_unavailable")
+				return(c(NA_real_, NA_real_))
+			}
+			ci
+		},
+		compute_gradient_confidence_interval = function(alpha = 0.05){
+			ci = tryCatch(
+				super$compute_gradient_confidence_interval(alpha = alpha),
+				error = function(e){
+					msg = if (length(e$message) == 0L) "" else e$message
+					if (grepl("'names' attribute", msg, fixed = TRUE) ||
+					    grepl("must be the same length as the vector", msg, fixed = TRUE)) {
+						private$cache_nonestimable_se("gradient_confidence_interval_unavailable")
+						return(c(NA_real_, NA_real_))
+					}
+					stop(e)
+				}
+			)
+			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+				private$cache_nonestimable_se("gradient_confidence_interval_unavailable")
+				return(c(NA_real_, NA_real_))
+			}
+			ci
 		}
 	),
 	private = list(

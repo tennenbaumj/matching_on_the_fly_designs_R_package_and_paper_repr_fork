@@ -5,9 +5,10 @@
 #'
 #' @keywords internal
 #' @examples
+#' \dontrun{
 #' seq_des = DesignSeqOneByOne$new(n = 6, response_type = 'continuous')
 #' seq_des$add_one_subject_to_experiment_and_assign(data.frame(x1 = rnorm(1)))
-#' @export
+#' }
 DesignSeqOneByOne = R6::R6Class("DesignSeqOneByOne",
 	lock_objects = FALSE,
 	inherit = DesignMatching,

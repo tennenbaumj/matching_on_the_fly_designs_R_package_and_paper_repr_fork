@@ -67,8 +67,16 @@ Inference = R6::R6Class("Inference",
 				# Ensure design is ready
 				private$des_obj_priv_int$covariate_impute_if_necessary_and_then_create_model_matrix()
 				
+				X_imp_analysis = des_obj$get_X_imp()
+				analysis_col_names = names(X_imp_analysis)[!startsWith(names(X_imp_analysis), ".assignment_only_")]
+				X_imp_analysis = if (length(analysis_col_names)) {
+					as.data.frame(X_imp_analysis)[, analysis_col_names, drop = FALSE]
+				} else {
+					as.data.frame(X_imp_analysis)[, integer(0), drop = FALSE]
+				}
+				
 				if (should_run_asserts()) {
-					all_features = names(des_obj$get_X_imp())
+					all_features = names(X_imp_analysis)
 					required_vars = all.vars(model_formula)
 					# '.' is a special symbol in formulas representing all variables
 					required_vars = setdiff(required_vars, ".")
@@ -79,7 +87,7 @@ Inference = R6::R6Class("Inference",
 				}
 				private$model_formula = model_formula
 				# Path #3: final numeric design matrix
-				private$X = create_model_matrix_from_features(private$model_formula, des_obj$get_X_imp())
+				private$X = create_model_matrix_from_features(private$model_formula, X_imp_analysis)
 			}
 			
 			private$verbose = verbose

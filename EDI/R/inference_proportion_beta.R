@@ -155,13 +155,16 @@ InferencePropBetaRegr = R6::R6Class("InferencePropBetaRegr",
 			}
 			n_params = ncol(X) + 1L
 			ws_args = private$get_backend_warm_start_args(n_params)
+			has_vc = isTRUE(is.finite(private$cached_vc_params))
 			res = fast_beta_regression_cpp(
 				X = X, y = sanitize_beta_response(as.numeric(private$y)),
 				warm_start_beta = ws_args$start_beta,
 				warm_start_fisher_info = ws_args$warm_start_fisher_info,
 				compute_std_errs = FALSE,
 				smart_cold_start = private$smart_cold_start_default,
-				optimization_alg = private$optimization_alg
+				optimization_alg = private$optimization_alg,
+				fixed_idx    = if (has_vc) as.integer(ncol(X) + 1L) else NULL,
+				fixed_values = if (has_vc) as.numeric(private$cached_vc_params) else NULL
 			)
 
 			if (is.null(res) || !is.finite(res$coefficients[2])){
@@ -313,12 +316,14 @@ InferencePropBetaRegr = R6::R6Class("InferencePropBetaRegr",
 				},
 
 				fit_ok = function(mod, X_fit, keep){
-					!is.null(mod) && length(mod$b) >= 2L && is.finite(mod$b[2L])
+					!is.null(mod) && length(mod$b) >= 2L && is.finite(mod$b[2L]) && max(abs(mod$b), na.rm = TRUE) <= 100
 				}
 			)
 			if (!is.null(attempt$fit)){
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
-				private$set_fit_warm_start(c(as.numeric(attempt$fit$b), log(as.numeric(attempt$fit$phi))), "params", fisher = attempt$fit$fisher_information)
+				log_phi = log(as.numeric(attempt$fit$phi))
+				if (isTRUE(is.finite(log_phi))) private$cached_vc_params = log_phi
+				private$set_fit_warm_start(c(as.numeric(attempt$fit$b), log_phi), "params", fisher = attempt$fit$fisher_information)
 				private$cached_values$likelihood_test_context = list(
 					X = attempt$X,
 					j_treat = which(attempt$keep == 2L)

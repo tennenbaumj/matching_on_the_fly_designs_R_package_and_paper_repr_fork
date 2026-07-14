@@ -162,6 +162,7 @@ InferencePropFractionalLogit = R6::R6Class("InferencePropFractionalLogit",
 					},
 					fit_ok = function(mod, X_fit, keep){
 						if (is.null(mod) || length(mod$b) < 2L || !is.finite(mod$b[2])) return(FALSE)
+						if (max(abs(mod$b), na.rm = TRUE) > 100) return(FALSE)
 						if (estimate_only) return(TRUE)
 						is.finite(mod$ssq_b_2) && mod$ssq_b_2 > 0
 					}

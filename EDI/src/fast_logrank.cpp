@@ -139,3 +139,55 @@ SEXP fast_logrank_stats_cpp(const IntegerVector& w,
     _["n_control"] = n - n_treat
   ));
 }
+
+// BRT variant of the log-rank martingale-residual mean difference: each replicate b
+// resamples rows i_mat(., b) of the sharp-null survival times y0 (and censoring
+// indicators dead) and pairs them with the fresh assignment w_mat(., b); the sharp-null
+// shift is multiplicative on the treated times (delta on the log scale).
+// [[Rcpp::export]]
+NumericVector compute_logrank_rand_bootstrap_parallel_cpp(
+    const NumericVector& y0,
+    const IntegerVector& dead,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    double delta,
+    int num_cores) {
+
+  const int n = i_mat.nrow();
+  const int nsim = i_mat.ncol();
+  std::vector<double> results_vec(nsim, NA_REAL);
+  const double* y0_ptr = y0.begin();
+  const int* dead_ptr = dead.begin();
+  const int* i_ptr = i_mat.begin();
+  const int* w_ptr = w_mat.begin();
+  double* res_ptr = results_vec.data();
+  const double mult = std::exp(delta);
+  const bool use_parallel = should_parallelize_replicates(nsim, n, num_cores);
+
+#ifdef _OPENMP
+  if (use_parallel) omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel if(use_parallel)
+  {
+    Eigen::VectorXd time_b(n);
+    std::vector<int> dead_b(n), w_b(n);
+
+#pragma omp for schedule(static)
+    for (int b = 0; b < nsim; ++b) {
+      const int* i_col = i_ptr + (size_t)b * n;
+      const int* w_col = w_ptr + (size_t)b * n;
+      for (int i = 0; i < n; ++i) {
+        const int row0 = i_col[i] - 1; // i_mat is 1-based
+        const int is_t = (w_col[i] == 1);
+        time_b[i] = (is_t && delta != 0.0) ? y0_ptr[row0] * mult : y0_ptr[row0];
+        dead_b[i] = dead_ptr[row0];
+        w_b[i] = is_t;
+      }
+      ModelResult r = fast_logrank_internal(time_b, dead_b, w_b);
+      res_ptr[b] = (r.b.size() > 0) ? r.b[0] : NA_REAL;
+    }
+  }
+
+  return wrap(results_vec);
+}

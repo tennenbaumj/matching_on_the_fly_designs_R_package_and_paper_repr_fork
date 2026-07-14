@@ -64,6 +64,32 @@ DesignFixedMatchingGreedyPairSwitching = R6::R6Class("DesignFixedMatchingGreedyP
 		objective = NULL,
 		n_iter    = NULL,
 		bms = NULL,
+		ensure_pair_structure_computed = function(){
+			if (is.null(private$bms)) {
+				n = self$get_n()
+				private$covariate_impute_if_necessary_and_then_create_model_matrix()
+				if (is.null(private$X) || ncol(private$X) == 0) return(invisible(NULL))
+				X = private$X[1:n, , drop = FALSE]
+				private$bms = compute_binary_match_structure(X, mahal_match = (private$objective == "mahal_dist"))
+			}
+			invisible(NULL)
+		},
+		draw_bootstrap_indices = function(bootstrap_type = NULL){
+			# The greedy search only flips assignments within binary-match pairs
+			# (pair_cur_t in greedy_design_search_cpp), so w always has exactly one
+			# treated subject per pair: the exchangeable resampling unit is the pair.
+			private$ensure_pair_structure_computed()
+			if (is.null(private$bms)) {
+				return(list(i_b = sample_int_replace_cpp(private$t, private$t), m_vec_b = NULL))
+			}
+			pair_rows = private$bms$indicies_pairs
+			storage.mode(pair_rows) = "integer"
+			draw_matching_bootstrap_sample_cpp(
+				i_reservoir = integer(0),
+				pair_rows = pair_rows,
+				n_reservoir = 0L
+			)
+		},
 		draw_ws_raw = function(r = 100){
 			private$maybe_set_seed()
 			if (should_run_asserts()) {

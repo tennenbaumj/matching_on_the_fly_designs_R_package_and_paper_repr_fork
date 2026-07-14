@@ -291,7 +291,7 @@ InferenceSurvivalKKWeibullMarginal = R6::R6Class("InferenceSurvivalKKWeibullMarg
 			private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
 			private$cached_mod = fit$fit_obj
 			log_s = tryCatch(as.numeric(fit$fit_obj$log_sigma), error = function(e) NULL)
-			if (!is.null(log_s) && is.finite(log_s)) private$cached_vc_params = log_s
+			if (isTRUE(is.finite(log_s))) private$cached_vc_params = log_s
 			private$cached_values$beta_hat_T = fit$beta_T
 
 			if (!estimate_only) {

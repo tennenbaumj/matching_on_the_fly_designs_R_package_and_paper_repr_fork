@@ -32,6 +32,7 @@ inf$compute_estimate()
 \itemize{
 \item \href{#method-InferenceIncidBinomialIdentityRiskDiff-new}{\code{InferenceIncidBinomialIdentityRiskDiff$new()}}
 \item \href{#method-InferenceIncidBinomialIdentityRiskDiff-compute_estimate_with_bootstrap_weights}{\code{InferenceIncidBinomialIdentityRiskDiff$compute_estimate_with_bootstrap_weights()}}
+\item \href{#method-InferenceIncidBinomialIdentityRiskDiff-compute_lik_ratio_confidence_interval}{\code{InferenceIncidBinomialIdentityRiskDiff$compute_lik_ratio_confidence_interval()}}
 \item \href{#method-InferenceIncidBinomialIdentityRiskDiff-clone}{\code{InferenceIncidBinomialIdentityRiskDiff$clone()}}
 }
 }
@@ -82,7 +83,6 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_two_sided_pval'><code>::InferenceAsympLik$compute_score_two_sided_pval()</code></a></span></li>
@@ -151,6 +151,17 @@ Computes the treatment effect estimate for a weighted bootstrap sample.
 }
 \if{html}{\out{</div>}}
 }
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceIncidBinomialIdentityRiskDiff-compute_lik_ratio_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceIncidBinomialIdentityRiskDiff-compute_lik_ratio_confidence_interval}{}}}
+\subsection{Method \code{compute_lik_ratio_confidence_interval()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceIncidBinomialIdentityRiskDiff$compute_lik_ratio_confidence_interval(
+  alpha = 0.05
+)}\if{html}{\out{</div>}}
+}
+
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceIncidBinomialIdentityRiskDiff-clone"></a>}}

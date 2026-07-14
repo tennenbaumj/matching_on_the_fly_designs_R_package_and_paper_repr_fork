@@ -13,8 +13,10 @@ Abstract R6 class encapsulating data and functionality for a sequential one-by-
 one experimental design.
 }
 \examples{
+\dontrun{
 seq_des = DesignSeqOneByOne$new(n = 6, response_type = 'continuous')
 seq_des$add_one_subject_to_experiment_and_assign(data.frame(x1 = rnorm(1)))
+}
 }
 \keyword{internal}
 \section{Super classes}{

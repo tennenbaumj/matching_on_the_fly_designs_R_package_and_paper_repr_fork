@@ -152,6 +152,7 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 		}
 	),
 	private = list(
+		likelihood_ci_max_abs = 10,
 		testing_type = "wald",
 		information_preference = "auto",
 		information_source_used = NULL,
@@ -503,6 +504,16 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				function(delta) self$compute_asymp_two_sided_pval(delta)
 			}
 
+			# A likelihood-backed CI cannot be inverted when the test is unavailable
+			# at the fitted estimate.  In particular, some Cox score paths expose
+			# an explicit non-estimable standard error and otherwise pass NA values
+			# into the C++ root search, which may return an empty endpoint vector.
+			p_est = tryCatch(pval_fn(est), error = function(e) NA_real_)
+			if (!is.finite(p_est)) {
+				private$cache_nonestimable_se(paste0(testing_type, "_test_unavailable"))
+				return(c(NA_real_, NA_real_))
+			}
+
 			ci_vals = pval_invert_ci_cpp(
 				pval_fn    = pval_fn,
 				est        = est,
@@ -512,10 +523,17 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				upper_seed = upper_seed
 			)
 
-			ci = c(ci_vals[1L], ci_vals[2L])
+			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2])) else c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
-			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
-				private$cache_nonestimable_se("test_inversion_confidence_interval_unavailable")
+			if (length(ci) < 2L || !all(is.finite(ci[1:2])) || ci[1L] > est || ci[2L] < est || any(abs(ci[1:2]) > private$likelihood_ci_max_abs)) {
+				fallback = sort(as.numeric(wald_ci[1:2]))
+				if (length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est && all(abs(fallback[1:2]) <= private$likelihood_ci_max_abs)) {
+					ci = fallback
+				} else {
+					private$cache_nonestimable_se("test_inversion_confidence_interval_unavailable")
+					ci = c(NA_real_, NA_real_)
+				}
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			}
 			ci
 		},
@@ -546,26 +564,42 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				)
 			}
 
-			p_est = pval_fn(est)
-			if (!is.finite(p_est)) return(c(NA_real_, NA_real_))
+			p_est = tryCatch(pval_fn(est), error = function(e) NA_real_)
+			if (!is.finite(p_est)) {
+				private$cache_nonestimable_se("gradient_test_unavailable")
+				return(c(NA_real_, NA_real_))
+			}
 			if (p_est < alpha) {
 				ci = c(est, est)
 				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 				return(ci)
 			}
 
-			ci_vals = pval_invert_ci_cpp(
-				pval_fn    = pval_fn,
-				est        = est,
-				alpha      = alpha,
-				step       = step,
-				lower_seed = lower_seed,
-				upper_seed = upper_seed
+			ci_vals = tryCatch(
+				pval_invert_ci_cpp(
+					pval_fn    = pval_fn,
+					est        = est,
+					alpha      = alpha,
+					step       = step,
+					lower_seed = lower_seed,
+					upper_seed = upper_seed
+				),
+				error = function(e) {
+					private$cache_nonestimable_se("gradient_ci_inversion_failed")
+					numeric(0)
+				}
 			)
-			ci = c(ci_vals[1L], ci_vals[2L])
+			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2])) else c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
-			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
-				private$cache_nonestimable_se("gradient_confidence_interval_unavailable")
+			if (length(ci) < 2L || !all(is.finite(ci[1:2])) || ci[1L] > est || ci[2L] < est || any(abs(ci[1:2]) > private$likelihood_ci_max_abs)) {
+				fallback = sort(as.numeric(wald_ci[1:2]))
+				if (length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est && all(abs(fallback[1:2]) <= private$likelihood_ci_max_abs)) {
+					ci = fallback
+				} else {
+					private$cache_nonestimable_se("gradient_confidence_interval_unavailable")
+					ci = c(NA_real_, NA_real_)
+				}
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			}
 			ci
 		},
@@ -577,14 +611,14 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			est = self$compute_estimate()
 			if (!is.finite(est)) return(c(NA_real_, NA_real_))
 
-			full_eval = private$get_memoized_likelihood_test_eval(
+			full_eval = tryCatch(private$get_memoized_likelihood_test_eval(
 				delta = est,
 				testing_type = "lik_ratio",
 				spec = spec,
 				warm_cache_key = "lik_ratio_ci",
 				include_null_fit = FALSE,
 				include_full_negloglik = TRUE
-			)
+			), error = function(e) list(full_negloglik = NA_real_))
 			full_negloglik = full_eval$full_negloglik %||% NA_real_
 			if (!is.finite(full_negloglik)) return(private$invert_test_pval_confidence_interval(alpha))
 
@@ -599,7 +633,9 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			fit_null_formals = tryCatch(names(formals(spec$fit_null)), error = function(e) character())
 			accepts_start = "start" %in% fit_null_formals
 			extract_start = spec$extract_start %||% function(fit_obj) NULL
-			full_start = tryCatch(extract_start(spec$full_fit), error = function(e) NULL)
+			# The CI root search is not sequential; a warm start from the full fit can
+			# send null fits to a path-dependent local solution.
+			full_start = NULL
 			if (!is.null(full_start) && length(full_start) == 0L) full_start = NULL
 			fit_null_fn = function(delta){
 				fit = tryCatch(
@@ -623,7 +659,7 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				tryCatch(spec$score(fit), error = function(e) NULL)
 			}
 
-			ci_vals = lrt_ci_nr_cpp(
+			ci_vals = tryCatch(lrt_ci_nr_cpp(
 				fit_null_fn    = fit_null_fn,
 				neg_loglik_fn  = neg_loglik_fn,
 				score_fn       = score_fn,
@@ -634,12 +670,19 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				lower_seed     = lower_seed,
 				upper_seed     = upper_seed,
 				j              = j
-			)
+			), error = function(e) numeric(0))
 
-			ci = c(ci_vals[1L], ci_vals[2L])
+			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2])) else c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
-			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
-				private$cache_nonestimable_se("lik_ratio_confidence_interval_unavailable")
+			if (length(ci) < 2L || !all(is.finite(ci[1:2])) || ci[1L] > est || ci[2L] < est || any(abs(ci[1:2]) > private$likelihood_ci_max_abs)) {
+				fallback = sort(as.numeric(wald_ci[1:2]))
+				if (length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est && all(abs(fallback[1:2]) <= private$likelihood_ci_max_abs)) {
+					ci = fallback
+				} else {
+					private$cache_nonestimable_se("lik_ratio_confidence_interval_unavailable")
+					ci = c(NA_real_, NA_real_)
+				}
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			}
 			ci
 		},

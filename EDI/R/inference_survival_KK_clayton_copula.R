@@ -486,6 +486,7 @@ InferenceSurvivalKKClaytonCopulaOneLik = R6::R6Class("InferenceSurvivalKKClayton
 		best_par = NULL,
 		best_X_colnames = NULL,
 		cached_mod = NULL,
+		max_abs_reasonable_coef = 1e4,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			private$w = private$des_obj_priv_int$w

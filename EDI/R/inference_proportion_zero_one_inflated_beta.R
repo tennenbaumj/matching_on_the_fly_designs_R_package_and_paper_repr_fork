@@ -191,14 +191,19 @@ InferencePropZeroOneInflatedBetaRegr = R6::R6Class("InferencePropZeroOneInflated
 			}
 			X = private$build_component_matrix(private$model_formula, private$best_X_colnames)
 			X_zero_one = private$build_component_matrix(private$model_formula_zero_one, private$best_X_zero_one_colnames)
-			
+
 			start_len = ncol(X) + 1L + 2L * ncol(X_zero_one)
+			vc_start = ncol(X) + 1L
+			n_vc = 1L + 2L * ncol(X_zero_one)
+			has_vc = !is.null(private$cached_vc_params) && length(private$cached_vc_params) == n_vc && all(is.finite(private$cached_vc_params))
 			res = tryCatch(
 				fast_zero_one_inflated_beta_cpp(
-					X, X_zero_one, private$y, 
+					X, X_zero_one, private$y,
 					warm_start_params = private$get_fit_warm_start_for_length("params", start_len) %||% rep(0, start_len),
 					smart_cold_start = private$smart_cold_start_default,
-					warm_start_fisher_info = private$get_fit_warm_start_fisher(start_len)
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(start_len),
+					fixed_idx    = if (has_vc) as.integer(vc_start:(vc_start + n_vc - 1L)) else NULL,
+					fixed_values = if (has_vc) as.numeric(private$cached_vc_params) else NULL
 				),
 				error = function(e) NULL
 			)
@@ -317,6 +322,11 @@ InferencePropZeroOneInflatedBetaRegr = R6::R6Class("InferencePropZeroOneInflated
 			if (!is.null(attempt$fit)){
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
 				private$best_X_zero_one_colnames = setdiff(colnames(attempt$fit$X_zero_one), c("(Intercept)", "treatment"))
+				if (!is.null(attempt$fit$params)) {
+					vc_start = ncol(attempt$X) + 1L
+					vc_vals = as.numeric(attempt$fit$params[vc_start:length(attempt$fit$params)])
+					if (all(is.finite(vc_vals))) private$cached_vc_params = vc_vals
+				}
 				private$cached_values$likelihood_test_context = list(
 					X = attempt$X,
 					X_zero_one = attempt$fit$X_zero_one,

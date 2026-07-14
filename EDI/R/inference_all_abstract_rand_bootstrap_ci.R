@@ -8,17 +8,32 @@
 #' \code{alpha}. All p-value evaluations across candidate \code{delta} values share one set
 #' of pre-generated draws (resampled row indices and fresh design assignments) — common
 #' random numbers — so the p-value is a deterministic, near-monotone function of
-#' \code{delta} and the bound search is stable. See \code{InferenceRandBootstrap} for the
-#' statistical justification of the test being inverted; the resulting interval inherits
-#' its unconditional, superpopulation interpretation and asymptotic validity.
+#' \code{delta} and the bound search is stable. See \code{\link{InferenceRandBootstrap}}
+#' for the statistical justification of the test being inverted; the resulting interval
+#' inherits its unconditional, superpopulation interpretation and asymptotic validity.
 #'
+#' Users do not instantiate this class directly: every concrete inference class in the
+#' package inherits from it, so \code{compute_rand_bootstrap_confidence_interval} is
+#' available on any inference object.
+#'
+#' @examples
+#' \dontrun{
+#' seq_des = DesignSeqOneByOneKK14$new(n = 100, response_type = "continuous")
+#' # ... run the experiment: add subjects and responses ...
+#' seq_des_inf = InferenceAllSimpleMeanDiff$new(seq_des)
+#' seq_des_inf$compute_rand_bootstrap_confidence_interval(alpha = 0.05, B = 501)
+#' }
 #' @keywords internal
 InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 	lock_objects = FALSE,
 	inherit = InferenceRandBootstrap,
 	public = list(
 		#' @description Computes a confidence interval by inverting the bootstrap randomization
-		#'   test over the null effect \code{delta}. When the p-value does not drop below
+		#'   test over the null effect \code{delta}. For statistics that are affine in the
+		#'   additive sharp-null shift (e.g. the simple mean difference and the OLS treatment
+		#'   coefficient), the inversion is performed in closed form from the breakpoints of the
+		#'   p-value step function — exact given the draws and requiring no bisection. Otherwise,
+		#'   the generic bisection search is used. When the p-value does not drop below
 		#'   \code{alpha / 2} anywhere within the search radius, a conservative bound is returned
 		#'   at the search boundary rather than \code{NA}; each such event emits a
 		#'   \code{message()} and increments the private field
@@ -83,6 +98,50 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 				set.seed(private$seed)
 			}
 			draws = private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = TRUE)
+			# Enable SMC early-stopping during the CI bisection: each evaluate_pval(delta) call
+			# on the pre-materialized draws will stop once the Clopper-Pearson band clears alpha/2,
+			# saving the bulk of the B worker fits for GLM-class CIs that cannot use a C++ kernel.
+			{
+				brt_mc_b = as.integer(B)
+				brt_default_batch = min(brt_mc_b, max(25L, as.integer(ceiling(2 * sqrt(brt_mc_b)))))
+				old_brt_mc_ctrl = private$brt_mc_control
+				private$brt_mc_control = list(
+					mc_enable = brt_mc_b >= 200L,
+					mc_batch_size = brt_default_batch,
+					mc_min_draws = min(brt_mc_b, max(100L, 2L * brt_default_batch)),
+					mc_conf_level = 0.99,
+					mc_stop_threshold = alpha / 2
+				)
+				on.exit({ private$brt_mc_control = old_brt_mc_ctrl }, add = TRUE)
+			}
+			# Closed-form shortcut: when the statistic is affine in delta under the additive
+			# sharp-null shift (mean difference, OLS treatment coefficient), each null draw is
+			# t0_b(delta) = A_b + delta * c_b, so the p-value is a step function of delta whose
+			# breakpoints are (t - A_b) / c_b and the CI is read off exactly — no bisection.
+			if (identical(transform_arg, "none") &&
+				is.null(private$custom_randomization_statistic_function) &&
+				is.null(private[["compiled_cpp_stat_fn"]]) &&
+				private$has_private_method("compute_rand_bootstrap_ci_affine_coefs")) {
+				ci_closed = tryCatch({
+					affine = private$compute_rand_bootstrap_ci_affine_coefs(draws)
+					if (is.null(affine)) NULL else {
+						t_obs = private$compute_treatment_estimate_during_randomization_inference()
+						if (is.list(t_obs) && "b" %in% names(t_obs)) t_obs = t_obs$b[1]
+						t_obs = as.numeric(t_obs)[1]
+						if (!is.finite(t_obs)) NULL else {
+							private$closed_form_ci_from_affine_null_draws(affine$A, affine$c, t_obs, alpha)
+						}
+					}
+				}, error = function(e) NULL)
+				if (!is.null(ci_closed)) {
+					if (length(ci_closed) != 2L) {
+						private$cache_nonestimable_se("rand_bootstrap_ci_closed_form_unavailable")
+						ci_closed = c(NA_real_, NA_real_)
+					}
+					names(ci_closed) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+					return(ci_closed)
+				}
+			}
 			ci_pval_cache = new.env(parent = emptyenv())
 			evaluate_pval = function(delta) {
 				private$compute_rand_bootstrap_ci_pval_cached(
@@ -127,8 +186,9 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 				private$invert_rand_bootstrap_test_bisection(l, est, alpha / 2, pval_epsilon, TRUE, show_progress, evaluate_pval),
 				private$invert_rand_bootstrap_test_bisection(est, u, alpha / 2, pval_epsilon, FALSE, show_progress, evaluate_pval)
 			)
-			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
+			if (length(ci) != 2L || !all(is.finite(ci[1:2]))) {
 				private$cache_nonestimable_se("rand_bootstrap_ci_bisection_failed")
+				ci = c(NA_real_, NA_real_)
 			}
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			ci
@@ -136,6 +196,55 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 	),
 	private = list(
 		rand_bootstrap_ci_conservative_count = 0L,
+		# Exact inversion of the bootstrap randomization test when every null draw is affine in
+		# delta: t0_b(delta) = A[b] + delta * c_slopes[b]. The two-sided Monte Carlo p-value
+		# (with its 2/B floor) is piecewise constant with breakpoints at (t_obs - A_b) / c_b;
+		# the acceptance region {delta : pval(delta) >= alpha} is delimited by breakpoints, so
+		# the CI is found by evaluating the count-based p-value on each open interval between
+		# sorted breakpoints. Endpoints are closed (a draw sitting exactly at t_obs counts in
+		# both tails, so the p-value at a breakpoint is >= that of its neighboring intervals).
+		# Returns c(lower, upper) or NULL when the inversion is not possible (too few finite
+		# draws, an unbounded acceptance region, or a degenerate breakpoint set) — callers
+		# fall back to the generic bisection.
+		closed_form_ci_from_affine_null_draws = function(A, c_slopes, t_obs, alpha){
+			# Match the bisection path's threshold convention (inherited from InferenceRandCI):
+			# the two-sided p-value is inverted at alpha / 2.
+			pval_th = alpha / 2
+			ok = is.finite(A) & is.finite(c_slopes)
+			A = as.numeric(A[ok]); cs = as.numeric(c_slopes[ok])
+			B_valid = length(A)
+			# p-value floor 2/B must be able to drop below the threshold for the inversion to bracket
+			if (B_valid == 0L || 2 / B_valid >= pval_th) return(NULL)
+			# Slope ~ 0 draws never flip; carry their constant tail contributions separately
+			is_const = abs(cs) < 1e-12
+			n_const_ge = sum(A[is_const] >= t_obs)
+			n_const_le = sum(A[is_const] <= t_obs)
+			A_v = A[!is_const]; c_v = cs[!is_const]
+			if (length(A_v) == 0L) return(NULL)
+			breakpoints = sort(unique((t_obs - A_v) / c_v))
+			K = length(breakpoints)
+			if (K < 2L) return(NULL)
+			pval_at = function(d){
+				t0 = A_v + d * c_v
+				G = sum(t0 >= t_obs) + n_const_ge
+				L = sum(t0 <= t_obs) + n_const_le
+				min(1, max(2 / B_valid, 2 * min(G, L) / B_valid))
+			}
+			# Probe each open interval: outer probes detect an unbounded acceptance region
+			span_pad = max(1, diff(range(breakpoints)))
+			probes = c(
+				breakpoints[1] - span_pad,
+				(breakpoints[-1] + breakpoints[-K]) / 2,
+				breakpoints[K] + span_pad
+			)
+			accepted = vapply(probes, pval_at, numeric(1)) >= pval_th
+			if (accepted[1] || accepted[K + 1L]) return(NULL)
+			interior = which(accepted)
+			if (length(interior) == 0L) return(NULL)
+			# probe j (2..K) covers the interval (breakpoints[j-1], breakpoints[j]); closed
+			# breakpoint endpoints bound the acceptance region
+			c(breakpoints[interior[1] - 1L], breakpoints[interior[length(interior)]])
+		},
 		compute_rand_bootstrap_ci_pval_cached = function(delta, B, transform_arg, draws, resolution, ci_pval_cache, zero_one_logit_clamp = .Machine$double.eps){
 			cache_key = private$normalize_delta_for_cache(delta, resolution)
 			if (!is.null(ci_pval_cache[[cache_key]])) return(ci_pval_cache[[cache_key]])

@@ -171,8 +171,11 @@ InferenceContinKKGLMM = R6::R6Class("InferenceContinKKGLMM",
 
 			# GLS fast path: skip L-BFGS for estimate_only calls when VC is cached.
 			# Exact for permutation tests: fixing VC at null-fit MLE and permuting w
-			# gives a valid test statistic by exchangeability.
-			if (estimate_only && isTRUE(private$use_gls_fast_path) && !is.null(private$cached_vc_params)) {
+			# gives a valid test statistic by exchangeability. Skip when sigma_b≈0:
+			# L-BFGS terminates in 0 iters (already at boundary) so GLS overhead
+			# exceeds the saving — about 2x slower than the full REML path.
+			if (estimate_only && isTRUE(private$use_gls_fast_path) && !is.null(private$cached_vc_params) &&
+					private$cached_vc_params[2L] > -8) {
 				gls_b = tryCatch(
 					EDI:::fast_gaussian_lmm_gls_cpp(
 						X            = X_fit,

@@ -9,7 +9,9 @@ An abstract R6 class encapsulating shared matching-specific caches and
 utilities for designs that may expose matched-pair / reservoir structure.
 }
 \examples{
+\dontrun{
 des = DesignMatching$new(n = 6, response_type = "continuous")
+}
 }
 \keyword{internal}
 \section{Super classes}{

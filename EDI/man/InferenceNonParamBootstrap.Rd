@@ -11,6 +11,126 @@ Bootstrap-based Inference
 \details{
 Abstract class for bootstrap-based inference.
 }
+\section{Design-specific validity caveats for the nonparametric bootstrap}{
+
+The nonparametric bootstrap resamples experimental units with replacement from their
+empirical distribution, carrying each unit's realized \code{(x, w, y)} into the
+replicate, and recomputes the estimator. Its validity rests on the resampled units
+being (approximately) iid draws from the design's unit-level superpopulation. Since
+covariate-adaptive designs induce dependence among the assignments \eqn{w_i} (and
+between \eqn{w} and \eqn{X}), the appropriate resampling unit and the fidelity with
+which the design's dependence is replicated differ by design. In all cases below the
+inference is asymptotic, never finite-sample exact (for exact finite-sample inference
+under the design's actual randomization mechanism, use the randomization tests and
+randomization confidence intervals instead). Where a balance constraint of the design
+is broken by resampling, the bootstrap variance is inflated relative to the design's
+true sampling variance, so tests and intervals err \emph{conservative}
+(over-coverage), not anti-conservative.
+
+\describe{
+  \item{\code{DesignFixedBernoulli}, \code{DesignSeqOneByOneBernoulli}}{Assignments
+    are iid coin flips independent of \eqn{X}, so rows genuinely are iid and
+    row-level resampling is fully justified. No caveat.}
+  \item{\code{DesignFixediBCRD}, \code{DesignSeqOneByOneiBCRD}}{Assignment depends
+    only on the treatment counts (completely randomized / without-replacement urn),
+    inducing negative correlation among the \eqn{w_i} through the fixed-margin
+    constraint. Row-level iid resampling does not replicate this constraint:
+    replicates have a random number of treated subjects. The extra variability is
+    \eqn{O(1/n)}, so the bootstrap is conservative by an asymptotically negligible
+    amount.}
+  \item{\code{DesignSeqOneByOneEfron}, \code{DesignSeqOneByOneUrn}}{Assignment
+    depends on the running treatment imbalance (not on \eqn{X}), inducing serial
+    negative dependence among the \eqn{w_i}. Row-level resampling ignores this
+    dependence; as with fixed margins the effect on smooth estimators is
+    \eqn{O(1/n)}, so the bootstrap is conservative by a negligible amount.}
+  \item{\code{DesignSeqOneByOneRandomBlockSize} (no strata)}{Permuted-block balance
+    over entry order is broken by row-level resampling. Conservative, minor: only
+    the counts constraint is lost since the design does not use \eqn{X}.}
+  \item{\code{DesignSeqOneByOneRandomBlockSize} (with strata),
+    \code{DesignSeqOneByOneSPBR}}{Resampling is within-strata, preserving stratum
+    sizes and the stratum-covariate composition. The within-block time-order balance
+    inside each stratum is still broken, so replicates have random within-stratum
+    treatment counts. Conservative, minor.}
+  \item{\code{DesignFixedBlocking}}{Resampling is within-strata by default
+    (\code{bootstrap_type = "within_blocks"}), preserving stratum sizes; the exact
+    within-stratum treatment/control split is not enforced in replicates, so the
+    block-randomization variance reduction is partially unreplicated. Conservative,
+    minor. \code{bootstrap_type = "resample_blocks"} instead resamples whole blocks,
+    preserving within-block composition at the price of fewer resampling atoms.}
+  \item{\code{DesignFixedOptimalBlocks}}{Same within-block resampling caveats as
+    \code{DesignFixedBlocking}, plus the blocks themselves are computed from the
+    realized covariate sample: the block structure is a global function of the data
+    that the bootstrap conditions on rather than re-derives. The justification for
+    this conditioning is asymptotic: as \eqn{n} grows the blocking depends on the
+    sample only through the (convergent) empirical distribution of \eqn{X}, so
+    between-block dependence vanishes. Conservative.}
+  \item{\code{DesignFixedCluster}}{Assignment is at the cluster level and outcomes
+    are correlated within clusters, so whole clusters are resampled with
+    replacement. This is the correct exchangeable unit; with few clusters the
+    bootstrap distribution rests on few resampling atoms and becomes unstable.
+    Asymptotics are in the number of clusters, not the number of subjects.}
+  \item{\code{DesignFixedBlockedCluster}}{Clusters are resampled within strata,
+    matching both levels of the design's dependence (stratum and cluster). Sound,
+    with the same small-sample caution: few clusters per stratum means few
+    resampling atoms per stratum, and asymptotics are in the number of clusters.}
+  \item{\code{DesignSeqOneByOnePocockSimon}}{Minimization makes each assignment a
+    near-deterministic function of the running stratum-count imbalances. Row-level
+    iid resampling does not replicate this balance-forcing, so the bootstrap
+    variance corresponds to iid assignment rather than the (smaller)
+    minimization-design variance (cf. Bugni, Canay & Shah 2018). Conservative, with
+    the largest expected over-coverage among the sequential designs.}
+  \item{\code{DesignSeqOneByOneAtkinson}}{The biased-coin \eqn{D_A}-optimal rule
+    makes \eqn{w_i} depend on the full covariate and assignment history, and
+    conditional assignment probabilities differ from 1/2. Row-level resampling does
+    not replicate the covariate balance the rule enforces. Conservative, moderate.}
+  \item{\code{DesignFixedAOptimal}, \code{DesignFixedDOptimal},
+    \code{DesignFixedGreedy}, \code{DesignFixedRerandomization}}{The observed
+    \eqn{w} vector is one draw from a tightly constrained (optimized or
+    acceptance-sampled) set of allocations. Resampled replicates carry per-row
+    assignments whose recombined \eqn{w} vector no longer satisfies the balance
+    constraint, so the bootstrap reflects the variance of unconstrained assignment
+    (cf. Li, Ding & Rubin 2018 for rerandomization). Conservative,
+    moderate-to-large: the stronger the optimization, the greater the
+    over-coverage.}
+  \item{\code{DesignFixedMatchingGreedyPairSwitching}}{The greedy switching search
+    only ever flips assignments \emph{within} binary-match pairs, so every pair has
+    exactly one treated subject; the bootstrap resamples intact pairs, preserving
+    the within-pair anticorrelation. Remaining caveats: the pairing is a global
+    function of the sample (conditioned on, justified asymptotically as for the
+    matched designs below), and the greedy choice of \emph{which} pair member is
+    treated couples the pairs, which resampling does not replicate --- the residual
+    effect errs conservative.}
+  \item{\code{DesignFixedBinaryMatch}, \code{DesignFixedNaiveMatch}}{Matched pairs
+    are resampled intact, preserving the within-pair anticorrelation of \eqn{w} and
+    the pair-level variance reduction. The pairing itself is a global function of
+    the covariate sample (an Abadie & Imbens 2008-type concern): pairs are
+    exchangeable but not exactly independent. Validity is asymptotic --- as \eqn{n}
+    grows the pairing depends on the sample only through the empirical distribution
+    of \eqn{X} and between-pair dependence vanishes --- and the bootstrap conditions
+    on the realized match structure.}
+  \item{\code{DesignSeqOneByOneKK14}}{Matched pairs and reservoir subjects are
+    resampled separately as intact units, preserving within-pair anticorrelation
+    and the reservoir's Bernoulli assignments. Same asymptotic caveats as the fixed
+    matched designs, plus the split between number of pairs and reservoir size is
+    treated as fixed rather than random. Sound asymptotically.}
+  \item{\code{DesignSeqOneByOneKK21}, \code{DesignSeqOneByOneKK21stepwise}}{All
+    \code{DesignSeqOneByOneKK14} caveats apply, plus the matching weights are
+    estimated from earlier \emph{responses}, so \eqn{W} depends on \eqn{y} as well
+    as \eqn{X}. The bootstrap conditions on the realized response-adaptive weights
+    and match structure rather than replicating their sampling variability; this
+    extra conditioning is not quantified, and validity remains asymptotic.}
+  \item{\code{DesignFixedFactorial}}{Row-level resampling does not replicate the
+    balanced allocation across factor combinations. Conservative, minor.}
+  \item{\code{DesignFixedCustom}, \code{DesignCustomSequential}}{Warning: iid
+    row-level resampling is used because the package has no knowledge of the
+    user-supplied assignment mechanism. If that mechanism balances on covariates,
+    the bootstrap is likely conservative; if it induces clustering or other
+    positive dependence, the bootstrap may not even be valid (anti-conservative).
+    Use the randomization-based inference, which draws from the actual custom
+    mechanism, whenever possible.}
+}
+}
+
 \keyword{internal}
 \section{Super classes}{
 \code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{InferenceNonParamBootstrap}
@@ -59,7 +179,11 @@ Abstract class for bootstrap-based inference.
 \if{html}{\out{<a id="method-InferenceNonParamBootstrap-approximate_bootstrap_distribution_beta_hat_T"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceNonParamBootstrap-approximate_bootstrap_distribution_beta_hat_T}{}}}
 \subsection{Method \code{approximate_bootstrap_distribution_beta_hat_T()}}{
-Creates the bootstrap distribution of the estimate for the treatment effect
+Creates the bootstrap distribution of the estimate for the treatment effect.
+  The resampling unit is design-specific (rows, within-strata rows, matched pairs plus
+  reservoir, or clusters); see the class-level section \emph{Design-specific validity
+  caveats for the nonparametric bootstrap} for the conservativeness and asymptotics of
+  each concrete design.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceNonParamBootstrap$approximate_bootstrap_distribution_beta_hat_T(
   B = 501,
@@ -115,6 +239,9 @@ When \code{debug = FALSE} (default), a numeric vector of length \code{B}
 \if{latex}{\out{\hypertarget{method-InferenceNonParamBootstrap-compute_bootstrap_two_sided_pval}{}}}
 \subsection{Method \code{compute_bootstrap_two_sided_pval()}}{
 Computes a bootstrap-based two-sided p-value for the treatment effect.
+  Validity is asymptotic and design-dependent; for most covariate-adaptive designs the
+  p-value errs conservative. See the class-level section \emph{Design-specific validity
+  caveats for the nonparametric bootstrap}.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceNonParamBootstrap$compute_bootstrap_two_sided_pval(
   delta = 0,
@@ -166,6 +293,9 @@ A bootstrap two-sided p-value.
 \if{latex}{\out{\hypertarget{method-InferenceNonParamBootstrap-compute_bootstrap_confidence_interval}{}}}
 \subsection{Method \code{compute_bootstrap_confidence_interval()}}{
 Computes a bootstrap-based confidence interval.
+  Coverage is asymptotic and design-dependent; for most covariate-adaptive designs the
+  interval errs conservative (over-coverage). See the class-level section
+  \emph{Design-specific validity caveats for the nonparametric bootstrap}.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceNonParamBootstrap$compute_bootstrap_confidence_interval(
   alpha = 0.05,

@@ -261,7 +261,7 @@ InferenceAbstractKKWeibullFrailtyIVWC = R6::R6Class("InferenceAbstractKKWeibullF
 			if (!is.null(attempt$fit)){
 				private$cached_values$beta_T_matched = attempt$fit$beta
 				private$cached_values$ssq_beta_T_matched = attempt$fit$ssq
-				best_cols = setdiff(colnames(attempt$X_fit), "w")
+				best_cols = setdiff(colnames(attempt$X), "w")
 				private$cached_values$best_X_colnames_matched = best_cols
 				private$best_X_colnames_matched = best_cols
 				if (!is.null(attempt$fit$log_sigma_eps) && !is.null(attempt$fit$log_sigma_u))
@@ -300,10 +300,10 @@ InferenceAbstractKKWeibullFrailtyIVWC = R6::R6Class("InferenceAbstractKKWeibullF
 			if (!is.null(attempt$fit)){
 				private$cached_values$beta_T_reservoir = attempt$fit$beta
 				private$cached_values$ssq_beta_T_reservoir = attempt$fit$ssq
-				best_cols_r = setdiff(colnames(attempt$X_fit), "w")
+				best_cols_r = setdiff(colnames(attempt$X), "w")
 				private$cached_values$best_X_colnames_reservoir = best_cols_r
 				private$best_X_colnames_reservoir = best_cols_r
-				X_r_int = cbind("(Intercept)" = 1, as.matrix(attempt$X_fit))
+				X_r_int = cbind("(Intercept)" = 1, as.matrix(attempt$X))
 				res_log_s = tryCatch(
 					fast_weibull_regression_cpp(
 						y    = as.numeric(private$y[i_reservoir]),
@@ -702,6 +702,7 @@ InferenceAbstractKKWeibullFrailtyOneLik = R6::R6Class("InferenceAbstractKKWeibul
 #' Weibull Frailty IVWC Inference for KK Designs
 #' @export
 InferenceSurvivalKKWeibullFrailtyIVWC = R6::R6Class("InferenceSurvivalKKWeibullFrailtyIVWC",
+	lock_objects = FALSE,
 	inherit = InferenceAbstractKKWeibullFrailtyIVWC,
 	public = list(
 		#' @description Initialize the IVWC Weibull-frailty inference object.

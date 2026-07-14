@@ -1,3 +1,4 @@
+#include "_helper_functions.h"
 // [[Rcpp::depends(RcppEigen)]]
 #include <RcppEigen.h>
 #include <algorithm>
@@ -220,4 +221,57 @@ List exact_jonckheere_terpstra_pval_cpp(SEXP y_sexp,
     _["p_upper"] = p_upper,
     _["p_exact"] = p_exact
   );
+}
+
+// BRT variant of the two-group superiority statistic P(Y_T > Y_C) + 0.5 P(Y_T = Y_C) - 0.5
+// (the Jonckheere-Terpstra effect estimate). Each replicate b resamples rows i_mat(., b)
+// and pairs them with the fresh assignment w_mat(., b); no sharp-null shift is supported
+// (ordinal responses; the R hook declines delta != 0).
+// [[Rcpp::export]]
+NumericVector compute_jt_rand_bootstrap_parallel_cpp(
+    const NumericVector& y0,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    int num_cores) {
+
+  const int n = i_mat.nrow();
+  const int nsim = i_mat.ncol();
+  std::vector<double> results_vec(nsim, NA_REAL);
+  const double* y0_ptr = y0.begin();
+  const int* i_ptr = i_mat.begin();
+  const int* w_ptr = w_mat.begin();
+  double* res_ptr = results_vec.data();
+  const bool use_parallel = should_parallelize_replicates(nsim, n, num_cores);
+
+#ifdef _OPENMP
+  if (use_parallel) omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel if(use_parallel)
+  {
+    std::vector<double> y_t, y_c;
+
+#pragma omp for schedule(static)
+    for (int b = 0; b < nsim; ++b) {
+      const int* i_col = i_ptr + (size_t)b * n;
+      const int* w_col = w_ptr + (size_t)b * n;
+      y_t.clear(); y_c.clear();
+      for (int i = 0; i < n; ++i) {
+        const double yv = y0_ptr[i_col[i] - 1]; // i_mat is 1-based
+        if (!std::isfinite(yv)) continue;
+        if (w_col[i] == 1) y_t.push_back(yv); else y_c.push_back(yv);
+      }
+      if (y_t.empty() || y_c.empty()) continue;
+      std::sort(y_c.begin(), y_c.end());
+      double num = 0.0;
+      for (double yt : y_t) {
+        const std::size_t less = std::lower_bound(y_c.begin(), y_c.end(), yt) - y_c.begin();
+        const std::size_t leq = std::upper_bound(y_c.begin(), y_c.end(), yt) - y_c.begin();
+        num += static_cast<double>(less) + 0.5 * static_cast<double>(leq - less);
+      }
+      res_ptr[b] = num / (static_cast<double>(y_t.size()) * static_cast<double>(y_c.size())) - 0.5;
+    }
+  }
+
+  return wrap(results_vec);
 }

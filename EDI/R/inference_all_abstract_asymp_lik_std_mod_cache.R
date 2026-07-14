@@ -80,10 +80,13 @@ inference_asymp_lik_std_mod_cache_private = list(
 		make_warm_fit_null_wrapper = function(spec, cache_key){
 			last_start = NULL
 			last_delta = NULL
+			# CI inversion probes null effects in a non-sequential order; reusing a
+			# nonlinear optimizer's previous solution can make p(delta) path-dependent.
+			ci_inversion = grepl("_ci$", as.character(cache_key)[1L])
 			fit_null_formals = tryCatch(names(formals(spec$fit_null)), error = function(e) character())
 			accepts_start = "start" %in% fit_null_formals
 			function(delta){
-				warm_enabled = isTRUE(private$null_fit_warm_start_enabled)
+				warm_enabled = isTRUE(private$null_fit_warm_start_enabled) && !ci_inversion
 				cache_state = if (warm_enabled) private$get_likelihood_null_warm_state(cache_key) else NULL
 				start = if (warm_enabled) last_start else NULL
 				if (warm_enabled && is.null(start) && !is.null(cache_state)) start = cache_state$start

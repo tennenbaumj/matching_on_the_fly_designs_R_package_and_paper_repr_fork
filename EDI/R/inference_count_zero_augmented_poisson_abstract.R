@@ -597,13 +597,18 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 			if (private$use_rcpp && identical(private$za_description(), "Zero-Inflated Negative Binomial")) {
 				n_params = ncol(X_fit) + ncol(Xzi_fit) + 1L
 				ws_args = private$get_backend_warm_start_args(n_params)
+				vc_start = ncol(X_fit) + 1L
+				n_vc = ncol(Xzi_fit) + 1L
+				has_vc = !is.null(private$cached_vc_params) && length(private$cached_vc_params) == n_vc && all(is.finite(private$cached_vc_params))
 				fit = tryCatch(
 					fast_zinb_cpp(
 						X = X_fit, y = as.numeric(private$y), Xzi = Xzi_fit,
 						warm_start_params = ws_args$start_params,
 						warm_start_fisher_info = ws_args$warm_start_fisher_info,
 						smart_cold_start = private$smart_cold_start_default,
-						estimate_only = estimate_only, optimization_alg = private$optimization_alg
+						estimate_only = estimate_only, optimization_alg = private$optimization_alg,
+						fixed_idx    = if (has_vc) as.integer(vc_start:(vc_start + n_vc - 1L)) else NULL,
+						fixed_values = if (has_vc) as.numeric(private$cached_vc_params) else NULL
 					),
 					error = function(e) NULL
 				)
@@ -883,7 +888,9 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 				private$clear_nonestimable_state()
 				private$cached_mod = fit
 				private$set_fit_warm_start(as.numeric(fit$params), "params")
-				
+				vc_vals = as.numeric(fit$params[(ncol(X_fit) + 1L):length(fit$params)])
+				if (all(is.finite(vc_vals))) private$cached_vc_params = vc_vals
+
 				private$cached_values$likelihood_test_context = list(
 					X = X_fit,
 					Xzi = Xzi_fit,

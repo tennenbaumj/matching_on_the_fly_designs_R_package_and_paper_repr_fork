@@ -219,6 +219,39 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 		supports_reusable_bootstrap_worker = function(){
 			FALSE
 		},
+		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
+			if (is.null(private$best_X_colnames)) {
+				private$shared(estimate_only = TRUE)
+			}
+			if (is.null(private$best_X_colnames)) {
+				return(self$compute_estimate(estimate_only = estimate_only))
+			}
+			X_f = private$build_component_matrix(private$model_formula, private$best_X_colnames, treatment_name = "treatment")
+			X_hurdle = private$build_component_matrix(private$model_formula_hurdle, private$best_hurdle_X_colnames, treatment_name = "treatment")
+			if (is.null(X_f) || is.null(X_hurdle)) return(NA_real_)
+			n_params = ncol(X_f) + 1L
+			ws_args = private$get_backend_warm_start_args(n_params)
+			has_vc = isTRUE(is.finite(private$cached_vc_params))
+			mod = tryCatch(
+				fast_hurdle_negbin_cpp(
+					X_f, private$y, X_hurdle = X_hurdle,
+					warm_start_params = ws_args$start_params,
+					smart_cold_start = private$smart_cold_start_default,
+					warm_start_fisher_info = ws_args$warm_start_fisher_info,
+					estimate_only = TRUE,
+					fixed_idx    = if (has_vc) as.integer(n_params) else NULL,
+					fixed_values = if (has_vc) as.numeric(private$cached_vc_params) else NULL
+				),
+				error = function(e) NULL
+			)
+			if (is.null(mod)) return(NA_real_)
+			b = as.numeric(mod$b)
+			if (length(b) < 2L || !is.finite(b[2L])) return(NA_real_)
+			log_th = log(as.numeric(mod$theta_hat))
+			if (isTRUE(is.finite(log_th)))
+				private$set_fit_warm_start(c(b, log_th), "params", fisher = mod$fisher_information)
+			as.numeric(b[2L])
+		},
 		hurdle_description = function() "Hurdle Negative Binomial",
 		cached_mod = NULL,
 		model_formula_hurdle = NULL,
@@ -433,6 +466,8 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 			private$cached_values$full_coefficients = b_full
 			private$cached_values$theta_hat = as.numeric(fit$mod$theta_hat)
 			private$cached_values$hurdle_coefficients = fit$mod$hurdle_b
+			log_th = log(as.numeric(fit$mod$theta_hat))
+			if (isTRUE(is.finite(log_th))) private$cached_vc_params = log_th
 			
 			out
 		},

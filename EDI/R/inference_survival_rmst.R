@@ -139,6 +139,16 @@ InferenceSurvivalRestrictedMeanDiff = R6::R6Class("InferenceSurvivalRestrictedMe
 		}
 	),
 	private = list(
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			if (delta != 0 && !identical(transform_responses, "log")) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			compute_survival_stat_diff_rand_bootstrap_serial_cpp(
+				as.numeric(y0_full), as.integer(private$dead), mats$i_mat, mats$w_mat,
+				as.numeric(delta), "restricted_mean"
+			)
+		},
 		weighted_survival_stat_for_group = function(y, dead, row_weights, requested_stat = c("median", "restricted_mean")){
 			requested_stat = match.arg(requested_stat)
 			keep = is.finite(y) & is.finite(dead) & is.finite(row_weights) & row_weights > 0

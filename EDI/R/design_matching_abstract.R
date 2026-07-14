@@ -7,8 +7,9 @@
 #'
 #' @keywords internal
 #' @examples
+#' \dontrun{
 #' des = DesignMatching$new(n = 6, response_type = "continuous")
-#' @export
+#' }
 DesignMatching = R6::R6Class("DesignMatching",
 	lock_objects = FALSE,
 	inherit = DesignBlocking,

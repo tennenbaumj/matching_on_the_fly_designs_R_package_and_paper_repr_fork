@@ -146,6 +146,17 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 		}
 	),
 	private = list(
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			transform_code = private$rand_bootstrap_transform_code(transform_responses)
+			if (is.null(transform_code)) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			compute_wilcox_hl_rand_bootstrap_parallel_cpp(
+				as.numeric(y0_full), mats$i_mat, mats$w_mat, as.numeric(delta),
+				transform_code, as.numeric(zero_one_logit_clamp), private$n_cpp_threads(ncol(mats$w_mat))
+			)
+		},
 		max_resample_attempts = 50L,
 		hl_point_estimate = function(y_vals, w_vals, row_weights = NULL){
 			if (is.null(row_weights)) {

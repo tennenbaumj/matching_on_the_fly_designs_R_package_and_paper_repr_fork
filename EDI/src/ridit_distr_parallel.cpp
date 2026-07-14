@@ -224,3 +224,67 @@ NumericVector compute_ridit_bootstrap_parallel_cpp(const IntegerVector& w,
     
     return wrap(results_vec);
 }
+
+// BRT variant of the ridit estimate: each replicate b resamples rows i_mat(., b) and
+// pairs them with the fresh assignment w_mat(., b); the ridit reference map is rebuilt
+// from the resampled responses per replicate (matching what a sub-inference on the
+// bootstrap sample computes). No sharp-null shift (ordinal; the R hook declines
+// delta != 0).
+// [[Rcpp::export]]
+NumericVector compute_ridit_rand_bootstrap_parallel_cpp(const IntegerVector& y0,
+                                                        const IntegerMatrix& i_mat,
+                                                        const IntegerMatrix& w_mat,
+                                                        std::string reference,
+                                                        int num_cores) {
+    const int n = i_mat.nrow();
+    const int nsim = i_mat.ncol();
+    std::vector<double> results_vec(nsim, NA_REAL);
+    double* res_ptr = results_vec.data();
+    const int* y0_ptr = y0.begin();
+    const int* i_ptr = i_mat.begin();
+    const int* w_ptr = w_mat.begin();
+    const bool is_pooled = (reference == "pooled");
+
+    const bool use_parallel = should_parallelize_replicates(nsim, n, num_cores);
+#ifdef _OPENMP
+    if (use_parallel) omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel if(use_parallel)
+    {
+        std::vector<int> y_b(n);
+        std::vector<int> y_ref;
+        std::vector<int> y_t;
+        std::vector<int> levels;
+        std::vector<double> ridit_scores;
+        std::vector<int> counts;
+        y_ref.reserve(n);
+        y_t.reserve(n);
+        levels.reserve(n);
+        ridit_scores.reserve(n);
+        counts.reserve(n);
+
+        #pragma omp for schedule(static)
+        for (int b = 0; b < nsim; ++b) {
+            const int* i_col = i_ptr + (size_t)b * n;
+            const int* w_col = w_ptr + (size_t)b * n;
+            for (int i = 0; i < n; ++i) y_b[i] = y0_ptr[i_col[i] - 1]; // i_mat is 1-based
+
+            if (is_pooled) {
+                get_ridit_map_cpp(y_b, levels, ridit_scores, counts);
+                y_t.clear();
+                for (int i = 0; i < n; ++i) {
+                    if (w_col[i] == 1) y_t.push_back(y_b[i]);
+                }
+                res_ptr[b] = y_t.empty() ? NA_REAL :
+                    compute_mean_ridit_with_map_cpp(y_t, ridit_scores, levels) - 0.5;
+            } else {
+                res_ptr[b] = compute_single_ridit_estimate_cpp(
+                    y_b.data(), w_col, n, reference, y_ref, y_t, levels, ridit_scores, counts
+                );
+            }
+        }
+    }
+
+    return wrap(results_vec);
+}

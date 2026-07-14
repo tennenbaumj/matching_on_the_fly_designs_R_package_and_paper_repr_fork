@@ -882,6 +882,17 @@ safe_call_family = function(test_family, label, expr){
 
 ensure_estimate_setup_for_filtered_family = function(){
 	if (!is_test_family_filter_active() || identical(TEST_FAMILY_FILTER, "estimate")) return(TRUE)
+	if (TEST_FAMILY_FILTER %in% c("wald", "score", "lik_ratio", "gradient") &&
+	    !supports_direct_testing_type(TEST_FAMILY_FILTER)) {
+		message(
+			"          Skipping ",
+			TEST_FAMILY_FILTER,
+			" family for ",
+			inference_result_label,
+			" because testing_type is not supported."
+		)
+		return(FALSE)
+	}
 	if (!"compute_estimate" %in% names(seq_des_inf)) return(TRUE)
 	isTRUE(tryCatch({
 		seq_des_inf$compute_estimate()
@@ -1178,7 +1189,7 @@ run_exhaustive_remaining_inference_classes = function(des_obj, response_type, de
 		switch(
 			response_type,
 			continuous = grepl("Count|Incid|Survival|Ordinal|^InferenceProp", class_name),
-			incidence = grepl("Count|Contin|Survival|Ordinal|^InferenceProp", class_name),
+			incidence = grepl("Count|Contin|Survival|Ordinal|Wilcox|^InferenceProp", class_name),
 			proportion = grepl("Count|Contin|Incid|Survival|Ordinal", class_name),
 			count = grepl("Contin|Incid|Survival|Ordinal|^InferenceProp", class_name),
 			survival = grepl("Count|Contin|Incid|Ordinal|^InferenceProp", class_name),

@@ -87,6 +87,16 @@ InferenceOrdinalJonckheereTerpstraTest = R6::R6Class(
 		}
 	),
 	private = list(
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			# ordinal: no sharp-null shift supported
+			if (delta != 0) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			compute_jt_rand_bootstrap_parallel_cpp(
+				as.numeric(y0_full), mats$i_mat, mats$w_mat, private$n_cpp_threads(ncol(mats$w_mat))
+			)
+		},
 		weighted_superiority = function(y_vals, w_vals, row_weights){
 			y_vals = as.numeric(y_vals)
 			w_vals = as.integer(w_vals)

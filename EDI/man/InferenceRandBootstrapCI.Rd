@@ -8,13 +8,25 @@ The CI is the set of \code{delta} values whose bootstrap randomization p-value e
 \code{alpha}. All p-value evaluations across candidate \code{delta} values share one set
 of pre-generated draws (resampled row indices and fresh design assignments) — common
 random numbers — so the p-value is a deterministic, near-monotone function of
-\code{delta} and the bound search is stable. See \code{InferenceRandBootstrap} for the
-statistical justification of the test being inverted; the resulting interval inherits
-its unconditional, superpopulation interpretation and asymptotic validity.
+\code{delta} and the bound search is stable. See \code{\link{InferenceRandBootstrap}}
+for the statistical justification of the test being inverted; the resulting interval
+inherits its unconditional, superpopulation interpretation and asymptotic validity.
+
+Users do not instantiate this class directly: every concrete inference class in the
+package inherits from it, so \code{compute_rand_bootstrap_confidence_interval} is
+available on any inference object.
 }
 \details{
 Abstract class implementing confidence intervals by inverting the bootstrap
 randomization test of \code{InferenceRandBootstrap} over the null effect \code{delta}.
+}
+\examples{
+\dontrun{
+seq_des = DesignSeqOneByOneKK14$new(n = 100, response_type = "continuous")
+# ... run the experiment: add subjects and responses ...
+seq_des_inf = InferenceAllSimpleMeanDiff$new(seq_des)
+seq_des_inf$compute_rand_bootstrap_confidence_interval(alpha = 0.05, B = 501)
+}
 }
 \keyword{internal}
 \section{Super classes}{
@@ -68,7 +80,11 @@ randomization test of \code{InferenceRandBootstrap} over the null effect \code{d
 \if{latex}{\out{\hypertarget{method-InferenceRandBootstrapCI-compute_rand_bootstrap_confidence_interval}{}}}
 \subsection{Method \code{compute_rand_bootstrap_confidence_interval()}}{
 Computes a confidence interval by inverting the bootstrap randomization
-  test over the null effect \code{delta}. When the p-value does not drop below
+  test over the null effect \code{delta}. For statistics that are affine in the
+  additive sharp-null shift (e.g. the simple mean difference and the OLS treatment
+  coefficient), the inversion is performed in closed form from the breakpoints of the
+  p-value step function — exact given the draws and requiring no bisection. Otherwise,
+  the generic bisection search is used. When the p-value does not drop below
   \code{alpha / 2} anywhere within the search radius, a conservative bound is returned
   at the search boundary rather than \code{NA}; each such event emits a
   \code{message()} and increments the private field

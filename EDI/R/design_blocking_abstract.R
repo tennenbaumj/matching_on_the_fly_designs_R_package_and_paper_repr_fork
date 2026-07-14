@@ -7,8 +7,9 @@
 #'
 #' @keywords internal
 #' @examples
+#' \dontrun{
 #' des = DesignBlocking$new(n = 6, response_type = "continuous")
-#' @export
+#' }
 DesignBlocking = R6::R6Class("DesignBlocking",
 	lock_objects = FALSE,
 	inherit = Design,

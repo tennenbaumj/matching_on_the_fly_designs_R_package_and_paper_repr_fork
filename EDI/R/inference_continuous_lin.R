@@ -131,6 +131,46 @@ InferenceContinLin = R6::R6Class("InferenceContinLin",
 		compute_fast_randomization_distr = function(y, permutations, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
 			private$compute_fast_randomization_distr_via_reused_worker(y, permutations, delta, transform_responses, zero_one_logit_clamp = zero_one_logit_clamp)
 		},
+		# Affine decomposition of the BRT null draws for the closed-form CI. The Lin estimator
+		# is OLS on [1, w_fresh, Xc_b, w_fresh*Xc_b]. Under the additive sharp-null shift,
+		# t0_b(delta) = A_b + delta * c_b where A_b = coef_2(lm(y ~ M_b)) and
+		# c_b = 1 - g_b, with g_b = coef_2(lm(w_obs ~ M_b)). The slope is 1 - g_b because
+		# h_b = coef_2(lm(w_fresh ~ M_b)) = 1 for any full-rank M_b that contains w_fresh as
+		# its second column (algebraic identity: (M'M)^{-1}M'M[:,2] = e_2). Both A_b and g_b
+		# are recovered from one QR per draw with a two-column response.
+		compute_rand_bootstrap_ci_affine_coefs = function(rand_bootstrap_draws){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			n = as.integer(private$n)
+			B = length(rand_bootstrap_draws)
+			if (B == 0L) return(NULL)
+			y_raw = as.numeric(private$y)
+			w_obs = as.numeric(private$w)
+			Xc_info = private$get_centered_covariates()
+			has_covariates = !is.null(Xc_info)
+			A = rep(NA_real_, B)
+			cc = rep(NA_real_, B)
+			for (b in seq_len(B)) {
+				draw = rand_bootstrap_draws[[b]]
+				if (is.null(draw$w_b) || length(draw$i_b) != n || length(draw$w_b) != n) return(NULL)
+				w_f = as.numeric(draw$w_b)
+				n_T = sum(w_f == 1)
+				if (n_T == 0L || n_T == n) next
+				M_b = if (!has_covariates) {
+					cbind(1, w_f)
+				} else {
+					Xc_b = Xc_info$Xc[draw$i_b, , drop = FALSE]
+					cbind(1, w_f, Xc_b, w_f * Xc_b)
+				}
+				coefs = tryCatch(
+					qr.coef(qr(M_b), cbind(y_raw[draw$i_b], w_obs[draw$i_b])),
+					error = function(e) NULL
+				)
+				if (is.null(coefs) || anyNA(coefs[2L, ])) next
+				A[b] = as.numeric(coefs[2L, 1L])
+				cc[b] = 1 - as.numeric(coefs[2L, 2L])
+			}
+			list(A = A, c = cc)
+		},
 		build_lin_design_matrix = function(){
 			Xc_info = private$get_centered_covariates()
 			if (is.null(Xc_info)){

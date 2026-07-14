@@ -244,10 +244,18 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		dep_cens_bootstrap_ci_max_abs = 2,
 		dep_cens_validate_bootstrap_ci = function(ci, alpha = 0.05){
 			ci = as.numeric(ci)
+			est = private$cached_values$beta_hat_T %||% NA_real_
 			if (length(ci) < 2L || !all(is.finite(ci[1:2])) ||
-			    any(abs(ci[1:2]) > private$dep_cens_bootstrap_ci_max_abs)) {
-				private$cache_nonestimable_estimate("dep_cens_transform_bootstrap_ci_unstable")
-				out = c(NA_real_, NA_real_)
+				(is.finite(est) && (ci[1L] > est || ci[2L] < est)) ||
+				any(abs(ci[1:2]) > private$dep_cens_bootstrap_ci_max_abs)) {
+				fallback = tryCatch(private$compute_z_or_t_ci_from_s_and_df(alpha), error = function(e) c(NA_real_, NA_real_))
+				fallback = sort(as.numeric(fallback[1:2]))
+				if (is.finite(est) && length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est) {
+					out = fallback
+				} else {
+					private$cache_nonestimable_se("dep_cens_transform_bootstrap_ci_unstable")
+					out = c(NA_real_, NA_real_)
+				}
 				names(out) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 				return(out)
 			}
@@ -270,15 +278,16 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 				X = cbind(`(Intercept)` = 1, treatment = private$w, X_cov)
 			}
 			n_params = 2 * ncol(X) + 3L
-			warm_start_params = private$get_fit_warm_start_for_length("params", n_params)
-			if (is.null(warm_start_params)) warm_start_params = rep(0, n_params)
-			warm_fisher = private$get_fit_warm_start_fisher(n_params)
+			has_vc = !is.null(private$cached_vc_params) && length(private$cached_vc_params) == 3L && all(is.finite(private$cached_vc_params))
+			vc_start = n_params - 2L
 			res = fast_dep_cens_transform_optim_cpp(
 				y = private$y, dead = private$dead, X = X,
 				warm_start_params = private$get_fit_warm_start_for_length("params", n_params),
 				warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
 				smart_cold_start = private$smart_cold_start_default,
-				estimate_only = estimate_only
+				estimate_only = estimate_only,
+				fixed_idx    = if (has_vc) as.integer(vc_start:(vc_start + 2L)) else NULL,
+				fixed_values = if (has_vc) as.numeric(private$cached_vc_params) else NULL
 			)
 			if (is.null(res) || !is.finite(res$b[2])){
 				return(NA_real_)
@@ -363,12 +372,14 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 				}
 			)
 			if (!is.null(attempt$fit)){
-				if (!is.finite(attempt$fit$b[2]) || abs(attempt$fit$b[2]) > 1) {
+				if (!is.finite(attempt$fit$b[2]) || abs(attempt$fit$b[2]) > 0.5) {
 					private$cached_values$likelihood_test_context = NULL
 					return(NULL)
 				}
 				private$set_fit_warm_start(attempt$fit$b, "params", fisher = attempt$fit$fisher_information)
 				private$best_X_colnames = setdiff(colnames(attempt$X), c("(Intercept)", "treatment"))
+				vc_vals = as.numeric(tail(attempt$fit$b, 3L))
+				if (all(is.finite(vc_vals))) private$cached_vc_params = vc_vals
 				private$cached_values$likelihood_test_context = list(X = attempt$X)
 			} else {
 				private$cached_values$likelihood_test_context = NULL

@@ -5,10 +5,11 @@
 #'
 #' @keywords internal
 #' @examples
+#' \dontrun{
 #' des = DesignFixed$new(n = 10, response_type = 'continuous')
 #' des$add_all_subjects_to_experiment(data.frame(x1 = rnorm(10)))
 #' des$assign_w_to_all_subjects()
-#' @export
+#' }
 DesignFixed = R6::R6Class("DesignFixed",
 	lock_objects = FALSE,
 	inherit = DesignMatching,

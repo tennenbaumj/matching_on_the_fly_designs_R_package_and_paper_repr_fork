@@ -134,6 +134,61 @@ InferenceContinOLS = R6::R6Class("InferenceContinOLS",
 	),
 	private = list(
 		max_resample_attempts = NULL,
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			# the OLS kernel only implements the additive sharp-null shift
+			if (delta != 0 && !identical(transform_responses, "none")) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			X_full = private$create_design_matrix()
+			Xc = if (ncol(X_full) > 2L) {
+				as.matrix(X_full[, -(1:2), drop = FALSE])
+			} else {
+				matrix(numeric(0), nrow = as.integer(private$n), ncol = 0L)
+			}
+			compute_rand_bootstrap_ols_parallel_cpp(
+				as.numeric(y0_full), Xc, mats$i_mat, mats$w_mat,
+				as.numeric(delta), private$n_cpp_threads(ncol(mats$w_mat))
+			)
+		},
+		# Affine decomposition of the BRT null draws for the closed-form CI. The statistic is
+		# the treatment coefficient of OLS on [1, w_fresh, Xc]; shifting responses by
+		# delta * (w_fresh - w_obs) moves that coefficient by delta * (1 - g_b) where g_b is
+		# the w_fresh-coefficient of regressing w_obs on the same design matrix. Both A_b and
+		# g_b come from one QR per draw with a two-column response.
+		compute_rand_bootstrap_ci_affine_coefs = function(rand_bootstrap_draws){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			n = as.integer(private$n)
+			B = length(rand_bootstrap_draws)
+			if (B == 0L) return(NULL)
+			y_raw = as.numeric(private$y)
+			w_obs = as.numeric(private$w)
+			# use the same (hardened) covariate columns as the full-data design matrix
+			X_full = private$create_design_matrix()
+			Xc = if (ncol(X_full) > 2L) as.matrix(X_full[, -(1:2), drop = FALSE]) else NULL
+			A = rep(NA_real_, B)
+			cc = rep(NA_real_, B)
+			for (b in seq_len(B)) {
+				draw = rand_bootstrap_draws[[b]]
+				if (is.null(draw$w_b) || length(draw$i_b) != n || length(draw$w_b) != n) return(NULL)
+				w_f = as.numeric(draw$w_b)
+				n_T = sum(w_f == 1)
+				if (n_T == 0L || n_T == n) next
+				M_b = if (is.null(Xc)) {
+					cbind(1, w_f)
+				} else {
+					cbind(1, w_f, Xc[draw$i_b, , drop = FALSE])
+				}
+				coefs = tryCatch(
+					qr.coef(qr(M_b), cbind(y_raw[draw$i_b], w_obs[draw$i_b])),
+					error = function(e) NULL
+				)
+				if (is.null(coefs) || anyNA(coefs[2L, ])) next
+				A[b] = as.numeric(coefs[2L, 1L])
+				cc[b] = 1 - as.numeric(coefs[2L, 2L])
+			}
+			list(A = A, c = cc)
+		},
 		get_standard_error = function(){
 			if (is.null(private$cached_values$s_beta_hat_T)) private$shared()
 			private$cached_values$s_beta_hat_T

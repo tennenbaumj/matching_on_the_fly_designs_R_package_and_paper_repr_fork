@@ -126,6 +126,17 @@ InferenceSurvivalLogRank = R6::R6Class("InferenceSurvivalLogRank",
 		}
 	),
 	private = list(
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			# survival sharp-null shift is multiplicative (delta on the log scale)
+			if (delta != 0 && !identical(transform_responses, "log")) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			compute_logrank_rand_bootstrap_parallel_cpp(
+				as.numeric(y0_full), as.integer(private$dead), mats$i_mat, mats$w_mat,
+				as.numeric(delta), private$n_cpp_threads(ncol(mats$w_mat))
+			)
+		},
 		weighted_logrank_mean_difference = function(row_weights){
 			keep = is.finite(private$y) & is.finite(private$dead) & is.finite(row_weights) & row_weights > 0
 			if (!any(keep)) return(NA_real_)

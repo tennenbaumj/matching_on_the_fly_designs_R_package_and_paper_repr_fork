@@ -188,6 +188,44 @@ InferenceAllSimpleMeanDiff = R6::R6Class("InferenceAllSimpleMeanDiff",
 			res = compute_simple_mean_diff_parallel_cpp(as.numeric(y), w_mat, as.numeric(delta), private$n_cpp_threads(ncol(w_mat)))
 			return(res)
 		},
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps) {
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			transform_code = private$rand_bootstrap_transform_code(transform_responses)
+			if (is.null(transform_code)) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			compute_rand_bootstrap_mean_diff_parallel_cpp(
+				as.numeric(y0_full), mats$i_mat, mats$w_mat, as.numeric(delta),
+				transform_code, as.numeric(zero_one_logit_clamp), private$n_cpp_threads(ncol(mats$w_mat))
+			)
+		},
+		# Affine decomposition of the BRT null draws for the closed-form CI: with the additive
+		# sharp-null shift, t0_b(delta) = A_b + delta * c_b where A_b is the raw mean difference
+		# over the fresh split and c_b = 1 - mean(w_obs | fresh treated) + mean(w_obs | fresh
+		# control) accounts for delta having been removed from the originally treated rows.
+		compute_rand_bootstrap_ci_affine_coefs = function(rand_bootstrap_draws){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			n = as.integer(private$n)
+			B = length(rand_bootstrap_draws)
+			if (B == 0L) return(NULL)
+			y_raw = as.numeric(private$y)
+			w_obs = as.numeric(private$w)
+			A = rep(NA_real_, B)
+			cc = rep(NA_real_, B)
+			for (b in seq_len(B)) {
+				draw = rand_bootstrap_draws[[b]]
+				if (is.null(draw$w_b) || length(draw$i_b) != n || length(draw$w_b) != n) return(NULL)
+				w_f = as.numeric(draw$w_b)
+				is_t = w_f == 1
+				n_T = sum(is_t)
+				if (n_T == 0L || n_T == n) next
+				y_b = y_raw[draw$i_b]
+				w_obs_b = w_obs[draw$i_b]
+				A[b] = mean(y_b[is_t]) - mean(y_b[!is_t])
+				cc[b] = 1 - mean(w_obs_b[is_t]) + mean(w_obs_b[!is_t])
+			}
+			list(A = A, c = cc)
+		},
 		shared = function(estimate_only = FALSE){
 			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))
 			if (!estimate_only && !is.null(private$cached_values$s_beta_hat_T)) return(invisible(NULL))
