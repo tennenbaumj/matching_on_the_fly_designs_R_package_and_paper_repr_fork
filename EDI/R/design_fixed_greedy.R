@@ -24,7 +24,7 @@ DesignFixedGreedy = R6::R6Class("DesignFixedGreedy",
 		#' @param n  		The sample size.
 		#' @param verbose  Flag for verbosity.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#'
 		#' @return 			A new `DesignFixedGreedy` object
@@ -38,7 +38,7 @@ DesignFixedGreedy = R6::R6Class("DesignFixedGreedy",
 				n = NULL,
 				verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL
 			) {
 			if (should_run_asserts()) {
@@ -52,7 +52,7 @@ DesignFixedGreedy = R6::R6Class("DesignFixedGreedy",
 				if (!is.infinite(n_iter) && (!is.numeric(n_iter) || length(n_iter) != 1L || n_iter <= 0 || n_iter != floor(n_iter)))
 					stop("n_iter must be Inf or a positive integer")
 			}
-			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed)
+			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed)
 			private$objective = objective
 			private$n_iter    = n_iter
 			private$uses_covariates = TRUE

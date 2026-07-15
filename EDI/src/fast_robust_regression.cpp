@@ -2,6 +2,9 @@
 #include <RcppEigen.h>
 #include <cmath>
 #include <algorithm>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace Rcpp;
 
@@ -309,4 +312,70 @@ List fast_robust_regression_cpp(
         Named("ssq_b_j") = ssq_j,
         Named("fisher_information") = res.XtWX
     );
+}
+
+// [[Rcpp::export]]
+NumericVector compute_robust_rand_bootstrap_parallel_cpp(
+    const NumericVector& y0,
+    const NumericMatrix& Xc,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    double delta,
+    std::string method,
+    int num_cores)
+{
+    const int n      = i_mat.nrow();
+    const int nsim   = i_mat.ncol();
+    const int n_full = y0.size();
+    const int p_cov  = Xc.ncol();
+    const int p      = 2 + p_cov;  // intercept + treatment + covariates
+
+    const double* y0_ptr = y0.begin();
+    const double* xc_ptr = (p_cov > 0) ? Xc.begin() : nullptr;
+    const int*    i_ptr  = i_mat.begin();
+    const int*    w_ptr  = w_mat.begin();
+
+    std::vector<double> results(nsim, NA_REAL);
+    double* res_ptr = results.data();
+
+#ifdef _OPENMP
+    if (num_cores > 1) omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel if(num_cores > 1)
+    {
+        Eigen::VectorXd y_b(n);
+        Eigen::MatrixXd X_b(n, p);
+
+#pragma omp for schedule(dynamic)
+        for (int b = 0; b < nsim; ++b) {
+            const int* ic = i_ptr + (size_t)b * n;
+            const int* wc = w_ptr + (size_t)b * n;
+
+            int n_t = 0, n_c = 0;
+            for (int i = 0; i < n; ++i) {
+                const int r  = ic[i] - 1;
+                const int wt = (wc[i] == 1) ? 1 : 0;
+                X_b(i, 0) = 1.0;
+                X_b(i, 1) = static_cast<double>(wt);
+                for (int j = 0; j < p_cov; ++j)
+                    X_b(i, j + 2) = xc_ptr[(size_t)j * n_full + r];
+                y_b(i) = y0_ptr[r] + delta * wt;
+                n_t += wt;
+                n_c += (1 - wt);
+            }
+            if (n_t < 2 || n_c < 2) continue;
+
+            RobustModelResult res = fast_robust_regression_internal(
+                X_b, y_b,
+                R_NilValue, true, method,
+                1.345, 4.685, 50, 1e-7, -1.0,
+                R_NilValue, R_NilValue,
+                R_NilValue, R_NilValue,
+                true, 0);
+            if (res.b.size() > 1 && std::isfinite(res.b[1]))
+                res_ptr[b] = res.b[1];
+        }
+    }
+    return wrap(results);
 }

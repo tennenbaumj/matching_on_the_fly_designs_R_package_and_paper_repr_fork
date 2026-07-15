@@ -6,6 +6,9 @@
 #include <cmath>
 #include <map>
 #include <unordered_map>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace Rcpp;
 
@@ -754,4 +757,128 @@ Eigen::MatrixXd get_stratified_coxph_hessian_cpp(const Eigen::MatrixXd& X, const
         strata_data.emplace_back(ys, ds, Xs);
     }
     StratifiedCoxObjective obj(strata_data, p); return -obj.hessian(beta);
+}
+
+//' @title Bootstrap Randomization Test distribution for Cox PH (treatment-only model)
+//' @description Computes the BRT null distribution of the treatment log-hazard-ratio from a
+//'   treatment-only Cox PH model across B pre-generated (i_mat, w_mat) draws. Each draw
+//'   resamples rows and applies a fresh treatment assignment; the sharp-null shift is
+//'   multiplicative on treated survival times (exp(delta) on the log-time scale).
+//' @param y0 Numeric vector of original survival times (length n).
+//' @param dead Numeric vector of event indicators (length n).
+//' @param i_mat Integer matrix (n x B) of 1-based row indices.
+//' @param w_mat Integer matrix (n x B) of treatment assignments (0/1).
+//' @param delta Sharp-null shift on log-time scale.
+//' @param num_cores Number of OpenMP threads.
+//' @return Numeric vector of length B with treatment log-HR per draw (NA on non-convergence).
+//' @export
+//' @keywords internal
+// [[Rcpp::export]]
+NumericVector compute_coxph_rand_bootstrap_cpp(
+    const Eigen::VectorXd& y0,
+    const Eigen::VectorXd& dead,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    double delta,
+    int num_cores)
+{
+    const int n  = (int)y0.size();
+    const int B  = i_mat.cols();
+    NumericVector out(B, NA_REAL);
+    const double mult = std::exp(delta);
+    const int* i_ptr = i_mat.begin();
+    const int* w_ptr = w_mat.begin();
+
+#ifdef _OPENMP
+    omp_set_num_threads(std::max(1, num_cores));
+#endif
+
+#pragma omp parallel for schedule(dynamic) if(num_cores > 1)
+    for (int b = 0; b < B; ++b) {
+        Eigen::VectorXd y_b(n), dead_b(n);
+        RowMajorMatrixXd X_b(n, 1);
+        for (int i = 0; i < n; ++i) {
+            int row0 = i_ptr[b * n + i] - 1;
+            int  w_i = w_ptr[b * n + i];
+            double yi = y0[row0];
+            if (delta != 0.0 && w_i == 1) yi *= mult;
+            y_b[i]    = yi;
+            dead_b[i] = dead[row0];
+            X_b(i, 0) = (double)w_i;
+        }
+        std::vector<CoxData> strata;
+        strata.emplace_back(y_b, dead_b, X_b);
+        CoxFitResult fit = cox_fit(strata, R_NilValue, false, FixedParamSpec(),
+                                   true, 20, 1e-9, "newton_raphson");
+        if (fit.converged && !fit.beta.empty() && std::isfinite(fit.beta[0]))
+            out[b] = fit.beta[0];
+    }
+    return out;
+}
+
+// [[Rcpp::export]]
+NumericVector compute_coxph_rand_bootstrap_parallel_cpp(
+    const NumericVector& y0,
+    const IntegerVector& dead,
+    const NumericMatrix& Xc,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    double delta,
+    int num_cores)
+{
+    const int n      = i_mat.nrow();
+    const int nsim   = i_mat.ncol();
+    const int n_full = y0.size();
+    const int p_cov  = Xc.ncol();
+    const int p      = 1 + p_cov;  // treatment + covariates; no intercept in Cox PH
+
+    const double* y0_ptr   = y0.begin();
+    const int*    dead_ptr = dead.begin();
+    const double* xc_ptr   = (p_cov > 0) ? Xc.begin() : nullptr;
+    const int*    i_ptr    = i_mat.begin();
+    const int*    w_ptr    = w_mat.begin();
+    const double  mult     = (delta != 0.0) ? std::exp(delta) : 1.0;
+
+    FixedParamSpec fspec = make_fixed_param_spec(p);
+
+    std::vector<double> results(nsim, NA_REAL);
+    double* res_ptr = results.data();
+
+#ifdef _OPENMP
+    if (num_cores > 1) omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel if(num_cores > 1)
+    {
+        Eigen::VectorXd y_b(n), dead_b(n);
+        Eigen::MatrixXd X_b(n, p);
+
+#pragma omp for schedule(dynamic)
+        for (int b = 0; b < nsim; ++b) {
+            const int* ic = i_ptr + (size_t)b * n;
+            const int* wc = w_ptr + (size_t)b * n;
+
+            int n_t = 0, n_c = 0;
+            for (int i = 0; i < n; ++i) {
+                const int r  = ic[i] - 1;
+                const int wt = (wc[i] == 1) ? 1 : 0;
+                X_b(i, 0) = static_cast<double>(wt);
+                for (int j = 0; j < p_cov; ++j)
+                    X_b(i, j + 1) = xc_ptr[(size_t)j * n_full + r];
+                y_b(i)    = (wt && mult != 1.0) ? y0_ptr[r] * mult : y0_ptr[r];
+                dead_b(i) = static_cast<double>(dead_ptr[r]);
+                n_t += wt;
+                n_c += (1 - wt);
+            }
+            if (n_t < 2 || n_c < 2) continue;
+
+            std::vector<CoxData> strata;
+            strata.emplace_back(y_b, dead_b, X_b);
+            CoxFitResult fit = cox_newton_raphson(strata, R_NilValue, true, fspec,
+                                                  true, 20, 1e-6);
+            if (fit.converged && !fit.beta.empty() && std::isfinite(fit.beta[0]))
+                res_ptr[b] = fit.beta[0];
+        }
+    }
+    return wrap(results);
 }

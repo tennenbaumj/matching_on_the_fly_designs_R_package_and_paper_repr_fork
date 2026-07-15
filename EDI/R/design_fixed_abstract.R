@@ -23,7 +23,7 @@ DesignFixed = R6::R6Class("DesignFixed",
 		#' @param  n  		The sample size.
 		#' @param verbose A flag for verbosity.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#' @param ... Extra arguments passed to the \code{Design} superclass.
 		#'
@@ -35,11 +35,11 @@ DesignFixed = R6::R6Class("DesignFixed",
 				n = NULL,
 				verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL,
 				...
 			) {
-			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed, ...)
+			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed, ...)
 		},
 		#' @description Assign treatment to all subjects in the fixed experiment.
 		#' @param w_precomputed Optional {-1,+1} numeric vector of length n. If supplied the

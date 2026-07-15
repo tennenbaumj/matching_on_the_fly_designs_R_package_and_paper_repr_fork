@@ -109,6 +109,21 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 			private$shared(estimate_only = FALSE)
 			private$compute_effect_pvalue(delta)
 		},
+		#' @description Computes a Wald two-sided p-value for the treatment effect.
+		#' @param delta The null treatment effect. Defaults to 0 for RD and 1 for RR.
+		compute_wald_two_sided_pval = function(delta = NULL){
+			private$shared(estimate_only = FALSE)
+			private$compute_effect_pvalue(delta)
+		},
+		#' @description Computes a Wald confidence interval.
+		#' @param alpha The confidence level in the computed confidence interval is 1 - \code{alpha}.
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			private$shared(estimate_only = FALSE)
+			private$compute_effect_confidence_interval(alpha)
+		},
 		#' @description Computes a bootstrap confidence interval for the treatment effect.
 		#' @param alpha Significance level. Default 0.05.
 		#' @param B Number of bootstrap samples.

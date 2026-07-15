@@ -104,10 +104,11 @@ InferenceAbstractKKCondLogitPlusGLMMOneLik = R6::R6Class("InferenceAbstractKKCon
 		#' @param model_formula Optional formula for covariate adjustment.
 		#' @param max_abs_reasonable_coef Cap for reasonable coefficient estimates.
 		#' @param max_abs_log_sigma Cap for reasonable log random effect variance.
+		#' @param max_abs_reasonable_se Cap for reasonable treatment standard errors.
 		#' @param verbose Whether to print progress messages.
 		#' @param smart_cold_start_default   Whether to use smart cold start values.
-		initialize = function(des_obj, model_formula = NULL, max_abs_reasonable_coef = 1e4, max_abs_log_sigma = 8, verbose = FALSE, smart_cold_start_default = NULL){
-			super$initialize(des_obj, model_formula = model_formula, max_abs_reasonable_coef = max_abs_reasonable_coef, max_abs_log_sigma = max_abs_log_sigma, verbose = verbose, smart_cold_start_default = smart_cold_start_default)
+		initialize = function(des_obj, model_formula = NULL, max_abs_reasonable_coef = 1e4, max_abs_log_sigma = 8, max_abs_reasonable_se = 1.25, verbose = FALSE, smart_cold_start_default = NULL){
+			super$initialize(des_obj, model_formula = model_formula, max_abs_reasonable_coef = max_abs_reasonable_coef, max_abs_reasonable_se = max_abs_reasonable_se, max_abs_log_sigma = max_abs_log_sigma, verbose = verbose, smart_cold_start_default = smart_cold_start_default)
 		}
 	),
 	private = list(

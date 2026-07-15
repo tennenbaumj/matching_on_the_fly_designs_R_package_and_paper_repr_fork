@@ -21,7 +21,7 @@ DesignSeqOneByOne = R6::R6Class("DesignSeqOneByOne",
 		#' @param n The sample size (if fixed).
 		#' @param verbose Whether to print progress messages.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#' @param ... Extra arguments passed to the \code{Design} superclass.
 		initialize = function(
@@ -31,11 +31,11 @@ DesignSeqOneByOne = R6::R6Class("DesignSeqOneByOne",
 				n = NULL,
 				verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL,
 				...
 			) {
-			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed, ...)
+			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed, ...)
 			private$maybe_set_seed()
 			private$equal_block_sizes = FALSE
 		},

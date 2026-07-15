@@ -61,7 +61,7 @@ seq_des$add_one_subject_to_experiment_and_assign(data.frame(x1 = rnorm(1)))
 \item \href{#method-Design-get_original_ordinal_levels}{\code{Design$get_original_ordinal_levels()}}
 \item \href{#method-Design-get_missingness_method}{\code{Design$get_missingness_method()}}
 \item \href{#method-Design-transform_y}{\code{Design$transform_y()}}
-\item \href{#method-Design-get_model_formula}{\code{Design$get_model_formula()}}
+\item \href{#method-Design-get_design_formula}{\code{Design$get_design_formula()}}
 \item \href{#method-Design-duplicate}{\code{Design$duplicate()}}
 \item \href{#method-Design-clone}{\code{Design$clone()}}
 }
@@ -79,7 +79,7 @@ Initialize an experimental design
   n = NULL,
   verbose = FALSE,
   missingness_method = "impute",
-  model_formula = ~.,
+  design_formula = ~.,
   ordinal_levels = NULL,
   seed = NULL
 )}\if{html}{\out{</div>}}
@@ -116,7 +116,7 @@ model matrix for inference. One of:
     inference runs on exactly the data you supplied, with no silent modification.}
 }}
 
-\item{\code{model_formula}}{A formula object used to create the design matrix from
+\item{\code{design_formula}}{A formula object used to create the design matrix from
 covariates. Default is \code{~ .}.}
 
 \item{\code{ordinal_levels}}{If the response type is "ordinal", the labels for the levels.}
@@ -520,12 +520,12 @@ Transform the response vector y
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-Design-get_model_formula"></a>}}
-\if{latex}{\out{\hypertarget{method-Design-get_model_formula}{}}}
-\subsection{Method \code{get_model_formula()}}{
+\if{html}{\out{<a id="method-Design-get_design_formula"></a>}}
+\if{latex}{\out{\hypertarget{method-Design-get_design_formula}{}}}
+\subsection{Method \code{get_design_formula()}}{
 Get the model formula
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{Design$get_model_formula()}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{Design$get_design_formula()}\if{html}{\out{</div>}}
 }
 
 \subsection{Returns}{

@@ -49,11 +49,27 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 		#' @param bootstrap_type 		Optional bootstrap-resampling scheme; see
 		#'   \code{approximate_bootstrap_distribution_beta_hat_T} for legal values. Default \code{NULL}.
 		#' @param zero_one_logit_clamp The clamping amount for exact 0 and 1 values when logging.
+		#' @param type  				CI type. \code{"percentile"} (default) inverts the raw BRT
+		#'   p-value via bisection (or closed-form for affine statistics).
+		#'   \code{"studentized"} inverts the signed-pivot BRT p-value
+		#'   \eqn{p(\delta) = 2\min(P(z^0_b \ge z), P(z^0_b \le z))} where
+		#'   \eqn{z^0_b = (t^0_b(\delta) - \delta)/\hat{s}^0_b}; yields asymmetric CI.
+		#'   \code{"symmetric-percentile-t"} inverts the absolute-pivot version
+		#'   \eqn{p(\delta) = P(|t^0_b - \delta|/\hat{s}^0_b \ge |t - \delta|/\hat{s})};
+		#'   yields a CI symmetric around the observed estimate.
+		#'   Both SE-based types pre-compute \eqn{\hat{s}^0_b} once at \eqn{\delta = 0} and
+		#'   reuse it across bisection steps. Yield O(\eqn{n^{-1}}) coverage error versus
+		#'   O(\eqn{n^{-1/2}}) for \code{"percentile"} when the pivot is asymptotically normal.
+		#'   Require the class to expose a standard error; return \code{NA} bounds in harden
+		#'   mode if unavailable.
+		#'   \code{"smoothed"} adds per-draw kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
+		#'   to the resampled responses before imposing the null shift, reducing discreteness.
+		#'   Only meaningful for continuous responses.
 		#' @return A bootstrap randomization confidence interval. The interval lives on the
 		#'   response-transformation scale used by the test (identity for continuous, logit for
 		#'   proportion, log for count and survival). Bounds may be conservative (wider than
 		#'   necessary) when the p-value inversion cannot be completed within the search radius.
-		compute_rand_bootstrap_confidence_interval = function(alpha = 0.05, B = 501, pval_epsilon = 0.005, show_progress = TRUE, max_expansions = 7L, bootstrap_type = NULL, zero_one_logit_clamp = .Machine$double.eps){
+		compute_rand_bootstrap_confidence_interval = function(alpha = 0.05, B = 501, pval_epsilon = 0.005, show_progress = TRUE, max_expansions = 7L, bootstrap_type = NULL, zero_one_logit_clamp = .Machine$double.eps, type = "percentile"){
 			if (should_run_asserts()) {
 				private$assert_design_supports_resampling("Bootstrap randomization inference")
 				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
@@ -61,6 +77,7 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 				assertNumeric(pval_epsilon, lower = .Machine$double.xmin, upper = 1)
 				assertCount(as.integer(max_expansions), positive = TRUE)
 				assertLogical(show_progress)
+				assertChoice(tolower(type), c("percentile", "studentized", "symmetric-percentile-t", "smoothed"))
 				if (private$des_obj_priv_int$response_type == "incidence" && is.null(private$custom_randomization_statistic_function) && is.null(private[["compiled_cpp_stat_fn"]])) {
 					stop("Bootstrap randomization confidence intervals are not supported for incidence.")
 				}
@@ -118,7 +135,8 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 			# sharp-null shift (mean difference, OLS treatment coefficient), each null draw is
 			# t0_b(delta) = A_b + delta * c_b, so the p-value is a step function of delta whose
 			# breakpoints are (t - A_b) / c_b and the CI is read off exactly — no bisection.
-			if (identical(transform_arg, "none") &&
+			# Only valid for the raw (percentile) test — skipped for all other types.
+			if (identical(tolower(type), "percentile") && identical(transform_arg, "none") &&
 				is.null(private$custom_randomization_statistic_function) &&
 				is.null(private[["compiled_cpp_stat_fn"]]) &&
 				private$has_private_method("compute_rand_bootstrap_ci_affine_coefs")) {
@@ -142,6 +160,81 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 					return(ci_closed)
 				}
 			}
+			type_lc = tolower(type)
+			# Studentized / symmetric-percentile-t BRT CI: pivot each null draw by its per-draw SE.
+			# SE0_b is pre-computed once at delta = 0 and held fixed across all bisection steps.
+			# "studentized" uses signed pivots (asymmetric CI); "symmetric-percentile-t" uses |pivot|.
+			if (type_lc %in% c("studentized", "symmetric-percentile-t")) {
+				symmetric_pivot = identical(type_lc, "symmetric-percentile-t")
+				se_obs = tryCatch(private$infer_original_se(), error = function(e) NA_real_)
+				if (!is.finite(se_obs) || se_obs <= 0) {
+					return(missing_ci("rand_bootstrap_ci_studentized_se_unavailable"))
+				}
+				y0_full_0 = private$y  # sharp null at delta = 0: y0 = y_obs
+				brt_stats_0 = private$compute_brt_null_statistics_with_se(
+					draws, 0, transform_arg, y0_full_0, zero_one_logit_clamp
+				)
+				t0s = brt_stats_0$t0
+				se0_b = brt_stats_0$se0
+				# Pre-populate the BRT distribution cache at delta = 0 from the SE pass so the
+				# bisection can reuse these draws without a second round of sub-inference creation.
+				{
+					draws_id_stud = attr(draws, "draws_id")
+					delta_key_0 = formatC(0.0, digits = 17L, format = "fg", flag = "#")
+					ck0 = paste(as.integer(B), delta_key_0, transform_arg, if (!is.null(draws_id_stud)) draws_id_stud else "fresh", sep = "|")
+					if (is.null(private$cached_values$rand_boot_distr_cache)) private$cached_values$rand_boot_distr_cache = list()
+					private$cached_values$rand_boot_distr_cache[[ck0]] = t0s
+				}
+				est = as.numeric(tryCatch(self$compute_estimate(), error = function(e) NA_real_))
+				est = if (length(est) == 0L) NA_real_ else est[1]
+				t_obs_stud = est
+				stud_pval_cache = new.env(parent = emptyenv())
+				evaluate_pval = function(delta) {
+					ck = private$normalize_delta_for_cache(delta, pval_epsilon)
+					if (!is.null(stud_pval_cache[[ck]])) return(stud_pval_cache[[ck]])
+					t0_b_d = self$approximate_rand_bootstrap_distribution_beta_hat_T(
+						B = B, delta = delta, transform_responses = transform_arg,
+						show_progress = FALSE, rand_bootstrap_draws = draws,
+						zero_one_logit_clamp = zero_one_logit_clamp
+					)
+					pval = private$compute_two_sided_brt_pval_studentized(
+						t_obs_stud, t0_b_d, se0_b, delta, se_obs, symmetric = symmetric_pivot
+					)
+					stud_pval_cache[[ck]] = pval
+					pval
+				}
+			} else if (identical(type_lc, "smoothed")) {
+				# Smoothed BRT CI: pre-generate one noise vector per draw (CRN across delta).
+				# Tags draws with a "_smoothed" draws_id suffix so the distribution cache
+				# is keyed separately from the same draws used without smoothing.
+				n_int = as.integer(private$n)
+				sd_y = stats::sd(private$y, na.rm = TRUE)
+				if (!is.finite(sd_y) || sd_y <= 0) sd_y = 1.0
+				bw = sd_y / sqrt(n_int)
+				for (b in seq_along(draws)) draws[[b]][["smooth_noise"]] = stats::rnorm(n_int, 0, bw)
+				attr(draws, "draws_id") = paste0(attr(draws, "draws_id"), "_smoothed")
+				est = as.numeric(tryCatch(self$compute_estimate(), error = function(e) NA_real_))
+				est = if (length(est) == 0L) NA_real_ else est[1]
+				t0s = self$approximate_rand_bootstrap_distribution_beta_hat_T(
+					B = B, delta = 0, transform_responses = transform_arg,
+					show_progress = FALSE, rand_bootstrap_draws = draws,
+					zero_one_logit_clamp = zero_one_logit_clamp
+				)
+				smooth_pval_cache = new.env(parent = emptyenv())
+				t_obs_sm = est
+				evaluate_pval = function(delta) {
+					ck = private$normalize_delta_for_cache(delta, pval_epsilon)
+					if (!is.null(smooth_pval_cache[[ck]])) return(smooth_pval_cache[[ck]])
+					t0s_d = self$approximate_rand_bootstrap_distribution_beta_hat_T(
+						B = B, delta = delta, transform_responses = transform_arg,
+						show_progress = FALSE, rand_bootstrap_draws = draws,
+						zero_one_logit_clamp = zero_one_logit_clamp
+					)
+					pval = private$compute_two_sided_randomization_pval_from_t0s(t0s_d, t_obs_sm)
+					smooth_pval_cache[[ck]] = pval
+					pval
+				}
+			} else {
 			ci_pval_cache = new.env(parent = emptyenv())
 			evaluate_pval = function(delta) {
 				private$compute_rand_bootstrap_ci_pval_cached(
@@ -165,11 +258,16 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 				rand_bootstrap_draws = draws,
 				zero_one_logit_clamp = zero_one_logit_clamp
 			)
+			} # end percentile/studentized branch
 			t0s_finite = t0s[is.finite(t0s)]
 			if (length(t0s_finite) < 2L) {
 				return(missing_ci("rand_bootstrap_ci_too_few_finite_null_draws"))
 			}
-			if (!is.finite(est)) est = stats::median(t0s_finite)
+			if (!is.finite(est)) {
+				est = stats::median(t0s_finite)
+				if (type_lc %in% c("studentized", "symmetric-percentile-t") && exists("t_obs_stud") && !is.finite(t_obs_stud)) t_obs_stud = est
+				if (identical(type_lc, "smoothed") && exists("t_obs_sm") && !is.finite(t_obs_sm)) t_obs_sm = est
+			}
 			se_guess = stats::sd(t0s_finite)
 			response_scale = stats::sd(private$y, na.rm = TRUE)
 			if (!is.finite(response_scale) || response_scale <= 0) response_scale = stats::IQR(private$y, na.rm = TRUE) / 1.349

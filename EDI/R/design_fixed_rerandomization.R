@@ -25,7 +25,7 @@ DesignFixedRerandomization = R6::R6Class("DesignFixedRerandomization",
 		#' @param n  		The sample size.
 		#' @param verbose  Flag for verbosity.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#'
 		#' @return 			A new `DesignFixedRerandomization` object
@@ -40,13 +40,13 @@ DesignFixedRerandomization = R6::R6Class("DesignFixedRerandomization",
 				n = NULL,
 				verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL
 			) {
 			if (!is.null(obj_val_cutoff) && !is.null(prop_acceptable)) {
 				stop("Cannot specify both obj_val_cutoff and prop_acceptable.")
 			}
-			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed)
+			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed)
 			private$obj_val_cutoff = obj_val_cutoff
 			private$prop_acceptable = prop_acceptable
 			private$objective = objective

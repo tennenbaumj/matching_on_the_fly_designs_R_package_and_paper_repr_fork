@@ -137,6 +137,9 @@ InferenceIncidNewcombeRiskDiff = R6::R6Class("InferenceIncidNewcombeRiskDiff",
 			private$cached_values$counts = counts
 			private$cached_values$beta_hat_T = counts$p_t - counts$p_c
 			if (estimate_only) return(invisible(NULL))
+		},
+		get_supported_testing_types_impl = function(){
+			character(0)
 		}
 	)
 )

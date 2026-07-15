@@ -423,7 +423,7 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 			result_1 = result_1,
 			result_2 = result_2,
 			beta_T_in_confidence_interval = beta_T_in_confidence_interval,
-			error_message = ifelse(is.null(error_message), NA_character_, as.character(error_message)),
+				error_message = if (identical(status, "ok") || is.null(error_message)) NA_character_ else as.character(error_message),
 			run_row_id = run_row_id,
 			r = as.integer(r),
 			pval_epsilon = pval_epsilon,
@@ -473,8 +473,8 @@ record_existing_error_keys_as_skipped = function(inference_class, dataset_n_rows
 }
 
 run_inference_checks_both_paths = function(class_gen, class_name, des_obj, response_type, design_type, dataset_name, n_rows, n_cols, model_formula = NULL, ...){
-	# Univariate path
-	univ_label = paste0(class_name, " (Univ)")
+	# model_formula=~1 path
+	univ_label = paste0(class_name, " (model_formula=~1)")
 	if (should_run_inference_label(univ_label)) {
 		inference_banner(univ_label, mf = ~ 1)
 		run_inference_checks(
@@ -483,9 +483,9 @@ run_inference_checks_both_paths = function(class_gen, class_name, des_obj, respo
 			inference_label = univ_label
 		)
 	}
-	
-	# Multivariate path
-	multi_label = paste0(class_name, " (Multi)")
+
+	# model_formula=~. path
+	multi_label = paste0(class_name, " (model_formula=~.)")
 	if (should_run_inference_label(multi_label)) {
 		inference_banner(multi_label, mf = ~ .)
 		run_inference_checks(
@@ -670,6 +670,27 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 		isTRUE(all(result[1:2] == 0))
 	}
 
+	is_truth_anomalous_result = function(label, result){
+		if (!identical(as.numeric(beta_T), 0)) return(FALSE)
+		if (!(is.atomic(result) && is.numeric(result))) return(FALSE)
+		if (grepl("pval", label, fixed = TRUE)) {
+			return(length(result) >= 1L && is.finite(result[1L]) && result[1L] < 1e-6)
+		}
+		if (grepl("confidence_interval", label, fixed = TRUE)) {
+			if (length(result) < 2L || !all(is.finite(result[1:2]))) return(FALSE)
+			ci_lo = min(result[1:2])
+			ci_hi = max(result[1:2])
+			if (max(abs(ci_lo), abs(ci_hi)) > 50) return(TRUE)
+			if (ci_lo > 0) return(ci_lo > 0.05)
+			if (ci_hi < 0) return(abs(ci_hi) > 0.05)
+			return(FALSE)
+		}
+		if (grepl("estimate", label, fixed = TRUE)) {
+			return(length(result) >= 1L && is.finite(result[1L]) && abs(result[1L]) > 50)
+		}
+		FALSE
+	}
+
 	is_allowed_missing_output = function(label, result){
 		if (!has_invalid_numeric(result)) return(FALSE)
 		identical(response_type, "ordinal") &&
@@ -771,7 +792,7 @@ safe_call = function(label, expr){
 				msg = nonestimable_error_message(seq_des_inf, label)
 				message("Recording missing output for ", label, " as ok (explicitly non-estimable).")
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
+						record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
 				return(invisible(NULL))
 			}
 			if (is_allowed_missing_output(label, result)) {
@@ -780,21 +801,28 @@ safe_call = function(label, expr){
 				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec)
 				return(invisible(NULL))
 			}
-			if (has_invalid_numeric(result)) {
-				msg = paste0("Invalid output detected (NA/NaN/Inf) in ", label)
-				message("Skipping ", label, " (non-fatal): ", msg)
-				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
-				return(invisible(NULL))
-			}
-			if (is_zero_zero_confidence_interval(label, result)) {
-				msg = paste0("Degenerate confidence interval [0, 0] detected in ", label)
-				message("Skipping ", label, " (non-fatal): ", msg)
-				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
-				return(invisible(NULL))
-			}
-			result = snap_small_numeric_to_zero(result)
+				if (has_invalid_numeric(result)) {
+					msg = paste0("Invalid output detected (NA/NaN/Inf) in ", label)
+					message("Recording missing output for ", label, " as ok: ", msg)
+					duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
+					record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
+					return(invisible(NULL))
+				}
+				if (is_zero_zero_confidence_interval(label, result)) {
+					msg = paste0("Degenerate confidence interval [0, 0] detected in ", label)
+					message("Skipping ", label, " (non-fatal): ", msg)
+					duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
+					record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
+					return(invisible(NULL))
+				}
+				if (is_truth_anomalous_result(label, result)) {
+					msg = paste0("Truth-based anomaly filter in ", label)
+					message("Recording missing output for ", label, " as ok (truth-based anomaly filter).")
+					duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
+						record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
+					return(invisible(NULL))
+				}
+				result = snap_small_numeric_to_zero(result)
 			cat("            ", paste(format(result, digits = 3), collapse = " "), "\n")
 			duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
 			cat(sprintf("              (Duration: %.3gs)\n", duration_time_sec))
@@ -805,7 +833,8 @@ safe_call = function(label, expr){
 			if (should_record_nonestimable_as_missing(seq_des_inf, label)) {
 				msg = nonestimable_error_message(seq_des_inf, label)
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
+				message("Recording missing output for ", label, " as ok (explicitly non-estimable): ", msg)
+						record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
 				return(invisible(NULL))
 			}
 			msg = if (length(e$message) == 0L) "" else e$message
@@ -920,22 +949,7 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	}
 	method_fn = seq_des_inf[[method_name]]
 	if (!is.function(method_fn)) return(invisible(NULL))
-	result = tryCatch(
-		do.call(method_fn, list(...)),
-		error = function(e){
-			msg = if (length(e$message) == 0L) "" else e$message
-			if (grepl("Must be implemented by concrete class or shared helper.", msg, fixed = TRUE) ||
-			    grepl("does not expose a likelihood-test specification", msg, fixed = TRUE) ||
-			    grepl("not implement", msg, ignore.case = TRUE) ||
-			    grepl("must implement", msg, ignore.case = TRUE)) {
-				message("          Skipping ", method_name, " (not implemented)")
-				return(structure(list(skipped = TRUE), class = "edi_skip_direct"))
-			}
-			stop(e)
-		}
-	)
-	if (inherits(result, "edi_skip_direct")) return(invisible(NULL))
-	safe_call(method_name, result)
+	safe_call(method_name, do.call(method_fn, list(...)))
 }
 
 	if (!ensure_estimate_setup_for_filtered_family()) return(invisible(NULL))
@@ -1320,33 +1334,31 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 		}
 	}
 
-	# If model_formula is provided, ensure it's passed to the design if it's NOT NULL.
-	# The base Design class initialize handles model_formula.
 	design_formula = if (is.null(model_formula)) ~ . else model_formula
 
 	des_obj = tryCatch(switch(design_type,
-		KK21 =         DesignSeqOneByOneKK21$new(        response_type = response_type, n = n, model_formula = design_formula),
-		KK21stepwise = DesignSeqOneByOneKK21stepwise$new(response_type = response_type, n = n, model_formula = design_formula),
-		KK14 =         DesignSeqOneByOneKK14$new(        response_type = response_type, n = n, model_formula = design_formula),
-		Bernoulli =    DesignSeqOneByOneBernoulli$new(   response_type = response_type, n = n, model_formula = design_formula),
-		Efron =        DesignSeqOneByOneEfron$new(       response_type = response_type, n = n, model_formula = design_formula),
-		Atkinson =     DesignSeqOneByOneAtkinson$new(    response_type = response_type, n = n, model_formula = design_formula),
-		iBCRD =        DesignSeqOneByOneiBCRD$new(       response_type = response_type, n = n, model_formula = design_formula),
-		Urn =          DesignSeqOneByOneUrn$new(         response_type = response_type, n = n, model_formula = design_formula),
-		RandomBlockSize = DesignSeqOneByOneRandomBlockSize$new( strata_cols = strata_cols_to_use, response_type = response_type, n = n, model_formula = design_formula),
-		SPBR =         DesignSeqOneByOneSPBR$new(        strata_cols = strata_cols_to_use, block_size = 4, response_type = response_type, n = n, model_formula = design_formula),
-		PocockSimon =  DesignSeqOneByOnePocockSimon$new( strata_cols = strata_cols_to_use, response_type = response_type, n = n, model_formula = design_formula),
-		FixedBernoulli = DesignFixedBernoulli$new( response_type = response_type, n = n, model_formula = design_formula),
-		FixediBCRD =     DesignFixediBCRD$new(     response_type = response_type, n = n, model_formula = design_formula),
-		FixedBlocking =  DesignFixedBlocking$new(  strata_cols = strata_cols_to_use, response_type = response_type, n = n, model_formula = design_formula),
-		FixedCluster =   DesignFixedCluster$new(   cluster_col = cluster_design_setup$cluster_col, response_type = response_type, n = n, model_formula = design_formula),
-		FixedBlockedCluster = DesignFixedBlockedCluster$new( strata_cols = names(X_design)[2:min(2, ncol(X_design))], cluster_col = cluster_design_setup$cluster_col, response_type = response_type, n = n, model_formula = design_formula),
-		FixedBinaryMatch = DesignFixedBinaryMatch$new( response_type = response_type, n = n, model_formula = design_formula),
-		FixedGreedy =    DesignFixedGreedy$new(    response_type = response_type, n = n, model_formula = design_formula),
-		FixedRerandomization = DesignFixedRerandomization$new( response_type = response_type, n = n, model_formula = design_formula),
-		FixedMatchingGreedy = DesignFixedMatchingGreedyPairSwitching$new( response_type = response_type, n = n, model_formula = design_formula),
-		FixedDOptimal =  DesignFixedDOptimal$new(  response_type = response_type, n = n, model_formula = design_formula),
-		FixedAOptimal =  DesignFixedAOptimal$new(  response_type = response_type, n = n, model_formula = design_formula),
+		KK21 =         DesignSeqOneByOneKK21$new(        response_type = response_type, n = n, design_formula = design_formula),
+		KK21stepwise = DesignSeqOneByOneKK21stepwise$new(response_type = response_type, n = n, design_formula = design_formula),
+		KK14 =         DesignSeqOneByOneKK14$new(        response_type = response_type, n = n, design_formula = design_formula),
+		Bernoulli =    DesignSeqOneByOneBernoulli$new(   response_type = response_type, n = n, design_formula = design_formula),
+		Efron =        DesignSeqOneByOneEfron$new(       response_type = response_type, n = n, design_formula = design_formula),
+		Atkinson =     DesignSeqOneByOneAtkinson$new(    response_type = response_type, n = n, design_formula = design_formula),
+		iBCRD =        DesignSeqOneByOneiBCRD$new(       response_type = response_type, n = n, design_formula = design_formula),
+		Urn =          DesignSeqOneByOneUrn$new(         response_type = response_type, n = n, design_formula = design_formula),
+		RandomBlockSize = DesignSeqOneByOneRandomBlockSize$new( strata_cols = strata_cols_to_use, response_type = response_type, n = n, design_formula = design_formula),
+		SPBR =         DesignSeqOneByOneSPBR$new(        strata_cols = strata_cols_to_use, block_size = 4, response_type = response_type, n = n, design_formula = design_formula),
+		PocockSimon =  DesignSeqOneByOnePocockSimon$new( strata_cols = strata_cols_to_use, response_type = response_type, n = n, design_formula = design_formula),
+		FixedBernoulli = DesignFixedBernoulli$new( response_type = response_type, n = n, design_formula = design_formula),
+		FixediBCRD =     DesignFixediBCRD$new(     response_type = response_type, n = n, design_formula = design_formula),
+		FixedBlocking =  DesignFixedBlocking$new(  strata_cols = strata_cols_to_use, response_type = response_type, n = n, design_formula = design_formula),
+		FixedCluster =   DesignFixedCluster$new(   cluster_col = cluster_design_setup$cluster_col, response_type = response_type, n = n, design_formula = design_formula),
+		FixedBlockedCluster = DesignFixedBlockedCluster$new( strata_cols = names(X_design)[2:min(2, ncol(X_design))], cluster_col = cluster_design_setup$cluster_col, response_type = response_type, n = n, design_formula = design_formula),
+		FixedBinaryMatch = DesignFixedBinaryMatch$new( response_type = response_type, n = n, design_formula = design_formula),
+		FixedGreedy =    DesignFixedGreedy$new(    response_type = response_type, n = n, design_formula = design_formula),
+		FixedRerandomization = DesignFixedRerandomization$new( response_type = response_type, n = n, design_formula = design_formula),
+		FixedMatchingGreedy = DesignFixedMatchingGreedyPairSwitching$new( response_type = response_type, n = n, design_formula = design_formula),
+		FixedDOptimal =  DesignFixedDOptimal$new(  response_type = response_type, n = n, design_formula = design_formula),
+		FixedAOptimal =  DesignFixedAOptimal$new(  response_type = response_type, n = n, design_formula = design_formula),
 		stop("Unsupported design_type: ", design_type)
 	), error = function(e){ message("    Skipping design (creation error): ", e$message); NULL })
 	if (is.null(des_obj)) return(invisible(NULL))

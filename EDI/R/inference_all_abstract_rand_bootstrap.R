@@ -124,6 +124,9 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				!is.null(private[["compiled_cpp_stat_fn"]])
 			has_fast_kernel = !has_custom_randomization_statistic &&
 				private$has_private_method("compute_fast_rand_bootstrap_distr")
+			# Smoothed draws carry per-draw noise the C++ kernel cannot see; force worker/iteration path.
+			if (has_fast_kernel && draws_supplied && length(rand_bootstrap_draws) > 0L && !is.null(rand_bootstrap_draws[[1L]][["smooth_noise"]]))
+				has_fast_kernel = FALSE
 			if (!draws_supplied) {
 				if (!is.null(private$seed)) {
 					had_seed = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
@@ -268,11 +271,25 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 		#' @param rand_bootstrap_draws 	Optional pre-generated draws for common random numbers
 		#'   across \code{delta} values. Default \code{NULL}.
 		#' @param zero_one_logit_clamp The clamping amount for exact 0 and 1 values when logging.
+		#' @param type  				Test statistic type. \code{"percentile"} (default) uses the raw
+		#'   estimator as the BRT test statistic, giving an asymptotic p-value that inherits
+		#'   the unconditional superpopulation validity of the BRT.
+		#'   \code{"studentized"} divides each null draw's signed deviation from the null by its
+		#'   per-draw standard error: \eqn{p = 2\min(P(z^0_b \ge z), P(z^0_b \le z))} where
+		#'   \eqn{z^0_b = (t^0_b - \delta)/\hat{s}^0_b}; yields asymmetric CI under inversion.
+		#'   \code{"symmetric-percentile-t"} uses the absolute pivot
+		#'   \eqn{p = P(|t^0_b - \delta|/\hat{s}^0_b \ge |t - \delta|/\hat{s})}; CI is symmetric.
+		#'   Both SE-based types require the class to expose \code{s_beta_hat_T}; fall back to
+		#'   \code{"percentile"} if the SE is unavailable.
+		#'   \code{"smoothed"} adds kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
+		#'   to each resampled draw before imposing the null shift, reducing discreteness in the
+		#'   null distribution. Only meaningful for continuous responses.
 		#' @return 	A two-sided p-value.
-		compute_rand_bootstrap_two_sided_pval = function(B = 501, delta = 0, transform_responses = "none", na.rm = TRUE, show_progress = TRUE, bootstrap_type = NULL, rand_bootstrap_draws = NULL, zero_one_logit_clamp = .Machine$double.eps){
+		compute_rand_bootstrap_two_sided_pval = function(B = 501, delta = 0, transform_responses = "none", na.rm = TRUE, show_progress = TRUE, bootstrap_type = NULL, rand_bootstrap_draws = NULL, zero_one_logit_clamp = .Machine$double.eps, type = "percentile"){
 			if (should_run_asserts()) {
 				private$assert_design_supports_resampling("Bootstrap randomization inference")
 				assertNumeric(delta); assertCount(B, positive = TRUE); assertLogical(na.rm)
+				assertChoice(tolower(type), c("percentile", "studentized", "symmetric-percentile-t", "smoothed"))
 				if (private$des_obj_priv_int$response_type == "incidence" && is.null(private$custom_randomization_statistic_function) && is.null(private[["compiled_cpp_stat_fn"]])) {
 					stop("Bootstrap randomization tests are not supported for incidence.")
 				}
@@ -294,6 +311,82 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			if (length(t) != 1 || !is.finite(t)) {
 				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("rand_bootstrap_observed_statistic_unavailable")
 				return(NA_real_)
+			}
+			type_lc = tolower(type)
+			# Studentized / symmetric-percentile-t BRT p-value: pivot each null draw by its per-draw SE.
+			# "studentized" uses signed pivots (asymmetric); "symmetric-percentile-t" uses |pivot|.
+			# Falls back to "percentile" when the SE is unavailable.
+			if (type_lc %in% c("studentized", "symmetric-percentile-t")) {
+				y0_full_stud = if (delta != 0) {
+					private$shift_randomization_responses(
+						y = private$y, w = private$w, delta = delta,
+						transform_responses = transform_responses,
+						response_type = private$des_obj_priv_int$response_type,
+						inverse = TRUE, zero_one_logit_clamp = zero_one_logit_clamp
+					)
+				} else {
+					private$y
+				}
+				draws_stud = if (!is.null(rand_bootstrap_draws)) {
+					rand_bootstrap_draws
+				} else {
+					if (!is.null(private$seed)) {
+						had_seed_st = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+						if (had_seed_st) old_seed_st = get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+						on.exit(
+							if (had_seed_st) assign(".Random.seed", old_seed_st, envir = .GlobalEnv) else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) rm(".Random.seed", envir = .GlobalEnv),
+							add = TRUE
+						)
+						set.seed(private$seed)
+					}
+					private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = FALSE)
+				}
+				brt_stats = private$compute_brt_null_statistics_with_se(
+					draws_stud, delta, transform_responses, y0_full_stud, zero_one_logit_clamp
+				)
+				se_obs_stud = tryCatch(private$infer_original_se(), error = function(e) NA_real_)
+				if (!is.finite(se_obs_stud) || se_obs_stud <= 0) {
+					# SE unavailable: fall through to percentile
+				} else {
+					symmetric_pivot = identical(type_lc, "symmetric-percentile-t")
+					return(private$compute_two_sided_brt_pval_studentized(t, brt_stats$t0, brt_stats$se0, delta, se_obs_stud, symmetric = symmetric_pivot))
+				}
+			}
+			# Smoothed BRT p-value: kernel noise per draw reduces null-distribution discreteness.
+			# Noise is pre-generated once per draw and reused across delta evaluations (CRN).
+			if (identical(type_lc, "smoothed")) {
+				draws_sm = if (!is.null(rand_bootstrap_draws) && !is.null(rand_bootstrap_draws[[1L]][["smooth_noise"]])) {
+					rand_bootstrap_draws  # noise already added (e.g., by CI inversion loop)
+				} else {
+					d = if (!is.null(rand_bootstrap_draws)) {
+						rand_bootstrap_draws
+					} else {
+						if (!is.null(private$seed)) {
+							had_seed_sm = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+							if (had_seed_sm) old_seed_sm = get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+							on.exit(
+								if (had_seed_sm) assign(".Random.seed", old_seed_sm, envir = .GlobalEnv) else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) rm(".Random.seed", envir = .GlobalEnv),
+								add = TRUE
+							)
+							set.seed(private$seed)
+						}
+						private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = FALSE)
+					}
+					n_int = as.integer(private$n)
+					sd_y = stats::sd(private$y, na.rm = TRUE)
+					if (!is.finite(sd_y) || sd_y <= 0) sd_y = 1.0
+					bw = sd_y / sqrt(n_int)
+					for (b in seq_along(d)) d[[b]][["smooth_noise"]] = stats::rnorm(n_int, 0, bw)
+					attr(d, "draws_id") = paste0(attr(d, "draws_id"), "_smoothed")
+					d
+				}
+				t0s_sm = self$approximate_rand_bootstrap_distribution_beta_hat_T(
+					B = B, delta = delta, transform_responses = transform_responses,
+					show_progress = FALSE, rand_bootstrap_draws = draws_sm,
+					zero_one_logit_clamp = zero_one_logit_clamp
+				)
+				if (!isTRUE(na.rm) && any(!is.finite(t0s_sm))) return(NA_real_)
+				return(private$compute_two_sided_randomization_pval_from_t0s(t0s_sm, t))
 			}
 			# SMC early-stopping: evaluate the null distribution in batches; stop once the
 			# Clopper-Pearson 99% band around the p-value clears the mc_stop_threshold on
@@ -452,6 +545,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			}
 			if (length(w_new) != length(draw$i_b)) stop("Fresh assignment length does not match the bootstrap sample size.")
 			y_sim = y0_full[draw$i_b]
+			if (!is.null(draw[["smooth_noise"]])) y_sim = y_sim + as.numeric(draw[["smooth_noise"]])
 			if (delta != 0) {
 				y_sim = private$shift_randomization_responses(
 					y = y_sim,
@@ -530,6 +624,8 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			attr(sub_draws, "draws_id") = if (!is.null(draws_id)) paste0(draws_id, "_smc") else NULL
 			has_custom = !is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])
 			has_fast_kernel = !has_custom && private$has_private_method("compute_fast_rand_bootstrap_distr")
+			if (has_fast_kernel && length(draws) > 0L && !is.null(draws[[1L]][["smooth_noise"]]))
+				has_fast_kernel = FALSE
 			new_vals = NULL
 			if (has_fast_kernel) {
 				new_vals = tryCatch({
@@ -599,6 +695,84 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				}
 			}
 		},
+		# One null draw returning c(t0, se0): same setup as run_rand_bootstrap_iteration but
+		# calls compute_treatment_estimate_during_randomization_inference(estimate_only = FALSE)
+		# so that s_beta_hat_T is populated and returned alongside the point estimate.
+		run_rand_bootstrap_iteration_with_se = function(draw, delta, transform_responses, y0_full, zero_one_logit_clamp = .Machine$double.eps){
+			sub_inf = private$bootstrap_subset_inference(list(i_b = draw$i_b, m_vec_b = draw$m_vec_b), smooth = FALSE)
+			if (is.null(sub_inf)) return(c(t0 = NA_real_, se0 = NA_real_))
+			sub_priv = sub_inf$.__enclos_env__$private
+			sub_des = sub_priv$des_obj
+			sub_des_priv = sub_priv$des_obj_priv_int
+			w_new = if (!is.null(draw$w_b)) {
+				as.numeric(draw$w_b)
+			} else {
+				(as.numeric(sub_des$draw_ws_according_to_design(1L)[, 1L]) + 1) / 2
+			}
+			if (length(w_new) != length(draw$i_b)) return(c(t0 = NA_real_, se0 = NA_real_))
+			sub_des_priv$w = w_new
+			y_sim = y0_full[draw$i_b]
+			if (!is.null(draw[["smooth_noise"]])) y_sim = y_sim + as.numeric(draw[["smooth_noise"]])
+			if (delta != 0) {
+				y_sim = private$shift_randomization_responses(
+					y = y_sim, w = w_new, delta = delta,
+					transform_responses = transform_responses,
+					response_type = sub_des_priv$response_type,
+					inverse = FALSE, zero_one_logit_clamp = zero_one_logit_clamp
+				)
+			}
+			sub_des_priv$y = y_sim
+			private$sync_randomization_worker_state(sub_des, sub_inf)
+			estimate = tryCatch(
+				sub_inf$compute_estimate(estimate_only = FALSE),
+				error = function(e) NA_real_
+			)
+			if (is.function(sub_inf$is_nonestimable) && isTRUE(sub_inf$is_nonestimable("estimate"))) {
+				return(c(t0 = NA_real_, se0 = NA_real_))
+			}
+			if (is.list(estimate) && "b" %in% names(estimate)) estimate = estimate$b[1]
+			t0 = as.numeric(estimate)[1L]
+			se0 = as.numeric(sub_priv$cached_values$s_beta_hat_T)[1L]
+			c(t0 = t0, se0 = se0)
+		},
+		# Runs all BRT draws at delta and returns list(t0, se0) via the iteration path.
+		# Unlike get_brt_distribution_prefix this always uses the slow sub-inference path
+		# since the C++ kernel and worker paths do not expose per-draw SE.
+		compute_brt_null_statistics_with_se = function(draws, delta, transform_arg, y0_full, zero_one_logit_clamp){
+			B = length(draws)
+			if (B == 0L) return(list(t0 = numeric(0), se0 = numeric(0)))
+			results_mat = matrix(NA_real_, nrow = B, ncol = 2L)
+			for (b in seq_len(B)) {
+				results_mat[b, ] = tryCatch(
+					suppressWarnings(private$run_rand_bootstrap_iteration_with_se(
+						draws[[b]], delta, transform_arg, y0_full, zero_one_logit_clamp
+					)),
+					error = function(e) c(NA_real_, NA_real_)
+				)
+			}
+			list(t0 = results_mat[, 1L], se0 = results_mat[, 2L])
+		},
+		# Studentized two-sided BRT p-value using signed or absolute pivots.
+		# symmetric = FALSE ("studentized"): signed pivot z0 = (t0_b - delta) / se0_b;
+		#   p = 2 * min(P(z0 >= z_obs), P(z0 <= z_obs)). Yields asymmetric CI under inversion.
+		# symmetric = TRUE ("symmetric-percentile-t"): absolute pivot |t0_b - delta| / se0_b;
+		#   p = P(|z0| >= |z_obs|). CI is symmetric around the observed estimate.
+		# Draws with non-finite t0_b or se0_b excluded; 2/n floor on finite draw count.
+		compute_two_sided_brt_pval_studentized = function(t, t0_b, se0_b, delta, se_obs, symmetric = FALSE){
+			if (!is.finite(se_obs) || se_obs <= 0 || !is.finite(t)) return(NA_real_)
+			ok = is.finite(t0_b) & is.finite(se0_b) & se0_b > 0
+			n_ok = sum(ok)
+			if (n_ok == 0L) return(NA_real_)
+			if (isTRUE(symmetric)) {
+				z0 = abs(t0_b[ok] - delta) / se0_b[ok]
+				z_obs = abs(t - delta) / se_obs
+				min(1, max(2 / n_ok, mean(z0 >= z_obs)))
+			} else {
+				z0 = (t0_b[ok] - delta) / se0_b[ok]
+				z_obs = (t - delta) / se_obs
+				min(1, max(2 / n_ok, 2 * min(mean(z0 >= z_obs), mean(z0 <= z_obs))))
+			}
+		},
 		# One null draw: build the resampled sub-design/sub-inference, draw (or inject) a fresh
 		# w from the design, impose the sharp null shift on the treated, and compute the statistic.
 		run_rand_bootstrap_iteration = function(draw, delta, transform_responses, y0_full, zero_one_logit_clamp = .Machine$double.eps){
@@ -618,6 +792,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			# The resampled control potential outcomes are w-invariant under the sharp null;
 			# re-impose the delta shift on the freshly treated.
 			y_sim = y0_full[draw$i_b]
+			if (!is.null(draw[["smooth_noise"]])) y_sim = y_sim + as.numeric(draw[["smooth_noise"]])
 			if (delta != 0) {
 				y_sim = private$shift_randomization_responses(
 					y = y_sim,

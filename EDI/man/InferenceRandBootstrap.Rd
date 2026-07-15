@@ -193,7 +193,8 @@ Computes a bootstrap randomization two-sided p-value for Fisher's sharp
   show_progress = TRUE,
   bootstrap_type = NULL,
   rand_bootstrap_draws = NULL,
-  zero_one_logit_clamp = .Machine$double.eps
+  zero_one_logit_clamp = .Machine$double.eps,
+  type = "percentile"
 )}\if{html}{\out{</div>}}
 }
 
@@ -219,6 +220,20 @@ and survival, identity otherwise), matching \code{compute_rand_two_sided_pval}.}
 across \code{delta} values. Default \code{NULL}.}
 
 \item{\code{zero_one_logit_clamp}}{The clamping amount for exact 0 and 1 values when logging.}
+
+\item{\code{type}}{Test statistic type. \code{"percentile"} (default) uses the raw
+estimator as the BRT test statistic, giving an asymptotic p-value that inherits
+the unconditional superpopulation validity of the BRT.
+\code{"studentized"} divides each null draw's signed deviation from the null by its
+per-draw standard error: \eqn{p = 2\min(P(z^0_b \ge z), P(z^0_b \le z))} where
+\eqn{z^0_b = (t^0_b - \delta)/\hat{s}^0_b}; yields asymmetric CI under inversion.
+\code{"symmetric-percentile-t"} uses the absolute pivot
+\eqn{p = P(|t^0_b - \delta|/\hat{s}^0_b \ge |t - \delta|/\hat{s})}; CI is symmetric.
+Both SE-based types require the class to expose \code{s_beta_hat_T}; fall back to
+\code{"percentile"} if the SE is unavailable.
+\code{"smoothed"} adds kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
+to each resampled draw before imposing the null shift, reducing discreteness in the
+null distribution. Only meaningful for continuous responses.}
 }
 \if{html}{\out{</div>}}
 }

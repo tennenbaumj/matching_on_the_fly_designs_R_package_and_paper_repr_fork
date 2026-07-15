@@ -1,8 +1,61 @@
 #include <RcppEigen.h>
 #include <algorithm> // for std::sort
+#include <cmath>
+#include <vector>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace Rcpp;
 using namespace Eigen;
+
+// File-local struct and helper for the parallel BRT kernel.
+// Avoids all Rcpp wrap/unwrap in the per-draw inner loop so OpenMP can be used safely.
+namespace {
+
+struct SurvEntry { double time; int status; };
+
+// Compute KM median or RMST for one sorted group; utimes/sprobs are reused across calls.
+inline double km_stat_inline(SurvEntry* grp, int ng, bool do_rmst,
+                              std::vector<double>& utimes, std::vector<double>& sprobs) {
+    if (ng == 0) return NA_REAL;
+    std::sort(grp, grp + ng, [](const SurvEntry& a, const SurvEntry& b){ return a.time < b.time; });
+    utimes.clear(); sprobs.clear();
+    utimes.push_back(0.0); sprobs.push_back(1.0);
+    double sp = 1.0;
+    for (int i = 0; i < ng; ) {
+        double ct = grp[i].time;
+        int ar = ng - i, ev = 0, j = i;
+        while (j < ng && grp[j].time == ct) { if (grp[j].status == 1) ev++; j++; }
+        if (ev > 0) { sp *= 1.0 - (double)ev / ar; utimes.push_back(ct); sprobs.push_back(sp); }
+        i = j;
+    }
+    if (!do_rmst) {
+        // Median: first time KM drops below 0.5 with linear interpolation
+        const int sz = (int)sprobs.size();
+        for (int i = 0; i < sz; ++i) {
+            if (sprobs[i] < 0.5) {
+                if (i > 0) {
+                    double p1 = sprobs[i-1], p2 = sprobs[i], t1 = utimes[i-1], t2 = utimes[i];
+                    return t1 + (t2 - t1) * (0.5 - p1) / (p2 - p1);
+                }
+                return utimes[i];
+            }
+        }
+        return R_PosInf;
+    } else {
+        // RMST: area under the KM curve (trapezoidal integration)
+        double rmst = 0.0;
+        const int sz = (int)utimes.size();
+        for (int i = 0; i + 1 < sz; ++i)
+            rmst += sprobs[i] * (utimes[i+1] - utimes[i]);
+        if (sz > 1)
+            rmst += sprobs.back() * (grp[ng-1].time - utimes.back());
+        return rmst;
+    }
+}
+
+} // namespace
 
 //' Calculates the median or restricted mean survival time for a single group
 //'
@@ -277,6 +330,72 @@ double get_restricted_mean_se_diff(SEXP y_sexp, SEXP dead_sexp, SEXP w_sexp) {
     }
 
     return sqrt(pow(se_treatment, 2.0) + pow(se_control, 2.0));
+}
+
+
+//' Parallel BRT kernel for KM-diff (median) and RMST-diff.
+//' Each replicate resamples rows i_mat(.,b) and pairs them with assignment w_mat(.,b).
+//' Sharp-null shift is multiplicative on treated times (exp(delta)). Uses an inline
+//' pure-C++ KM calculator — no R objects inside the loop, so OpenMP is safe.
+//' @param do_rmst TRUE for RMST-diff, FALSE for median (KM-diff).
+//' @keywords internal
+// [[Rcpp::export]]
+NumericVector compute_survival_stat_diff_rand_bootstrap_parallel_cpp(
+    const NumericVector& y0,
+    const IntegerVector& dead,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    double delta,
+    bool do_rmst,
+    int num_cores) {
+
+  const int n = i_mat.nrow();
+  const int nsim = i_mat.ncol();
+  std::vector<double> results_vec(nsim, NA_REAL);
+  const double* y0_ptr = y0.begin();
+  const int* dead_ptr = dead.begin();
+  const int* i_ptr = i_mat.begin();
+  const int* w_ptr = w_mat.begin();
+  double* res_ptr = results_vec.data();
+  const double mult = std::exp(delta);
+
+#ifdef _OPENMP
+  omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel if(num_cores > 1)
+  {
+    // Per-thread reusable buffers: avoids heap allocation in the hot loop
+    std::vector<SurvEntry> y_t(n), y_c(n);
+    std::vector<double> utimes_t, utimes_c, sprobs_t, sprobs_c;
+    utimes_t.reserve(n); sprobs_t.reserve(n);
+    utimes_c.reserve(n); sprobs_c.reserve(n);
+
+#pragma omp for schedule(dynamic)
+    for (int b = 0; b < nsim; ++b) {
+      const int* i_col = i_ptr + (size_t)b * n;
+      const int* w_col = w_ptr + (size_t)b * n;
+      int nt = 0, nc = 0;
+      for (int i = 0; i < n; ++i) {
+        const int row0 = i_col[i] - 1;  // i_mat is 1-based
+        SurvEntry e;
+        e.status = dead_ptr[row0];
+        if (w_col[i] == 1) {
+          e.time = (delta != 0.0) ? y0_ptr[row0] * mult : y0_ptr[row0];
+          y_t[nt++] = e;
+        } else {
+          e.time = y0_ptr[row0];
+          y_c[nc++] = e;
+        }
+      }
+      if (nt == 0 || nc == 0) continue;
+      double stat_t = km_stat_inline(y_t.data(), nt, do_rmst, utimes_t, sprobs_t);
+      double stat_c = km_stat_inline(y_c.data(), nc, do_rmst, utimes_c, sprobs_c);
+      if (std::isfinite(stat_t) && std::isfinite(stat_c))
+        res_ptr[b] = stat_t - stat_c;
+    }
+  }
+  return wrap(results_vec);
 }
 
 

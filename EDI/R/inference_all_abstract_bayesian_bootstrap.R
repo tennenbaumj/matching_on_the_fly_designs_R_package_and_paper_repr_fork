@@ -295,6 +295,10 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 					if (isTRUE(private$harden)) private$cache_nonestimable_se("bayesian_bootstrap_unstable_studentized_standard_errors")
 					return(NA_real_)
 				}
+				if (private$bootstrap_estimates_extreme(boot_stats$theta, est = est)) {
+					if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bayesian_bootstrap_extreme_finite_estimates")
+					return(NA_real_)
+				}
 				t_obs = abs(est - delta) / se_hat
 				return(min(1, max(1 / length(t_boot), mean(t_boot >= t_obs))))
 			}
@@ -310,6 +314,10 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			}
 			if (length(boot_distr) < as.integer(min_number_usable_samples)) {
 				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bayesian_bootstrap_too_few_finite_estimates")
+				return(NA_real_)
+			}
+			if (private$bootstrap_estimates_extreme(boot_distr, est = est)) {
+				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("bayesian_bootstrap_extreme_finite_estimates")
 				return(NA_real_)
 			}
 			if (type == "percentile") {
@@ -405,11 +413,14 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 					if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
 						return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_standard_error_ci_unavailable", stage = "se"))
 					}
-					if (private$studentized_interval_scale_unstable(theta = boot_stats$theta, ci = ci, est = est, alpha = alpha)) {
-						return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_unstable_studentized_interval", stage = "se"))
-					}
-					return(ci)
+				if (private$studentized_interval_scale_unstable(theta = boot_stats$theta, ci = ci, est = est, alpha = alpha)) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_unstable_studentized_interval", stage = "se"))
 				}
+				if (private$bootstrap_confidence_interval_extreme(ci, est = est)) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_extreme_confidence_interval", stage = "se"))
+				}
+				return(ci)
+			}
 			boot_distr = self$approximate_bayesian_bootstrap_distribution_beta_hat_T(
 				B = B,
 				show_progress = show_progress,
@@ -419,6 +430,9 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			if (length(boot_distr) < as.integer(min_number_usable_samples)) {
 				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_too_few_finite_estimates", stage = "estimate"))
 			}
+			if (private$bootstrap_estimates_extreme(boot_distr, est = est)) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_extreme_finite_estimates", stage = "estimate"))
+			}
 			if (type == "wald") {
 				se_boot = stats::sd(boot_distr)
 				if (!is.finite(se_boot) || se_boot <= 0) {
@@ -426,6 +440,9 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				}
 				z = stats::qnorm(1 - alpha / 2)
 				ci[] = c(est - z * se_boot, est + z * se_boot)
+				if (private$bootstrap_confidence_interval_extreme(ci, est = est)) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_extreme_confidence_interval", stage = "se"))
+				}
 				return(ci)
 			}
 			if (type == "bca") {
@@ -436,11 +453,17 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
 					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_bca_ci_unavailable", stage = "se"))
 				}
+				if (private$bootstrap_confidence_interval_extreme(ci, est = est)) {
+					return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_extreme_confidence_interval", stage = "se"))
+				}
 				return(ci)
 			}
 			ci[] = private$ci_from_boot_distribution(boot_distr, alpha, type, est = est)
 			if (length(ci) < 2L || !all(is.finite(ci[1:2]))) {
 				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_ci_unavailable", stage = "estimate"))
+			}
+			if (private$bootstrap_confidence_interval_extreme(ci, est = est)) {
+				return(private$missing_bootstrap_ci(alpha, "bayesian_bootstrap_extreme_confidence_interval", stage = "estimate"))
 			}
 			ci
 		}

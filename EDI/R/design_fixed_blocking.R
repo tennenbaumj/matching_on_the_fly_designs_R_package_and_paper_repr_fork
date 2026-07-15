@@ -47,7 +47,7 @@ DesignFixedBlocking = R6::R6Class("DesignFixedBlocking",
 			#'   `set_m()`, bypassing covariate-derived strata construction.
 			#' @param verbose A flag for verbosity.
 			#' @param missingness_method How to handle missing values in covariates.
-			#' @param model_formula A formula object.
+			#' @param design_formula A formula object.
 			#' @param seed Integer seed for reproducibility.
 		#'
 		#' @return  A new `DesignFixedBlocking` object
@@ -64,7 +64,7 @@ DesignFixedBlocking = R6::R6Class("DesignFixedBlocking",
 							m = NULL,
 							verbose = FALSE,
 					missingness_method = "impute",
-					model_formula = ~ .,
+					design_formula = ~ .,
 					seed = NULL) {
 				if (should_run_asserts()) {
 					if (!is.null(strata_cols)) assertCharacter(strata_cols, min.len = 1)
@@ -88,7 +88,7 @@ DesignFixedBlocking = R6::R6Class("DesignFixedBlocking",
 					private$assert_min_block_size(n, B_target)
 				}
 			}
-			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed)
+			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed)
 			private$blocking_capable = TRUE
 			private$strata_cols = strata_cols
 			private$preferred_num_bins_for_continuous_covariate = preferred_num_bins_for_continuous_covariate

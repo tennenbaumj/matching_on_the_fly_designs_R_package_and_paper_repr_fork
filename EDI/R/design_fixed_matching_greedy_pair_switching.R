@@ -20,7 +20,7 @@ DesignFixedMatchingGreedyPairSwitching = R6::R6Class("DesignFixedMatchingGreedyP
 		#' @param n The sample size.
 		#' @param verbose A flag for verbosity.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param objective The imbalance objective. Either \code{"mahal_dist"} (default) or \code{"abs_sum_diff"}.
 		#' @param n_iter Number of swap iterations. \code{Inf} (default) uses exhaustive
 		#'   best-improvement search guaranteed to reach a strict local optimum. A positive
@@ -38,7 +38,7 @@ DesignFixedMatchingGreedyPairSwitching = R6::R6Class("DesignFixedMatchingGreedyP
 				objective = "mahal_dist",
 				n_iter = Inf,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL
 			) {
 			if (should_run_asserts()) {
@@ -50,7 +50,7 @@ DesignFixedMatchingGreedyPairSwitching = R6::R6Class("DesignFixedMatchingGreedyP
 				if (!is.infinite(n_iter) && (!is.numeric(n_iter) || length(n_iter) != 1L || n_iter <= 0 || n_iter != floor(n_iter)))
 					stop("n_iter must be Inf or a positive integer")
 			}
-			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed)
+			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed)
 			private$objective = objective
 			private$n_iter    = n_iter
 			private$uses_covariates = TRUE

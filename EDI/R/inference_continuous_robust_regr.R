@@ -300,6 +300,24 @@ InferenceContinRobustRegr = R6::R6Class("InferenceContinRobustRegr",
 				private$cached_values$s_beta_hat_T = as.numeric(st$coefficients[j_treat, "Std. Error"])
 			}
 			private$cached_values$df = nrow(X_fit) - ncol(X_fit)
+		},
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			X_data = private$get_X()
+			Xc = if (!is.null(private$best_X_colnames) && length(private$best_X_colnames) > 0L) {
+				cols = intersect(private$best_X_colnames, colnames(X_data))
+				if (length(cols) > 0L) as.matrix(X_data[, cols, drop = FALSE]) else matrix(numeric(0), nrow = private$n, ncol = 0L)
+			} else if (!is.null(X_data) && ncol(as.matrix(X_data)) > 0L) {
+				as.matrix(X_data)
+			} else {
+				matrix(numeric(0), nrow = private$n, ncol = 0L)
+			}
+			compute_robust_rand_bootstrap_parallel_cpp(
+				as.numeric(y0_full), Xc, mats$i_mat, mats$w_mat,
+				as.numeric(delta), private$rlm_method, private$n_cpp_threads(ncol(mats$w_mat))
+			)
 		}
 	)
 )

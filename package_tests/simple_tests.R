@@ -21,7 +21,7 @@ run_tests_for_response = function(response_type, inference_classes, model_formul
   y_base = transform_cont_y_based_on_response_type(y_cont, response_type)
   
   # Initialize Design
-  des = design_cls$new(response_type = response_type, n = n, model_formula = if (is.null(model_formula)) ~ . else model_formula)
+  des = design_cls$new(response_type = response_type, n = n, design_formula = if (is.null(model_formula)) ~ . else model_formula)
   
   # Fill Design (Sequential)
   betaT = 1

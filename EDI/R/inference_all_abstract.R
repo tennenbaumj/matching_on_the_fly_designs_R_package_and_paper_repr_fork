@@ -60,7 +60,7 @@ Inference = R6::R6Class("Inference",
 			private$supports_design_resampling = isTRUE(des_obj$supports_resampling())
 			# Handle model_formula and X matrix construction
 			if (is.null(model_formula)) {
-				private$model_formula = des_obj$get_model_formula()
+				private$model_formula = des_obj$get_design_formula()
 				# Ensure the design matrix is built
 				private$X = private$get_X()
 			} else {

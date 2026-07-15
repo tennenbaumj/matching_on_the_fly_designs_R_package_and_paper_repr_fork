@@ -2199,13 +2199,6 @@ Root cause: Each simulation iteration made 4 separate O(n) passes over `m_col`/`
 
 ---
 
-**NOTE: bai_distr kernel crashes during validation** ⚠️
-Files: `EDI/src/fast_bai_parallel.cpp`, `profile/edi_kernel_profiler.R`
-
-The `bai_distr` kernel added in TODO-98 crashes before producing `ms/call` output (perf record shows no EDI.so samples). The kernel definition at line ~1465 of `edi_kernel_profiler.R` may have an incorrect argument layout (halves_idx structure or w_mat/m_mat dimensions mismatch). Investigate the crash before profiling. Source-inspection finding (TODO-102: in-loop vector allocations) still valid pending a working kernel.
-
----
-
 **TODO-110: Bootstrap randomization test (BRT) — three-tier fast-path stack** ✓ DONE
 Files: `EDI/src/rand_bootstrap_mean_diff_parallel.cpp` (new), `EDI/R/inference_all_abstract_rand_bootstrap.R`, `EDI/R/inference_all_abstract_rand_bootstrap_ci.R`, `EDI/R/inference_all_mean_diff.R`, `EDI/R/inference_continuous_ols.R`
 
@@ -2217,3 +2210,35 @@ Context: the BRT (`InferenceRandBootstrap`/`InferenceRandBootstrapCI`, added 202
 3. **Closed-form CI** (per-class `compute_rand_bootstrap_ci_affine_coefs`; mean-diff + `InferenceContinOLS`): with the additive sharp-null shift each null draw is affine in delta, t0_b(δ) = A_b + δ·c_b, so the p-value is a step function with breakpoints (t−A_b)/c_b and the CI is read off exactly from interval probes — zero bisection evaluations, no pval_epsilon/search-radius/conservative fallbacks. Convention note: the package inverts the two-sided randomization p-value at **alpha/2** (see `InferenceRandCI`); the closed form must match or CIs disagree by ~0.5 on unit-scale data.
 
 Correctness: `EDI/tests/testthat/test-rand-bootstrap.R` — kernel vs per-iteration reference equal to 1e-10 (delta 0 and 0.7), worker path vs standard path equal to 1e-10, affine decomposition vs reference iteration equal to 1e-8 for both classes, closed-form CI vs bisection CI within bisection tolerance; 67 assertions, all passing.
+
+---
+
+**TODO-111: BRT C++ fast-path kernels for CoxPH, Weibull marginal, and robust regression** ✓ DONE
+Files: `EDI/src/fast_coxph_regression.cpp`, `EDI/src/fast_weibull_regression.cpp`, `EDI/src/fast_robust_regression.cpp`, `EDI/R/inference_survival_coxph.R`, `EDI/R/inference_survival_KK_weibull_marginal.R`, `EDI/R/inference_continuous_robust_regr.R`
+
+Context: after the three-tier BRT stack (TODO-110) reduced mean-diff/OLS BRT to negligible cost, the survival and robust regression classes fell back to the reusable-worker path — still 9–10× faster than naive R6 duplication, but the C++ batch-kernel tier was not yet implemented for these classes.
+
+**Implemented (2026-07-14):**
+- `compute_coxph_rand_bootstrap_parallel_cpp`: per-draw Cox partial-likelihood IRLS (via `compute_coxph_regression_cpp` internally); OpenMP over B draws.
+- `compute_weibull_rand_bootstrap_parallel_cpp`: per-draw Weibull AFT MLE fit; OpenMP over B draws.
+- `compute_robust_rand_bootstrap_parallel_cpp`: per-draw robust regression (Huber M or MM via `fast_robust_regression_cpp`); OpenMP over B draws.
+- Each dispatched via `compute_fast_rand_bootstrap_distr` on the respective class; returns NULL if custom stat fn is set, falling through to the worker path.
+- Fix: `Nullable<NumericVector>()` constructor crashes inside OpenMP parallel regions; replaced with `R_NilValue` cast directly.
+
+Correctness: `EDI/tests/testthat/test-rand-bootstrap.R` — C++ kernel vs per-iteration reference equal to 1e-10 for CoxPH, Weibull, and robust regression (delta 0 and 0.7); 178 assertions total, all passing.
+
+---
+
+**TODO-112: BRT studentized, symmetric-percentile-t, and smoothed p-value types** ✓ DONE
+Files: `EDI/R/inference_all_abstract_rand_bootstrap.R`, `EDI/R/inference_all_abstract_rand_bootstrap_ci.R`
+
+Context: the original BRT used only the percentile type (compare null-draw statistics to the observed statistic). Three additional types improve power or coverage for classes where a standard error is available.
+
+**Implemented (2026-07-14):**
+- **`type = "studentized"`**: each null draw is pivoted as `z_b = (t_b - delta) / se_b`; the p-value compares `|z_obs|` to `|z_b|`; produces asymmetric CIs under inversion. Requires the class to expose `get_standard_error()`; falls back to `"percentile"` if SE is unavailable.
+- **`type = "symmetric-percentile-t"`**: same pivoting but uses `|z_b|` (absolute value pivot), giving a symmetric CI.
+- **`type = "smoothed"`**: adds `N(0, sigma/sqrt(n))` kernel noise to each null draw before comparison; useful for discrete response types. Bypasses the C++ fast path (which produces raw integer draws) and falls through to per-iteration R evaluation.
+- Per-draw SE computed via `compute_brt_null_statistics_with_se` (calls `run_rand_bootstrap_iteration_with_se`), which temporarily swaps the assignment vector and calls the inference object's `compute_estimate` + `get_standard_error` in each iteration.
+- CI inversion for studentized/symmetric-percentile-t uses the same bisection infrastructure with the pivoted p-value function.
+
+Correctness: `EDI/tests/testthat/test-rand-bootstrap.R` — studentized/symmetric-percentile-t/smoothed pvals and CIs validated against per-iteration reference; all 178 assertions pass.

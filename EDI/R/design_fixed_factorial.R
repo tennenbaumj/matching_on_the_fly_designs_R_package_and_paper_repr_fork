@@ -21,7 +21,7 @@ DesignFixedFactorial = R6::R6Class("DesignFixedFactorial",
 		#' @param n  		The sample size.
 		#' @param verbose  Flag for verbosity.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#'
 		#' @return 			A new `DesignFixedFactorial` object
@@ -33,7 +33,7 @@ DesignFixedFactorial = R6::R6Class("DesignFixedFactorial",
 
 				verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL
 			) {
 			if (should_run_asserts()) {
@@ -41,7 +41,7 @@ DesignFixedFactorial = R6::R6Class("DesignFixedFactorial",
 			}
 			# We don't use prob_T in the standard way here, as we have multiple factors
 			# But base Design needs it. We'll set it to 0.5.
-			super$initialize(response_type, 0.5, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed)
+			super$initialize(response_type, 0.5, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed)
 			private$factors = factors
 			
 			# Precompute all combinations

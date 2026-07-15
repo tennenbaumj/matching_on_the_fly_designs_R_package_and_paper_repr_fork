@@ -367,6 +367,25 @@ InferenceSurvivalKKWeibullMarginal = R6::R6Class("InferenceSurvivalKKWeibullMarg
 			}
 			if (is.null(fit) || !is.finite(fit$beta_T)) return(NA_real_)
 			fit$beta_T
+		},
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			if (delta != 0 && !identical(transform_responses, "log")) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			X_data = private$get_X()
+			Xc = if (!is.null(private$best_X_colnames)) {
+				cols = intersect(private$best_X_colnames, colnames(X_data))
+				if (length(cols) > 0L) as.matrix(X_data[, cols, drop = FALSE]) else matrix(numeric(0), nrow = private$n, ncol = 0L)
+			} else if (!is.null(X_data) && ncol(as.matrix(X_data)) > 0L) {
+				as.matrix(X_data)
+			} else {
+				matrix(numeric(0), nrow = private$n, ncol = 0L)
+			}
+			compute_weibull_rand_bootstrap_parallel_cpp(
+				as.numeric(y0_full), as.integer(private$dead), Xc, mats$i_mat, mats$w_mat,
+				as.numeric(delta), private$n_cpp_threads(ncol(mats$w_mat))
+			)
 		}
 	)))
 )

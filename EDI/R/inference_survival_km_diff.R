@@ -162,9 +162,9 @@ InferenceSurvivalKMDiff = R6::R6Class("InferenceSurvivalKMDiff",
 			if (delta != 0 && !identical(transform_responses, "log")) return(NULL)
 			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
 			if (is.null(mats)) return(NULL)
-			compute_survival_stat_diff_rand_bootstrap_serial_cpp(
+			compute_survival_stat_diff_rand_bootstrap_parallel_cpp(
 				as.numeric(y0_full), as.integer(private$dead), mats$i_mat, mats$w_mat,
-				as.numeric(delta), "median"
+				as.numeric(delta), FALSE, private$n_cpp_threads(ncol(mats$w_mat))
 			)
 		},
 		shared = function(estimate_only = FALSE){

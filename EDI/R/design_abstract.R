@@ -45,7 +45,7 @@ Design = R6::R6Class("Design",
 		#'       detected in the covariate matrix. Use this when you want to guarantee that
 		#'       inference runs on exactly the data you supplied, with no silent modification.}
 		#'   }
-		#' @param model_formula A formula object used to create the design matrix from
+		#' @param design_formula A formula object used to create the design matrix from
 		#'   covariates. Default is \code{~ .}.
 		#' @param ordinal_levels If the response type is "ordinal", the labels for the levels.
 		#' @param seed Integer seed for reproducibility.
@@ -58,7 +58,7 @@ Design = R6::R6Class("Design",
 				n = NULL,
 				verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				ordinal_levels = NULL,
 				seed = NULL
 			) {
@@ -70,7 +70,7 @@ Design = R6::R6Class("Design",
 				assertCount(n, null.ok = TRUE)
 				assertCount(seed, null.ok = TRUE)
 				assertChoice(missingness_method, c("impute", "drop_column", "error"))
-				assertFormula(model_formula)
+				assertFormula(design_formula)
 				if (response_type == "ordinal" && !is.null(ordinal_levels)) {
 					assertCharacter(ordinal_levels, min.len = 2, any.missing = FALSE)
 				}
@@ -89,7 +89,7 @@ Design = R6::R6Class("Design",
 			private$original_ordinal_levels = ordinal_levels
 			private$include_is_missing_as_a_new_feature = include_is_missing_as_a_new_feature
 			private$missingness_method = missingness_method
-			private$model_formula = model_formula
+			private$design_formula = design_formula
 			# Ensure budget is respected among openmp and other packages
 			private$verbose = verbose
 			if (private$fixed_sample){
@@ -403,8 +403,8 @@ Design = R6::R6Class("Design",
 		#' @description Get the model formula
 		#'
 		#' @return 			The model formula.
-		get_model_formula = function(){
-			private$model_formula
+		get_design_formula = function(){
+			private$design_formula
 		},
 		#' @description Duplicate this design object
 		#'
@@ -451,7 +451,7 @@ Design = R6::R6Class("Design",
 		fixed_sample = NULL,
 		include_is_missing_as_a_new_feature = NULL,
 		missingness_method = "impute",
-		model_formula = NULL,
+		design_formula = NULL,
 		verbose = NULL,
 		y_i_t_i = list(),	 #at what point during the experiment are the subjects recorded?
 		uses_covariates = FALSE, #does this design use the covariates to make assignments? The default is FALSE
@@ -539,7 +539,7 @@ Design = R6::R6Class("Design",
 			num_unique_values_per_column = count_unique_values_cpp(Ximp_for_model)
 			Ximp_for_model = Ximp_for_model[, .SD, .SDcols = which(num_unique_values_per_column > 1)]
 			# now we need to update the numeric model matrix which may have expanded due to new factors, new missingness cols, etc
-			private$X = create_model_matrix_from_features(private$model_formula, Ximp_for_model)
+			private$X = create_model_matrix_from_features(private$design_formula, Ximp_for_model)
 			# Ensure it is a numeric matrix (not character)
 			if (should_run_asserts()) {
 				if (ncol(private$X) > 0 && is.character(private$X)){

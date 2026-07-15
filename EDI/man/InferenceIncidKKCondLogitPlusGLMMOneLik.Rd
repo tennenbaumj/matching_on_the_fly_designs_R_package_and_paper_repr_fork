@@ -111,7 +111,7 @@ Initialize
   des_obj,
   model_formula = NULL,
   max_abs_reasonable_coef = 50,
-  max_abs_reasonable_se = 10,
+  max_abs_reasonable_se = 1.25,
   max_abs_log_sigma = 8,
   verbose = FALSE,
   smart_cold_start_default = NULL,

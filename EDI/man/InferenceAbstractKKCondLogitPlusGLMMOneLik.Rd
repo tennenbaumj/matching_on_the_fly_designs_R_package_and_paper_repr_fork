@@ -96,6 +96,7 @@ Initialize
   model_formula = NULL,
   max_abs_reasonable_coef = 10000,
   max_abs_log_sigma = 8,
+  max_abs_reasonable_se = 1.25,
   verbose = FALSE,
   smart_cold_start_default = NULL
 )}\if{html}{\out{</div>}}
@@ -111,6 +112,8 @@ Initialize
 \item{\code{max_abs_reasonable_coef}}{Cap for reasonable coefficient estimates.}
 
 \item{\code{max_abs_log_sigma}}{Cap for reasonable log random effect variance.}
+
+\item{\code{max_abs_reasonable_se}}{Cap for reasonable treatment standard errors.}
 
 \item{\code{verbose}}{Whether to print progress messages.}
 

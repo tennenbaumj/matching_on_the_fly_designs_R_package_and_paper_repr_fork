@@ -87,6 +87,12 @@ InferenceAbstractKKCondLogitPlusGLMM = R6::R6Class("InferenceAbstractKKCondLogit
 				error = function(e) NULL
 			)
 			beta = tryCatch(glmmTMB::fixef(mod)$cond[["w"]], error = function(e) NA_real_)
+			max_abs_boot_coef = min(private$max_abs_reasonable_coef, private$bootstrap_extreme_estimate_threshold)
+			if (!is.finite(beta) || abs(beta) > max_abs_boot_coef) {
+				private$cached_values$beta_hat_T = NA_real_
+				private$cached_values$s_beta_hat_T = NA_real_
+				return(NA_real_)
+			}
 			private$cached_values$beta_hat_T = if (is.finite(beta)) as.numeric(beta) else NA_real_
 			private$cached_values$s_beta_hat_T = NA_real_
 			private$cached_values$beta_hat_T
@@ -117,6 +123,7 @@ InferenceAbstractKKCondLogitPlusGLMM = R6::R6Class("InferenceAbstractKKCondLogit
 		max_abs_reasonable_coef = 50,
 		max_abs_reasonable_se = 10,
 		max_abs_log_sigma = 8,
+		bootstrap_extreme_estimate_threshold = 8,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		shared = function(estimate_only = FALSE){
 			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))

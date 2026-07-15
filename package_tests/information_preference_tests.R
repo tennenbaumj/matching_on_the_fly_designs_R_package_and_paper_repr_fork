@@ -15,7 +15,7 @@ expect_error_contains = function(expr, pattern) {
 }
 
 build_design = function(response_type, design_cls, X, y_fun) {
-	des = design_cls$new(response_type = response_type, n = nrow(X), model_formula = ~ .)
+	des = design_cls$new(response_type = response_type, n = nrow(X), design_formula = ~ .)
 	for (i in seq_len(nrow(X))) {
 		w_i = des$add_one_subject_to_experiment_and_assign(X[i, , drop = FALSE])
 		y_i = y_fun(i, w_i)

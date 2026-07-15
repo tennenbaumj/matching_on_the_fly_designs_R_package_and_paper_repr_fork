@@ -976,6 +976,39 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compute_coxph_rand_bootstrap_cpp
+NumericVector compute_coxph_rand_bootstrap_cpp(const Eigen::VectorXd& y0, const Eigen::VectorXd& dead, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
+RcppExport SEXP _EDI_compute_coxph_rand_bootstrap_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type dead(deadSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_coxph_rand_bootstrap_cpp(y0, dead, i_mat, w_mat, delta, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_coxph_rand_bootstrap_parallel_cpp
+NumericVector compute_coxph_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
+RcppExport SEXP _EDI_compute_coxph_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type dead(deadSEXP);
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type Xc(XcSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_coxph_rand_bootstrap_parallel_cpp(y0, dead, Xc, i_mat, w_mat, delta, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
 // get_cpoisson_combined_score_cpp
 SEXP get_cpoisson_combined_score_cpp(const NumericVector& yT_v_r, const NumericVector& n_k_v_r, const NumericMatrix& X_diff_v_r, const NumericVector& y_r_r, const NumericVector& w_r_r, const NumericMatrix& X_r_r, const NumericVector& params_r);
 RcppExport SEXP _EDI_get_cpoisson_combined_score_cpp(SEXP yT_v_rSEXP, SEXP n_k_v_rSEXP, SEXP X_diff_v_rSEXP, SEXP y_r_rSEXP, SEXP w_r_rSEXP, SEXP X_r_rSEXP, SEXP params_rSEXP) {
@@ -2712,6 +2745,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compute_robust_rand_bootstrap_parallel_cpp
+NumericVector compute_robust_rand_bootstrap_parallel_cpp(const NumericVector& y0, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, std::string method, int num_cores);
+RcppExport SEXP _EDI_compute_robust_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP methodSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type Xc(XcSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type method(methodSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_robust_rand_bootstrap_parallel_cpp(y0, Xc, i_mat, w_mat, delta, method, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
 // sample_int_replace_cpp
 IntegerVector sample_int_replace_cpp(int n, int size);
 RcppExport SEXP _EDI_sample_int_replace_cpp(SEXP nSEXP, SEXP sizeSEXP) {
@@ -3017,6 +3067,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// compute_survival_stat_diff_rand_bootstrap_parallel_cpp
+NumericVector compute_survival_stat_diff_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, bool do_rmst, int num_cores);
+RcppExport SEXP _EDI_compute_survival_stat_diff_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP do_rmstSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type dead(deadSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< bool >::type do_rmst(do_rmstSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_survival_stat_diff_rand_bootstrap_parallel_cpp(y0, dead, i_mat, w_mat, delta, do_rmst, num_cores));
+    return rcpp_result_gen;
+END_RCPP
+}
 // compute_survival_stat_diff_rand_bootstrap_serial_cpp
 NumericVector compute_survival_stat_diff_rand_bootstrap_serial_cpp(const NumericVector& y0, const IntegerVector& dead, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, std::string requested_stat);
 RcppExport SEXP _EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP requested_statSEXP) {
@@ -3134,6 +3201,23 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< SEXP >::type dead_sexp(dead_sexpSEXP);
     Rcpp::traits::input_parameter< SEXP >::type params_sexp(params_sexpSEXP);
     rcpp_result_gen = Rcpp::wrap(get_weibull_regression_hessian_cpp(X_sexp, y_sexp, dead_sexp, params_sexp));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_weibull_rand_bootstrap_parallel_cpp
+NumericVector compute_weibull_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
+RcppExport SEXP _EDI_compute_weibull_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y0(y0SEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type dead(deadSEXP);
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type Xc(XcSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
+    Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_weibull_rand_bootstrap_parallel_cpp(y0, dead, Xc, i_mat, w_mat, delta, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4950,6 +5034,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_get_coxph_hessian_cpp", (DL_FUNC) &_EDI_get_coxph_hessian_cpp, 4},
     {"_EDI_get_stratified_coxph_score_cpp", (DL_FUNC) &_EDI_get_stratified_coxph_score_cpp, 5},
     {"_EDI_get_stratified_coxph_hessian_cpp", (DL_FUNC) &_EDI_get_stratified_coxph_hessian_cpp, 5},
+    {"_EDI_compute_coxph_rand_bootstrap_cpp", (DL_FUNC) &_EDI_compute_coxph_rand_bootstrap_cpp, 6},
+    {"_EDI_compute_coxph_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_coxph_rand_bootstrap_parallel_cpp, 7},
     {"_EDI_get_cpoisson_combined_score_cpp", (DL_FUNC) &_EDI_get_cpoisson_combined_score_cpp, 7},
     {"_EDI_get_cpoisson_combined_hessian_cpp", (DL_FUNC) &_EDI_get_cpoisson_combined_hessian_cpp, 7},
     {"_EDI_fast_cpoisson_combined_with_var_cpp", (DL_FUNC) &_EDI_fast_cpoisson_combined_with_var_cpp, 14},
@@ -5052,6 +5138,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_fast_ridit_scores_cpp", (DL_FUNC) &_EDI_fast_ridit_scores_cpp, 2},
     {"_EDI_fast_ridit_analysis_cpp", (DL_FUNC) &_EDI_fast_ridit_analysis_cpp, 3},
     {"_EDI_fast_robust_regression_cpp", (DL_FUNC) &_EDI_fast_robust_regression_cpp, 14},
+    {"_EDI_compute_robust_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_robust_rand_bootstrap_parallel_cpp, 7},
     {"_EDI_sample_int_replace_cpp", (DL_FUNC) &_EDI_sample_int_replace_cpp, 2},
     {"_EDI_resample_group_rows_cpp", (DL_FUNC) &_EDI_resample_group_rows_cpp, 2},
     {"_EDI_scale_columns_cpp", (DL_FUNC) &_EDI_scale_columns_cpp, 1},
@@ -5072,6 +5159,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_get_survival_stat_diff", (DL_FUNC) &_EDI_get_survival_stat_diff, 4},
     {"_EDI_get_restricted_mean_se_for_group", (DL_FUNC) &_EDI_get_restricted_mean_se_for_group, 2},
     {"_EDI_get_restricted_mean_se_diff", (DL_FUNC) &_EDI_get_restricted_mean_se_diff, 3},
+    {"_EDI_compute_survival_stat_diff_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_survival_stat_diff_rand_bootstrap_parallel_cpp, 7},
     {"_EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp", (DL_FUNC) &_EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp, 6},
     {"_EDI_get_weibull_frailty_neg_loglik_cpp", (DL_FUNC) &_EDI_get_weibull_frailty_neg_loglik_cpp, 7},
     {"_EDI_get_weibull_frailty_score_cpp", (DL_FUNC) &_EDI_get_weibull_frailty_score_cpp, 7},
@@ -5079,6 +5167,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_fast_weibull_frailty_cpp", (DL_FUNC) &_EDI_fast_weibull_frailty_cpp, 15},
     {"_EDI_get_weibull_regression_score_cpp", (DL_FUNC) &_EDI_get_weibull_regression_score_cpp, 4},
     {"_EDI_get_weibull_regression_hessian_cpp", (DL_FUNC) &_EDI_get_weibull_regression_hessian_cpp, 4},
+    {"_EDI_compute_weibull_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_weibull_rand_bootstrap_parallel_cpp, 7},
     {"_EDI_fast_weibull_regression_cpp", (DL_FUNC) &_EDI_fast_weibull_regression_cpp, 12},
     {"_EDI_wilcox_hl_signed_rank_point_estimate_cpp", (DL_FUNC) &_EDI_wilcox_hl_signed_rank_point_estimate_cpp, 1},
     {"_EDI_wilcox_hl_point_estimate_cpp", (DL_FUNC) &_EDI_wilcox_hl_point_estimate_cpp, 2},

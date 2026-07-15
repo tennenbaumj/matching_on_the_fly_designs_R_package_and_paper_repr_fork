@@ -97,7 +97,8 @@ Computes a confidence interval by inverting the bootstrap randomization
   show_progress = TRUE,
   max_expansions = 7L,
   bootstrap_type = NULL,
-  zero_one_logit_clamp = .Machine$double.eps
+  zero_one_logit_clamp = .Machine$double.eps,
+  type = "percentile"
 )}\if{html}{\out{</div>}}
 }
 
@@ -120,6 +121,23 @@ interval does not bracket the target p-value. Default 7.}
 \code{approximate_bootstrap_distribution_beta_hat_T} for legal values. Default \code{NULL}.}
 
 \item{\code{zero_one_logit_clamp}}{The clamping amount for exact 0 and 1 values when logging.}
+
+\item{\code{type}}{CI type. \code{"percentile"} (default) inverts the raw BRT
+p-value via bisection (or closed-form for affine statistics).
+\code{"studentized"} inverts the signed-pivot BRT p-value
+\eqn{p(\delta) = 2\min(P(z^0_b \ge z), P(z^0_b \le z))} where
+\eqn{z^0_b = (t^0_b(\delta) - \delta)/\hat{s}^0_b}; yields asymmetric CI.
+\code{"symmetric-percentile-t"} inverts the absolute-pivot version
+\eqn{p(\delta) = P(|t^0_b - \delta|/\hat{s}^0_b \ge |t - \delta|/\hat{s})};
+yields a CI symmetric around the observed estimate.
+Both SE-based types pre-compute \eqn{\hat{s}^0_b} once at \eqn{\delta = 0} and
+reuse it across bisection steps. Yield O(\eqn{n^{-1}}) coverage error versus
+O(\eqn{n^{-1/2}}) for \code{"percentile"} when the pivot is asymptotically normal.
+Require the class to expose a standard error; return \code{NA} bounds in harden
+mode if unavailable.
+\code{"smoothed"} adds per-draw kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
+to the resampled responses before imposing the null shift, reducing discreteness.
+Only meaningful for continuous responses.}
 }
 \if{html}{\out{</div>}}
 }

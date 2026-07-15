@@ -70,7 +70,7 @@ DesignSeqOneByOneKK21 = R6::R6Class("DesignSeqOneByOneKK21",
 		#' model each time? This is at the expense of the weights being less accurate. Default is
 		#' \code{TRUE}.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#' @param ... Extra arguments passed to the \code{DesignSeqOneByOneKK14} superclass.
 		#'
@@ -99,11 +99,11 @@ DesignSeqOneByOneKK21 = R6::R6Class("DesignSeqOneByOneKK21",
 			survival_use_speedup_for_no_censoring = TRUE,
 			ordinal_use_speedup = TRUE,
 			missingness_method = "impute",
-			model_formula = ~ .,
+			design_formula = ~ .,
 			seed = NULL,
 			...
 		){
-			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, lambda, t_0_pct, morrison, p, missingness_method, model_formula, seed = seed, ...)
+			super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, lambda, t_0_pct, morrison, p, missingness_method, design_formula, seed = seed, ...)
 			if (is.null(num_boot)){
 				num_boot = 500
 			} else {

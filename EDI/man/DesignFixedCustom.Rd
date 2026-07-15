@@ -41,8 +41,8 @@ matrix. EDI handles subject storage, responses, and validation through
 <li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_X_imp"><a href='../..//html/Design.html#method-Design-get_X_imp'><code>::Design$get_X_imp()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_X_raw"><a href='../..//html/Design.html#method-Design-get_X_raw'><code>::Design$get_X_raw()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_dead"><a href='../..//html/Design.html#method-Design-get_dead'><code>::Design$get_dead()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_design_formula"><a href='../..//html/Design.html#method-Design-get_design_formula'><code>::Design$get_design_formula()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_missingness_method"><a href='../..//html/Design.html#method-Design-get_missingness_method'><code>::Design$get_missingness_method()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_model_formula"><a href='../..//html/Design.html#method-Design-get_model_formula'><code>::Design$get_model_formula()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_n"><a href='../..//html/Design.html#method-Design-get_n'><code>::Design$get_n()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_ordinal_levels"><a href='../..//html/Design.html#method-Design-get_ordinal_levels'><code>::Design$get_ordinal_levels()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="Design" data-id="get_original_ordinal_levels"><a href='../..//html/Design.html#method-Design-get_original_ordinal_levels'><code>::Design$get_original_ordinal_levels()</code></a></span></li>

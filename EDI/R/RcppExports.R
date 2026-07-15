@@ -429,6 +429,28 @@ get_stratified_coxph_hessian_cpp <- function(X, y, dead, strata, beta) {
     .Call(`_EDI_get_stratified_coxph_hessian_cpp`, X, y, dead, strata, beta)
 }
 
+#' @title Bootstrap Randomization Test distribution for Cox PH (treatment-only model)
+#' @description Computes the BRT null distribution of the treatment log-hazard-ratio from a
+#'   treatment-only Cox PH model across B pre-generated (i_mat, w_mat) draws. Each draw
+#'   resamples rows and applies a fresh treatment assignment; the sharp-null shift is
+#'   multiplicative on treated survival times (exp(delta) on the log-time scale).
+#' @param y0 Numeric vector of original survival times (length n).
+#' @param dead Numeric vector of event indicators (length n).
+#' @param i_mat Integer matrix (n x B) of 1-based row indices.
+#' @param w_mat Integer matrix (n x B) of treatment assignments (0/1).
+#' @param delta Sharp-null shift on log-time scale.
+#' @param num_cores Number of OpenMP threads.
+#' @return Numeric vector of length B with treatment log-HR per draw (NA on non-convergence).
+#' @export
+#' @keywords internal
+compute_coxph_rand_bootstrap_cpp <- function(y0, dead, i_mat, w_mat, delta, num_cores) {
+    .Call(`_EDI_compute_coxph_rand_bootstrap_cpp`, y0, dead, i_mat, w_mat, delta, num_cores)
+}
+
+compute_coxph_rand_bootstrap_parallel_cpp <- function(y0, dead, Xc, i_mat, w_mat, delta, num_cores) {
+    .Call(`_EDI_compute_coxph_rand_bootstrap_parallel_cpp`, y0, dead, Xc, i_mat, w_mat, delta, num_cores)
+}
+
 #' @title Compute Combined Conditional-Poisson Score
 #' @description Calculates the score vector for the combined conditional-Poisson and Poisson log-likelihood.
 #' @param yT_v Treated counts per pair.
@@ -1347,6 +1369,10 @@ fast_robust_regression_cpp <- function(X_sexp, y_sexp, warm_start_beta = NULL, s
     .Call(`_EDI_fast_robust_regression_cpp`, X_sexp, y_sexp, warm_start_beta, smart_cold_start, method, j, c, maxit, tol, fixed_idx, fixed_values, warm_start_weights, warm_start_fisher_info, estimate_only)
 }
 
+compute_robust_rand_bootstrap_parallel_cpp <- function(y0, Xc, i_mat, w_mat, delta, method, num_cores) {
+    .Call(`_EDI_compute_robust_rand_bootstrap_parallel_cpp`, y0, Xc, i_mat, w_mat, delta, method, num_cores)
+}
+
 sample_int_replace_cpp <- function(n, size) {
     .Call(`_EDI_sample_int_replace_cpp`, n, size)
 }
@@ -1525,6 +1551,16 @@ get_restricted_mean_se_diff <- function(y_sexp, dead_sexp, w_sexp) {
     .Call(`_EDI_get_restricted_mean_se_diff`, y_sexp, dead_sexp, w_sexp)
 }
 
+#' Parallel BRT kernel for KM-diff (median) and RMST-diff.
+#' Each replicate resamples rows i_mat(.,b) and pairs them with assignment w_mat(.,b).
+#' Sharp-null shift is multiplicative on treated times (exp(delta)). Uses an inline
+#' pure-C++ KM calculator — no R objects inside the loop, so OpenMP is safe.
+#' @param do_rmst TRUE for RMST-diff, FALSE for median (KM-diff).
+#' @keywords internal
+compute_survival_stat_diff_rand_bootstrap_parallel_cpp <- function(y0, dead, i_mat, w_mat, delta, do_rmst, num_cores) {
+    .Call(`_EDI_compute_survival_stat_diff_rand_bootstrap_parallel_cpp`, y0, dead, i_mat, w_mat, delta, do_rmst, num_cores)
+}
+
 compute_survival_stat_diff_rand_bootstrap_serial_cpp <- function(y0, dead, i_mat, w_mat, delta, requested_stat) {
     .Call(`_EDI_compute_survival_stat_diff_rand_bootstrap_serial_cpp`, y0, dead, i_mat, w_mat, delta, requested_stat)
 }
@@ -1569,6 +1605,10 @@ get_weibull_regression_score_cpp <- function(X_sexp, y_sexp, dead_sexp, params_s
 #' @keywords internal
 get_weibull_regression_hessian_cpp <- function(X_sexp, y_sexp, dead_sexp, params_sexp) {
     .Call(`_EDI_get_weibull_regression_hessian_cpp`, X_sexp, y_sexp, dead_sexp, params_sexp)
+}
+
+compute_weibull_rand_bootstrap_parallel_cpp <- function(y0, dead, Xc, i_mat, w_mat, delta, num_cores) {
+    .Call(`_EDI_compute_weibull_rand_bootstrap_parallel_cpp`, y0, dead, Xc, i_mat, w_mat, delta, num_cores)
 }
 
 #' @title Fast Weibull AFT Regression (C++)

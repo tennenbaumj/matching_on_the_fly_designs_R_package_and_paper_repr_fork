@@ -29,7 +29,7 @@ DesignFixedBinaryMatch = R6::R6Class("DesignFixedBinaryMatch",
 		#'   This bypasses the package-computed matching step.
 		#' @param verbose  Flag for verbosity.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#'
 		#' @return 			A new `DesignFixedBinaryMatch` object
@@ -43,7 +43,7 @@ DesignFixedBinaryMatch = R6::R6Class("DesignFixedBinaryMatch",
 				m = NULL,
 				verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL
 				) {
 				if (should_run_asserts()) {
@@ -61,7 +61,7 @@ DesignFixedBinaryMatch = R6::R6Class("DesignFixedBinaryMatch",
 					# nbpMatching availability is checked lazily in ensure_matching_structure_computed
 					# so that workers using pre-computed w vectors never load it unnecessarily.
 				}
-				super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed)
+				super$initialize(response_type, prob_T, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed)
 				private$blocking_capable = TRUE
 				private$matching_capable = TRUE
 				private$mahal_match = mahal_match

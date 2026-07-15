@@ -1,6 +1,9 @@
 #include "_helper_functions.h"
 #include <RcppEigen.h>
 #include <Rmath.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace Rcpp;
 
@@ -128,6 +131,75 @@ Eigen::MatrixXd get_weibull_regression_hessian_cpp(SEXP X_sexp,
 
     WeibullAFTLikelihood fun(y, dead, X);
     return -fun.hessian(params);
+}
+
+// [[Rcpp::export]]
+NumericVector compute_weibull_rand_bootstrap_parallel_cpp(
+    const NumericVector& y0,
+    const IntegerVector& dead,
+    const NumericMatrix& Xc,
+    const IntegerMatrix& i_mat,
+    const IntegerMatrix& w_mat,
+    double delta,
+    int num_cores)
+{
+    const int n       = i_mat.nrow();
+    const int nsim    = i_mat.ncol();
+    const int n_full  = y0.size();
+    const int p_cov   = Xc.ncol();
+    const int p       = 2 + p_cov;   // intercept + treatment + covariates
+    const int n_params = p + 1;       // +1 for log_sigma
+
+    const double* y0_ptr   = y0.begin();
+    const int*    dead_ptr = dead.begin();
+    const double* xc_ptr   = (p_cov > 0) ? Xc.begin() : nullptr;
+    const int*    i_ptr    = i_mat.begin();
+    const int*    w_ptr    = w_mat.begin();
+    const double  mult     = (delta != 0.0) ? std::exp(delta) : 1.0;
+
+    FixedParamSpec fspec = make_fixed_param_spec(n_params);
+
+    std::vector<double> results(nsim, NA_REAL);
+    double* res_ptr = results.data();
+
+#ifdef _OPENMP
+    if (num_cores > 1) omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel if(num_cores > 1)
+    {
+        Eigen::VectorXd y_b(n), dead_b(n), params0(n_params);
+        Eigen::MatrixXd X_b(n, p);
+
+#pragma omp for schedule(dynamic)
+        for (int b = 0; b < nsim; ++b) {
+            const int* ic = i_ptr + (size_t)b * n;
+            const int* wc = w_ptr + (size_t)b * n;
+
+            int n_t = 0, n_c = 0;
+            for (int i = 0; i < n; ++i) {
+                const int r  = ic[i] - 1;
+                const int wt = (wc[i] == 1) ? 1 : 0;
+                X_b(i, 0) = 1.0;
+                X_b(i, 1) = static_cast<double>(wt);
+                for (int j = 0; j < p_cov; ++j)
+                    X_b(i, j + 2) = xc_ptr[(size_t)j * n_full + r];
+                y_b(i)    = (wt && mult != 1.0) ? y0_ptr[r] * mult : y0_ptr[r];
+                dead_b(i) = static_cast<double>(dead_ptr[r]);
+                n_t += wt;
+                n_c += (1 - wt);
+            }
+            if (n_t < 2 || n_c < 2) continue;
+
+            params0.setZero();
+            WeibullAFTLikelihood fun(y_b, dead_b, X_b);
+            LikelihoodFitResult fit = optimize_fixed_likelihood(
+                fun, params0, fspec, 100, 1e-8, "lbfgs", "", 0, nullptr);
+            if (fit.converged && fit.params.size() > 1 && std::isfinite(fit.params[1]))
+                res_ptr[b] = fit.params[1];
+        }
+    }
+    return wrap(results);
 }
 
 //' @title Fast Weibull AFT Regression (C++)

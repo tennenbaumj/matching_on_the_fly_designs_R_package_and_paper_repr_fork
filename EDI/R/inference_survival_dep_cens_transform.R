@@ -229,17 +229,37 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		},
 		#' @description Computes a score two-sided p-value, falling back to the asymptotic test when unavailable.
 		#' @param delta Null treatment-effect value. Default 0.
-		compute_score_two_sided_pval = function(delta = 0){
-			p = tryCatch(super$compute_score_two_sided_pval(delta = delta), error = function(e) NA_real_)
-			if (!is.finite(p)) return(p)
-			asymp = tryCatch(super$compute_asymp_two_sided_pval(delta = delta), error = function(e) NA_real_)
-			if (is.finite(asymp) && asymp > 0.05 && p < 0.01) {
-				private$cache_nonestimable_se("dep_cens_transform_score_pvalue_unstable")
-				return(NA_real_)
+			compute_score_two_sided_pval = function(delta = 0){
+				p = tryCatch(super$compute_score_two_sided_pval(delta = delta), error = function(e) NA_real_)
+				if (!is.finite(p)) return(p)
+				asymp = tryCatch(super$compute_asymp_two_sided_pval(delta = delta), error = function(e) NA_real_)
+				if (is.finite(asymp) && asymp > 0.05 && p < 0.01) {
+					private$cache_nonestimable_se("dep_cens_transform_score_pvalue_unstable")
+					return(NA_real_)
+				}
+				p
+			},
+			#' @description Computes a likelihood-ratio confidence interval, reporting
+			#'   unstable inversion failures as explicitly non-estimable.
+			#' @param alpha Significance level. Default 0.05.
+			compute_lik_ratio_confidence_interval = function(alpha = 0.05){
+				ci = tryCatch(
+					super$compute_lik_ratio_confidence_interval(alpha = alpha),
+					error = function(e){
+						msg = if (length(e$message) == 0L) "" else e$message
+						if (!grepl("'names' attribute", msg, fixed = TRUE)) stop(e)
+						private$cache_nonestimable_se("dep_cens_transform_lik_ratio_ci_unavailable")
+						c(NA_real_, NA_real_)
+					}
+				)
+				if (length(ci) != 2L || !all(is.finite(as.numeric(ci[1:2])))) {
+					private$cache_nonestimable_se("dep_cens_transform_lik_ratio_ci_unavailable")
+					ci = c(NA_real_, NA_real_)
+				}
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+				ci
 			}
-			p
-		}
-	),
+		),
 	private = list(
 		dep_cens_bootstrap_ci_max_abs = 2,
 		dep_cens_validate_bootstrap_ci = function(ci, alpha = 0.05){

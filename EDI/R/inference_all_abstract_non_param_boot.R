@@ -668,6 +668,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 		boot_distr_cache = list(),
 		jack_distr_cache = list(),
 		bootstrap_extreme_estimate_threshold = 1e6,
+		bootstrap_extreme_ci_width_threshold = 5,
 		assert_valid_bootstrap_type = function(bootstrap_type){
 			if (is.null(bootstrap_type)) return(invisible(NULL))
 			if (should_run_asserts()) {
@@ -752,7 +753,13 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			if (any(abs(ci[1:2]) > max_abs)) return(TRUE)
 			scale_ref = max(1, abs(as.numeric(est)[1L]), na.rm = TRUE)
 			width = abs(diff(ci[1:2]))
-			is.finite(width) && width > max_abs * scale_ref
+			max_width = min(
+				max_abs * scale_ref,
+				as.numeric(private$bootstrap_extreme_ci_width_threshold)[1L],
+				na.rm = TRUE
+			)
+			if (!is.finite(max_width) || max_width <= 0) max_width = max_abs * scale_ref
+			is.finite(width) && width > max_width
 		},
 		supports_reusable_bootstrap_worker = function(){
 			FALSE
@@ -1249,7 +1256,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				2 * est - stats::quantile(boot_distr, probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
 				}
 			},
-			studentized_interval_scale_unstable = function(theta, ci = NULL, se_hat = NULL, pivots = NULL, est = 0, alpha = 0.05, max_width_ratio = 10){
+			studentized_interval_scale_unstable = function(theta, ci = NULL, se_hat = NULL, pivots = NULL, est = 0, alpha = 0.05, max_width_ratio = 5){
 				theta = as.numeric(theta)
 				theta = theta[is.finite(theta)]
 				if (length(theta) < 5L) return(FALSE)

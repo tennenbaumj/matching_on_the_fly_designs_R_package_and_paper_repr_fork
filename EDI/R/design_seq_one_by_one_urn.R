@@ -22,7 +22,7 @@ DesignSeqOneByOneUrn = R6::R6Class("DesignSeqOneByOneUrn",
 		#' @param  n  		The sample size.
 		#' @param verbose A flag for verbosity.
 		#' @param missingness_method How to handle missing values in covariates.
-		#' @param model_formula A formula object.
+		#' @param design_formula A formula object.
 		#' @param seed Integer seed for reproducibility.
 		#' @return  A new `DesignSeqOneByOneUrn` object
 		#'
@@ -35,7 +35,7 @@ DesignSeqOneByOneUrn = R6::R6Class("DesignSeqOneByOneUrn",
 
 						verbose = FALSE,
 				missingness_method = "impute",
-				model_formula = ~ .,
+				design_formula = ~ .,
 				seed = NULL
 			) {
 			if (should_run_asserts()) {
@@ -43,7 +43,7 @@ DesignSeqOneByOneUrn = R6::R6Class("DesignSeqOneByOneUrn",
 				assertNumber(beta, lower = 0)
 			}
 
-			super$initialize(response_type, 0.5, include_is_missing_as_a_new_feature, n, verbose, missingness_method, model_formula, seed = seed)
+			super$initialize(response_type, 0.5, include_is_missing_as_a_new_feature, n, verbose, missingness_method, design_formula, seed = seed)
 			
 			private$alpha = alpha
 			private$beta = beta

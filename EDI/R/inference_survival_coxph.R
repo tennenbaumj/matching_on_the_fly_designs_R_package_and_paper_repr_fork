@@ -442,6 +442,22 @@ InferenceSurvivalCoxPHRegr = R6::R6Class("InferenceSurvivalCoxPHRegr",
 					vcov = matrix(NA_real_, ncol(X_fit) + 1, ncol(X_fit) + 1)
 				)
 			})
+		},
+		compute_fast_rand_bootstrap_distr = function(y0_full, rand_bootstrap_draws, delta, transform_responses, zero_one_logit_clamp = .Machine$double.eps){
+			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
+			if (delta != 0 && !identical(transform_responses, "log")) return(NULL)
+			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
+			if (is.null(mats)) return(NULL)
+			Xc = if (!is.null(private$cox_X_fit_cache) && ncol(private$cox_X_fit_cache) > 1L) {
+				as.matrix(private$cox_X_fit_cache[, -1L, drop = FALSE])
+			} else {
+				X_cov = private$get_X()
+				if (!is.null(X_cov) && ncol(as.matrix(X_cov)) > 0L) as.matrix(X_cov) else matrix(numeric(0), nrow = private$n, ncol = 0L)
+			}
+			compute_coxph_rand_bootstrap_parallel_cpp(
+				as.numeric(y0_full), as.integer(private$dead), Xc, mats$i_mat, mats$w_mat,
+				as.numeric(delta), private$n_cpp_threads(ncol(mats$w_mat))
+			)
 		}
 	)
 )

@@ -144,9 +144,9 @@ InferenceSurvivalRestrictedMeanDiff = R6::R6Class("InferenceSurvivalRestrictedMe
 			if (delta != 0 && !identical(transform_responses, "log")) return(NULL)
 			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
 			if (is.null(mats)) return(NULL)
-			compute_survival_stat_diff_rand_bootstrap_serial_cpp(
+			compute_survival_stat_diff_rand_bootstrap_parallel_cpp(
 				as.numeric(y0_full), as.integer(private$dead), mats$i_mat, mats$w_mat,
-				as.numeric(delta), "restricted_mean"
+				as.numeric(delta), TRUE, private$n_cpp_threads(ncol(mats$w_mat))
 			)
 		},
 		weighted_survival_stat_for_group = function(y, dead, row_weights, requested_stat = c("median", "restricted_mean")){
