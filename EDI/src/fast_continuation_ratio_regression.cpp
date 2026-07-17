@@ -194,6 +194,7 @@ List fast_continuation_ratio_regression_cpp(SEXP X_sexp, SEXP y_sexp, int maxit 
         Named("alpha") = fit.params.head(n_alpha),
         Named("beta_full") = fit.params,
         Named("params") = fit.params,
+        Named("neg_loglik") = fit.value,
         Named("X_aug") = X_aug,
         Named("z") = z,
         Named("converged") = fit.converged,
@@ -259,6 +260,7 @@ List fast_continuation_ratio_regression_with_var_cpp(SEXP X_sexp, SEXP y_sexp, i
     return List::create(
         Named("b") = fit.params.tail(p),
         Named("ssq_b_j") = ssq_b_j,
+        Named("neg_loglik") = fit.value,
         Named("vcov") = vcov_sexp,
         Named("converged") = fit.converged,
         Named("params") = fit.params,

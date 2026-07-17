@@ -5,6 +5,7 @@ make_seq_design_for_bayes_boot = function(response_type, y){
 	for (i in seq_along(y)) {
 		des$add_one_subject_to_experiment_and_assign(data.frame(x1 = i / 10))
 	}
+	des$overwrite_all_subject_assignments(rep(c(-1, 1), length.out = length(y)))
 	des$add_all_subject_responses(y)
 	des
 }
@@ -14,6 +15,7 @@ make_survival_design_for_bayes_boot = function(y, dead){
 	for (i in seq_along(y)) {
 		des$add_one_subject_to_experiment_and_assign(data.frame(x1 = i / 10))
 	}
+	des$overwrite_all_subject_assignments(rep(c(-1, 1), length.out = length(y)))
 	des$add_all_subject_responses(ys = y, deads = dead)
 	des
 }

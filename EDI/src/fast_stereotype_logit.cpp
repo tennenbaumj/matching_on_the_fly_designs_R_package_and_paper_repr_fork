@@ -868,6 +868,7 @@ List fast_stereotype_logit_cpp(const Rcpp::NumericMatrix& X, const Rcpp::Numeric
             Named("alpha") = params.head(n_alpha),
             Named("scores_raw") = (model.num_gamma() > 0) ? params.tail(model.num_gamma()) : VectorXd(0),
             Named("params") = params,
+            Named("neg_loglik") = fit.value,
             Named("converged") = fit.converged
         );
     }
@@ -876,6 +877,7 @@ List fast_stereotype_logit_cpp(const Rcpp::NumericMatrix& X, const Rcpp::Numeric
         Named("alpha") = params.head(n_alpha),
         Named("scores_raw") = (model.num_gamma() > 0) ? params.tail(model.num_gamma()) : VectorXd(0),
         Named("params") = params,
+        Named("neg_loglik") = fit.value,
         Named("converged") = fit.converged,
         Named("fisher_information") = (-model.loglik_hessian(params))
     );

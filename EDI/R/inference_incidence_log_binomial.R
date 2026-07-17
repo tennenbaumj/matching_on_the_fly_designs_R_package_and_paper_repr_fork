@@ -78,8 +78,7 @@ InferenceIncidLogBinomial = R6::R6Class("InferenceIncidLogBinomial",
 				fit_ok = function(mod, X_fit, keep){
 					j_treat = match(2L, keep)
 					if (!isTRUE(private$is_log_binomial_fit_reasonable(mod, X_fit, j_treat))) return(FALSE)
-					if (estimate_only) return(TRUE)
-					is.finite(mod$ssq_b_j %||% mod$ssq_b_2)
+					TRUE
 				}
 			)
 			private$cached_mod = attempt$fit

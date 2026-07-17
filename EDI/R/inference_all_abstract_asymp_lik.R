@@ -325,7 +325,12 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 					if (accepts_start) spec$fit_null(delta, start = start) else spec$fit_null(delta),
 					error = function(e) NULL
 				)
-				extract_start = spec$extract_start %||% function(fit_obj) NULL
+				extract_start = spec$extract_start %||% function(fit_obj) {
+					fit_obj$params %||% fit_obj$b %||% {
+						co = fit_obj$coefficients
+						if (is.numeric(co)) as.numeric(co) else NULL
+					}
+				}
 				last_start_val = if (warm_enabled && accepts_start && !is.null(fit)) {
 					tryCatch(extract_start(fit), error = function(e) NULL)
 				} else NULL
@@ -384,6 +389,12 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				entry$null_fit = null_fit
 				entry$null_params = as.numeric(null_params)
 				entry$invalid = FALSE
+			}
+			if (isTRUE(include_null_fit) && !is.null(warm_cache_key) && !is.null(entry$null_params)) {
+				cache_state = private$get_likelihood_null_warm_state(warm_cache_key)
+				if (is.null(cache_state) || is.null(cache_state$start)) {
+					private$set_likelihood_null_warm_state(warm_cache_key, delta = delta, start = as.numeric(entry$null_params))
+				}
 			}
 
 			if (isTRUE(include_score) && !is.null(entry$null_fit) && is.null(entry$score)) {
@@ -497,7 +508,11 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 						delta = delta,
 						testing_type = testing_type,
 						spec = spec,
-						warm_cache_key = paste0(testing_type, "_ci")
+						warm_cache_key = if (identical(testing_type, "score")) {
+							"likelihood_test:score"
+						} else {
+							paste0(testing_type, "_ci")
+						}
 					)
 				}
 			} else {
@@ -632,7 +647,12 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			j = as.integer(spec$j)
 			fit_null_formals = tryCatch(names(formals(spec$fit_null)), error = function(e) character())
 			accepts_start = "start" %in% fit_null_formals
-			extract_start = spec$extract_start %||% function(fit_obj) NULL
+			extract_start = spec$extract_start %||% function(fit_obj) {
+				fit_obj$params %||% fit_obj$b %||% {
+					co = fit_obj$coefficients
+					if (is.numeric(co)) as.numeric(co) else NULL
+				}
+			}
 			# The CI root search is not sequential; a warm start from the full fit can
 			# send null fits to a path-dependent local solution.
 			full_start = NULL

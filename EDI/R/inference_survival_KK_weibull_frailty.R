@@ -544,7 +544,7 @@ InferenceAbstractKKWeibullFrailtyOneLik = R6::R6Class("InferenceAbstractKKWeibul
 			private$cache_nonestimable_estimate("kk_weibull_frailty_combined_fit_failed")
 			invisible(NULL)
 		},
-		supports_likelihood_tests = function() FALSE,
+		supports_likelihood_tests = function() TRUE,
 		get_likelihood_test_spec = function(){
 			private$shared_combined_likelihood(estimate_only = FALSE)
 			ctx = private$cached_values$likelihood_test_context
@@ -574,10 +574,11 @@ InferenceAbstractKKWeibullFrailtyOneLik = R6::R6Class("InferenceAbstractKKWeibul
 				extract_start = function(fit){
 					c(as.numeric(fit$b), as.numeric(fit$log_sigma_eps), as.numeric(fit$log_sigma_u))
 				},
-				score = function(fit) rep(NA_real_, p + 2L),
-				observed_information = function(fit) matrix(NA_real_, p + 2L, p + 2L),
-				fisher_information = function(fit) matrix(NA_real_, p + 2L, p + 2L),
-				information = function(fit) matrix(NA_real_, p + 2L, p + 2L),
+				score = function(fit) as.numeric(fit$score %||% rep(NA_real_, p + 2L)),
+				observed_information = function(fit){
+					m = fit$observed_information
+					if (!is.null(m) && is.matrix(m)) as.matrix(m) else matrix(NA_real_, p + 2L, p + 2L)
+				},
 				neg_loglik = function(fit) as.numeric(fit$neg_loglik %||% fit$neg_ll)
 			)
 		},

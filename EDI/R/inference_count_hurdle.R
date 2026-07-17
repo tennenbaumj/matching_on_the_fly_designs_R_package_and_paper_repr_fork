@@ -341,7 +341,7 @@ InferenceCountHurdleNegBin = R6::R6Class("InferenceCountHurdleNegBin",
 			TRUE
 		},
 		supports_lik_ratio_param_bootstrap_confidence_interval = function(){
-			FALSE
+			TRUE
 		},
 		get_likelihood_test_spec = function(){
 			private$shared(estimate_only = FALSE)

@@ -270,6 +270,13 @@ weighted_weibull_bootstrap_surrogate_fit = function(time, dead, X, row_weights, 
 # Creates a fork cluster and caps OMP/BLAS threads on each worker to 1.
 # Returns the cluster without storing it — callers decide where it lives.
 make_configured_fork_cluster = function(n_cores) {
+  cl = tryCatch(
+    parallel::makeForkCluster(n_cores),
+    error = function(e) NULL
+  )
+  if (!is.null(cl)) {
+    return(cl)
+  }
   default_port = tryCatch(parallel:::getClusterOption("port"), error = function(e) NA_integer_)
   candidate_ports = unique(as.integer(c(default_port, sample.int(20000L, 20L) + 10000L)))
   candidate_ports = candidate_ports[is.finite(candidate_ports) & candidate_ports > 0L & candidate_ports <= 65535L]
@@ -284,6 +291,15 @@ make_configured_fork_cluster = function(n_cores) {
       }
     )
     if (!is.null(cl)) break
+  }
+  if (is.null(cl)) {
+    cl = tryCatch(
+      parallel::makeCluster(n_cores),
+      error = function(e) {
+        last_error <<- e
+        NULL
+      }
+    )
   }
   if (is.null(cl)) {
     stop(
@@ -492,9 +508,10 @@ get_bootstrap_dispatch_policy = function() {
 	      "^InferenceCountKKHurdlePoissonOneLik$" = "percentile",
 	      "^InferenceCountKKCondPoissonOneLik$" = "percentile",
 	      "^InferencePropZeroOneInflatedBetaRegr$" = "percentile",
-	      "^InferencePropFractionalLogit$" = "percentile",
+      "^InferencePropFractionalLogit$" = "percentile",
 	      "^InferenceCountHurdleNegBin$" = "percentile",
-      "^InferenceContinRobustRegr$" = "percentile"
+      "^InferenceContinRobustRegr$" = "percentile",
+      "^InferenceCustom(Asymp|Rand|Boot)$" = "percentile"
     ),
     design_class_overrides = list(
       DesignFixedBlockedCluster = c(
@@ -1077,7 +1094,8 @@ edi_parallel_dispatch_policy = function(inference_class, response_type, operatio
 }
 edi_bootstrap_dispatch_policy = function(inference_class, object = NULL) {
   config = edi_env$bootstrap_dispatch_policy_config
-  inference_class = as.character(inference_class[[1]])
+  inference_classes = as.character(inference_class)
+  inference_class = inference_classes[[1]]
   overrides = config$inference_class_overrides
   design_overrides = config$design_class_overrides
   default_type = config$default_type
@@ -1101,7 +1119,7 @@ edi_bootstrap_dispatch_policy = function(inference_class, object = NULL) {
           design_map = design_overrides[[design_class]]
           for (pattern in names(design_map)) {
             if (is.na(pattern) || pattern == "") next
-            if (grepl(pattern, inference_class, perl = TRUE)) {
+            if (any(grepl(pattern, inference_classes, perl = TRUE))) {
               return(finalize_type(design_map[[pattern]]))
             }
           }
@@ -1112,7 +1130,7 @@ edi_bootstrap_dispatch_policy = function(inference_class, object = NULL) {
   if (!is.null(overrides) && length(overrides) > 0L) {
     for (pattern in names(overrides)) {
       if (is.na(pattern) || pattern == "") next
-      if (grepl(pattern, inference_class, perl = TRUE)) {
+      if (any(grepl(pattern, inference_classes, perl = TRUE))) {
         return(finalize_type(overrides[[pattern]]))
       }
     }

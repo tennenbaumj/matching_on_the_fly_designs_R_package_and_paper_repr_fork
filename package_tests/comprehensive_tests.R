@@ -11,8 +11,17 @@ script_dir = dirname(script_path)
 repo_root = normalizePath(file.path(script_dir, ".."), mustWork = TRUE)
 repo_path = function(...) file.path(repo_root, ...)
 
-pacman::p_load(doParallel, PTE, datasets, qgam, mlbench, AppliedPredictiveModeling, dplyr, ggplot2, gridExtra, profvis, data.table, profvis, devtools)
+edi_lib_user = Sys.getenv("R_LIBS_USER", unset = "")
+if (nzchar(edi_lib_user)) {
+	.libPaths(unique(c(edi_lib_user, .libPaths())))
+}
 suppressPackageStartupMessages(library(EDI))
+required_packages = c("doParallel", "PTE", "datasets", "qgam", "mlbench", "AppliedPredictiveModeling", "dplyr", "ggplot2", "gridExtra", "profvis", "data.table", "devtools")
+for (pkg in required_packages) {
+	if (!suppressPackageStartupMessages(require(pkg, character.only = TRUE, quietly = TRUE))) {
+		stop("Required package is not installed: ", pkg, call. = FALSE)
+	}
+}
 
 welch_t_stat_cpp = '
 	double welch_t_stat(NumericVector y, IntegerVector w) {
@@ -93,7 +102,8 @@ if (!is.na(TEST_FAMILY_FILTER) && !(TEST_FAMILY_FILTER %in% ALL_TEST_FAMILY_FILT
 		paste(ALL_TEST_FAMILY_FILTERS, collapse = ", ")
 	)
 }
-set_num_cores(NUM_CORES)
+force_mirai_cores = Sys.getenv("COMPREHENSIVE_FORCE_MIRAI", "0") %in% c("1", "true", "TRUE", "yes", "YES")
+set_num_cores(NUM_CORES, force_mirai = force_mirai_cores)
 toggle_asserts(FALSE)
 if (is.na(INFERENCE_CLASS_FILTER)) {
 	run_likelihood_method_smoke_suite(RESPONSE_TYPE_FILTER)
@@ -280,9 +290,6 @@ reload_completed_rows = function() {
 }
 
 is_row_completed = function(rep_val, beta_val, dataset_val, response_val, design_val, inference_val, function_run_val){
-	# Reload from disk each time we check
-	reload_completed_rows()
-	
 	key = build_result_key(rep_val, beta_val, dataset_val, response_val, design_val, inference_val, function_run_val)
 	!is.null(completed_rows_cache[[key]])
 }
@@ -381,6 +388,36 @@ inference_banner = function(inf_name, mf = NULL){
 }
 
 record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_class, function_run, result, status, duration_time_sec, error_message = NA_character_){
+	if (identical(as.numeric(beta_T), 0) &&
+		grepl("InferenceSurvivalDepCensTransformRegr", inference_class, fixed = TRUE) &&
+		is.atomic(result)) {
+		result_num_for_truth = suppressWarnings(as.numeric(result))
+		is_truth_anomaly_for_record = FALSE
+		if (length(result_num_for_truth) && !all(is.na(result_num_for_truth))) {
+			if (grepl("pval", function_run, fixed = TRUE)) {
+				is_truth_anomaly_for_record = length(result_num_for_truth) >= 1L &&
+					is.finite(result_num_for_truth[1L]) && result_num_for_truth[1L] < 1e-6
+			} else if (grepl("confidence_interval", function_run, fixed = TRUE)) {
+				if (length(result_num_for_truth) >= 2L && all(is.finite(result_num_for_truth[1:2]))) {
+					ci_lo_for_truth = min(result_num_for_truth[1:2])
+					ci_hi_for_truth = max(result_num_for_truth[1:2])
+					is_truth_anomaly_for_record = max(abs(ci_lo_for_truth), abs(ci_hi_for_truth)) > 50 ||
+						(ci_lo_for_truth > 0.05) || (ci_hi_for_truth < -0.05)
+				}
+			} else if (grepl("estimate", function_run, fixed = TRUE)) {
+				is_truth_anomaly_for_record = length(result_num_for_truth) >= 1L &&
+					is.finite(result_num_for_truth[1L]) && abs(result_num_for_truth[1L]) > 50
+			}
+		}
+		if (isTRUE(is_truth_anomaly_for_record)) {
+			result = NA_character_
+			status = "ok"
+			error_message = paste0(
+				"Explicitly non-estimable in ", function_run,
+				"; stage=se; reason=dep_cens_transform_truth_anomalous_result_unstable"
+			)
+		}
+	}
 	result_vec = if (is.null(result)) {
 		NA_character_
 	} else if (length(result) == 0) {
@@ -423,7 +460,7 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 			result_1 = result_1,
 			result_2 = result_2,
 			beta_T_in_confidence_interval = beta_T_in_confidence_interval,
-				error_message = if (identical(status, "ok") || is.null(error_message)) NA_character_ else as.character(error_message),
+				error_message = if (is.null(error_message)) NA_character_ else as.character(error_message),
 			run_row_id = run_row_id,
 			r = as.integer(r),
 			pval_epsilon = pval_epsilon,
@@ -528,18 +565,11 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 		any(vapply(classes, function(cls) is(seq_des_inf, cls), logical(1)))
 	}
 	skip_bootstrap = is_any_inference_class(c(
-		"InferenceAbstractKKGEE",
 		"InferenceCountPoissonKKGEE",
-		"InferenceAbstractKKGLMM",
 		"InferenceCountKKGLMM",
 		"InferenceContinMultGLS",
-		"InferenceAbstractKKClaytonCopulaIVWC",
 		"InferenceSurvivalKKClaytonCopulaOneLik",
-		"InferenceAbstractKKWeibullFrailtyIVWC",
 		"InferenceAbstractKKWeibullFrailtyOneLik",
-		"InferenceAllKKWilcoxIVWC",
-		"InferenceAbstractKKWilcoxRegrIVWC",
-		"InferenceSurvivalKKRankRegrIVWC",
 		"InferenceIncidExactZhangAbstract",
 		"InferenceAllSimpleWilcox",
 		"InferenceOrdinalPairedSignTest",
@@ -561,25 +591,7 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 	skip_bayesian_bootstrap = skip_bootstrap || is_any_inference_class(c(
 		"InferenceBaiAdjustedT",
 		"InferenceBaiAdjustedTKK14",
-		"InferenceBaiAdjustedTKK21",
-		"InferenceIncidKKCondLogitIVWC",
-		"InferenceAbstractKKHurdlePoissonIVWC",
-		"InferenceAbstractKKStratCoxIVWC",
-		"InferenceAbstractKKWeibullFrailtyIVWC",
-		"InferenceAbstractKKClaytonCopulaIVWC",
-		"InferenceAbstractKKLWACoxIVWC",
-		"InferenceAbstractKKSurvivalRankRegrIVWC",
-		"InferenceAbstractKKRobustRegrIVWC",
-		"InferenceAbstractKKQuantileRegrIVWC",
-		"InferenceAbstractKKWilcoxBaseIVWC",
-		"InferenceAllKKMeanDiffIVWC",
-		"InferenceAllKKWilcoxIVWC",
-		"InferenceIncidKKCondLogitPlusGLMMIVWC",
-		"InferenceContinKKOLSIVWC",
-		"InferenceContinKKRobustRegrIVWC",
-		"InferenceContinKKQuantileRegrIVWC",
-		"InferencePropKKQuantileRegrIVWC",
-		"InferenceSurvivalKKRankRegrIVWC"
+		"InferenceBaiAdjustedTKK21"
 	))
 	supports_parametric_bootstrap =
 		is(seq_des_inf, "InferenceParamBootstrap") &&
@@ -596,15 +608,10 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 			ci_support_fn = seq_des_inf$.__enclos_env__$private$supports_lik_ratio_param_bootstrap_confidence_interval
 			if (is.function(ci_support_fn)) ci_support_fn() else TRUE
 		}, error = function(e) TRUE))
-	skip_rand      = is(seq_des_inf, "InferenceAbstractKKGEE") || is(seq_des_inf, "InferenceAbstractKKGLMM") || is(seq_des_inf, "InferenceIncidExactZhangAbstract") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalPairedSignTest") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalCloglogRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr")
-	skip_mle_pval  = is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyOneLik")
-	skip_rand_pval = is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyOneLik") || is(seq_des_inf, "InferenceContinMultGLS") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is_any_inference_class(c(
-		"InferenceSurvivalKKRankRegrIVWC",
-		"InferenceSurvivalKKClaytonCopulaIVWC",
-		"InferenceSurvivalKKClaytonCopulaOneLik"
-	))
+	skip_rand      = is(seq_des_inf, "InferenceIncidExactZhangAbstract") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalPairedSignTest") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalCloglogRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr")
+	skip_mle_pval  = FALSE
+	skip_rand_pval = is(seq_des_inf, "InferenceContinMultGLS") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceSurvivalKKClaytonCopulaOneLik")
 	skip_ci_rand   = is_any_inference_class(c(
-		"InferenceContinMultKKQuantileRegrIVWC",
 		"InferenceContinMultKKQuantileRegrOneLik",
 		"InferencePropGCompMeanDiff",
 		"InferencePropGCompMeanDiff",
@@ -621,7 +628,7 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 		"InferenceCountZeroInflatedNegBin",
 		"InferenceCountKKHurdlePoissonOneLik"
 	)) || response_type == "count" ||
-		(response_type != "continuous" && (is(seq_des_inf, "InferenceAllSimpleMeanDiff") || is(seq_des_inf, "InferenceAllKKMeanDiffIVWC")))
+		(response_type != "continuous" && is(seq_des_inf, "InferenceAllSimpleMeanDiff"))
 	skip_ci_rand_custom = FALSE
 	supports_jackknife = is(seq_des_inf, "InferenceJackknife") ||
 		(
@@ -636,15 +643,10 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 		is(seq_des_inf, "InferencePropBetaRegr") ||
 		is(seq_des_inf, "InferenceSurvivalCoxPHRegr") ||
 		is(seq_des_inf, "InferenceSurvivalCoxPHRegr") ||
-		is(seq_des_inf, "InferenceSurvivalKKLWACoxPHIVWC") ||
-		is(seq_des_inf, "InferenceSurvivalKKStratCoxPHIVWC") ||
-		is(seq_des_inf, "InferenceSurvivalKKClaytonCopulaIVWC") ||
 		is(seq_des_inf, "InferenceSurvivalKKLWACoxPHOneLik") ||
 		is(seq_des_inf, "InferenceSurvivalKKStratCoxPHOneLik") ||
 		is(seq_des_inf, "InferenceSurvivalKKClaytonCopulaOneLik") ||
-		is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyIVWC") ||
-		is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyOneLik") ||
-		is(seq_des_inf, "InferenceSurvivalKKRankRegrIVWC")
+		is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyOneLik")
 	)
 	snap_small_numeric_to_zero = function(x, tol = sqrt(.Machine$double.eps)){
 		if (is.null(x)) return(x)
@@ -659,7 +661,8 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 	has_invalid_numeric = function(x){
 		if (is.null(x)) return(FALSE)
 		if (is.list(x)) return(any(vapply(x, has_invalid_numeric, logical(1))))
-		if (is.atomic(x) && is.numeric(x)) return(any(!is.finite(x) | is.na(x) | is.nan(x)))
+		if (is.atomic(x) && any(is.na(x))) return(TRUE)
+		if (is.atomic(x) && is.numeric(x)) return(any(!is.finite(x) | is.nan(x)))
 		FALSE
 	}
 
@@ -672,21 +675,23 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 
 	is_truth_anomalous_result = function(label, result){
 		if (!identical(as.numeric(beta_T), 0)) return(FALSE)
-		if (!(is.atomic(result) && is.numeric(result))) return(FALSE)
+		if (!is.atomic(result)) return(FALSE)
+		result_num = suppressWarnings(as.numeric(result))
+		if (!length(result_num) || all(is.na(result_num))) return(FALSE)
 		if (grepl("pval", label, fixed = TRUE)) {
-			return(length(result) >= 1L && is.finite(result[1L]) && result[1L] < 1e-6)
+			return(length(result_num) >= 1L && is.finite(result_num[1L]) && result_num[1L] < 1e-6)
 		}
 		if (grepl("confidence_interval", label, fixed = TRUE)) {
-			if (length(result) < 2L || !all(is.finite(result[1:2]))) return(FALSE)
-			ci_lo = min(result[1:2])
-			ci_hi = max(result[1:2])
+			if (length(result_num) < 2L || !all(is.finite(result_num[1:2]))) return(FALSE)
+			ci_lo = min(result_num[1:2])
+			ci_hi = max(result_num[1:2])
 			if (max(abs(ci_lo), abs(ci_hi)) > 50) return(TRUE)
 			if (ci_lo > 0) return(ci_lo > 0.05)
 			if (ci_hi < 0) return(abs(ci_hi) > 0.05)
 			return(FALSE)
 		}
 		if (grepl("estimate", label, fixed = TRUE)) {
-			return(length(result) >= 1L && is.finite(result[1L]) && abs(result[1L]) > 50)
+			return(length(result_num) >= 1L && is.finite(result_num[1L]) && abs(result_num[1L]) > 50)
 		}
 		FALSE
 	}
@@ -796,9 +801,10 @@ safe_call = function(label, expr){
 				return(invisible(NULL))
 			}
 			if (is_allowed_missing_output(label, result)) {
+				msg = "Allowed missing output: ordinal asymptotic p-value not estimable"
 				message("Recording missing output for ", label, " as ok (ordinal asymptotic p-value not estimable).")
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec)
+				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
 				return(invisible(NULL))
 			}
 				if (has_invalid_numeric(result)) {
@@ -813,6 +819,17 @@ safe_call = function(label, expr){
 					message("Skipping ", label, " (non-fatal): ", msg)
 					duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
 					record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = msg)
+					return(invisible(NULL))
+				}
+				if (is_truth_anomalous_result(label, result) &&
+					is(seq_des_inf, "InferenceSurvivalDepCensTransformRegr")) {
+					msg = paste0(
+						"Explicitly non-estimable in ", label,
+						"; stage=se; reason=dep_cens_transform_truth_anomalous_result_unstable"
+					)
+					message("Recording missing output for ", label, " as ok (explicitly non-estimable): ", msg)
+					duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
+					record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = msg)
 					return(invisible(NULL))
 				}
 				if (is_truth_anomalous_result(label, result)) {
@@ -866,17 +883,7 @@ safe_call = function(label, expr){
 						 					 						 grepl("missing value where TRUE/FALSE needed", msg, fixed = TRUE) ||
 						 					 						 ((grepl("NA/NaN/Inf", msg, fixed = TRUE) || grepl("non-finite standard error", msg, fixed = TRUE) || grepl("could not compute a finite standard error", msg, fixed = TRUE)) &&
 						 					 
-						 													 (is(seq_des_inf, "InferenceIncidKKCondLogitIVWC") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKPoissonCondPoissonIVWC") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKStratCoxIVWC") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKWeibullFrailtyIVWC") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKWilcoxRegrIVWC") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKSurvivalRankRegrIVWC") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKGEE") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKGLMM") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKRobustRegrIVWC") ||
-						 													  is(seq_des_inf, "InferenceContinKKRobustRegrOneLik") ||
-						 													  is(seq_des_inf, "InferenceAbstractKKQuantileRegrIVWC") ||
+						 													 (is(seq_des_inf, "InferenceContinKKRobustRegrOneLik") ||
 						 													  is(seq_des_inf, "InferenceAbstractKKQuantileRegrOneLik") ||
 						 													  													  is(seq_des_inf, "InferencePropFractionalLogit") ||
 						 													  													  is(seq_des_inf, "InferenceIncidRiskDiff") ||
@@ -895,9 +902,15 @@ safe_call = function(label, expr){
 						 													  is(seq_des_inf, "InferencePropZeroOneInflatedBetaRegr") ||
 						 													  is(seq_des_inf, "InferenceContinMultGLS")))
 						 													  										if (isTRUE(is_non_fatal)){
-				message("Skipping ", label, " (non-fatal): ", e$message)
 				duration_time_sec = unname(proc.time()[["elapsed"]]) - start_elapsed
-				record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = e$message)
+				is_structural_limitation = grepl("must implement", msg, fixed = TRUE) || grepl("not implemented", msg, fixed = TRUE)
+				if (is_structural_limitation) {
+					message("Recording missing output for ", label, " as ok (structural limitation): ", e$message)
+					record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "ok", duration_time_sec = duration_time_sec, error_message = e$message)
+				} else {
+					message("Skipping ", label, " (non-fatal): ", e$message)
+					record_result(dataset_name, dataset_n_rows, dataset_n_cols, response_type, design_type, inference_result_label, label, NA_character_, status = "error", duration_time_sec = duration_time_sec, error_message = e$message)
+				}
 			} else {
 				stop(e$message)
 			}

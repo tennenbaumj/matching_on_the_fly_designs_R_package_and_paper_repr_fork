@@ -284,6 +284,7 @@ List fast_adjacent_category_logit_cpp(SEXP X_sexp, SEXP y_sexp, int maxit = 100,
         Named("b") = fit.params.tail(X.cols()),
         Named("alpha") = fit.params.head(K - 1),
         Named("params") = fit.params,
+        Named("neg_loglik") = fit.value,
         Named("converged") = fit.converged
     );
 }
@@ -385,6 +386,7 @@ List fast_adjacent_category_logit_with_var_cpp(SEXP X_sexp, SEXP y_sexp, int max
         Named("b") = fit.params.tail(X.cols()),
         Named("alpha") = fit.params.head(K - 1),
         Named("params") = fit.params,
+        Named("neg_loglik") = fit.value,
         Named("ssq_b_1") = ssq_b_1,
         Named("ssq_b_j") = ssq_b_1,
         Named("vcov") = vcov_sexp,

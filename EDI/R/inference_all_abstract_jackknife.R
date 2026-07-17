@@ -191,6 +191,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 			design_obj = private$des_obj
 			is_blocking_design = is(design_obj, "DesignBlocking") &&
 				isTRUE(tryCatch(design_obj$is_blocking_design(), error = function(e) FALSE))
+			if (resolved_unit == "block") return(FALSE)
 			if (resolved_unit %in% c("pair", "matched_set")) return(FALSE)
 			if (resolved_unit == "cluster" && !is_blocking_design) return(FALSE)
 			if (!is_blocking_design) return(FALSE)
@@ -276,7 +277,7 @@ InferenceJackknife = R6::R6Class("InferenceJackknife",
 			if (!is.finite(theta_j) || !is.finite(se_j) ||
 			    abs(theta_j) > private$bootstrap_extreme_estimate_threshold ||
 			    se_j > private$bootstrap_extreme_estimate_threshold ||
-			    abs(bias_j) > 3 * se_j) {
+			    abs(bias_j) > 2 * se_j) {
 				private$cache_nonestimable_se("jackknife_extreme_summary")
 				summary = list(estimate = NA_real_, bias = NA_real_, std_error = NA_real_, distribution = jack)
 				private$cached_values$jackknife_summary[[cache_key]] = summary

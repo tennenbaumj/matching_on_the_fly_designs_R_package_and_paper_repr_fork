@@ -184,7 +184,7 @@ public:
             operator()(p_plus, g_plus);
             H.col(i) = (g_plus - grad_at_params) / h;
         }
-        H = (H + H.transpose()) / 2.0;
+        H = (0.5 * (H + H.transpose())).eval();
         return H;
     }
 };
@@ -325,7 +325,7 @@ public:
                 operator()(p_plus, g_plus);
                 H.col(i) = (g_plus - grad_at_params) / h;
             }
-            H = (H + H.transpose()) / 2.0;
+            H = (0.5 * (H + H.transpose())).eval();
             return H;
         }
         const int total_p = params.size();
@@ -547,7 +547,9 @@ SEXP get_dep_cens_transform_hessian_cpp(
     Eigen::Map<const Eigen::VectorXd> params(params_vec.begin(), params_vec.size());
 
     DepCensTransformLikelihood fun(y, dead, X);
-    return wrap(-fun.hessian(params));
+    Eigen::MatrixXd H = -fun.hessian(params);
+    Eigen::MatrixXd Hsym = (0.5 * (H + H.transpose())).eval();
+    return wrap(Hsym);
 }
 
 // [[Rcpp::export]]

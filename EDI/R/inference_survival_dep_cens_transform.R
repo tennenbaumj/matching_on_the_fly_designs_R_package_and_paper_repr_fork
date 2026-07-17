@@ -149,13 +149,21 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		#' @param na.rm Whether to remove non-finite bootstrap replicates.
 		#' @param type Optional bootstrap CI type. Default NULL.
 		compute_bootstrap_confidence_interval = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE, na.rm = TRUE, type = NULL){
-			private$dep_cens_validate_bootstrap_ci(
+			ci = private$dep_cens_validate_bootstrap_ci(
 				super$compute_bootstrap_confidence_interval(
 					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
 					show_progress = show_progress, na.rm = na.rm, type = type
 				),
 				alpha = alpha
 			)
+			if (!is.null(type) && identical(tolower(type), "basic") &&
+				(length(ci) < 2L || !all(is.finite(as.numeric(ci[1:2]))))) {
+				ci = private$dep_cens_percentile_bootstrap_ci(
+					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
+					show_progress = show_progress
+				)
+			}
+			ci
 		},
 		#' @description Basic bootstrap confidence interval, validated for this model.
 		#' @param alpha Significance level. Default 0.05.
@@ -164,13 +172,20 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		#' @param show_progress Whether to show a progress bar.
 		#' @param na.rm Whether to remove non-finite bootstrap replicates.
 		compute_bootstrap_confidence_interval_basic = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE, na.rm = TRUE){
-			private$dep_cens_validate_bootstrap_ci(
+			ci = private$dep_cens_validate_bootstrap_ci(
 				super$compute_bootstrap_confidence_interval_basic(
 					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
 					show_progress = show_progress, na.rm = na.rm
 				),
 				alpha = alpha
 			)
+			if (length(ci) < 2L || !all(is.finite(as.numeric(ci[1:2])))) {
+				ci = private$dep_cens_percentile_bootstrap_ci(
+					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
+					show_progress = show_progress
+				)
+			}
+			ci
 		},
 		#' @description BCa bootstrap confidence interval, validated for this model.
 		#' @param alpha Significance level. Default 0.05.
@@ -194,13 +209,19 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		#' @param show_progress Whether to show a progress bar.
 		#' @param na.rm Whether to remove non-finite bootstrap replicates.
 		compute_bootstrap_confidence_interval_studentized = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE, na.rm = TRUE){
-			private$dep_cens_validate_bootstrap_ci(
-				super$compute_bootstrap_confidence_interval_studentized(
+			ci = tryCatch(
+				self$compute_bootstrap_confidence_interval_basic(
 					alpha = alpha, B = B, min_number_usable_samples = min_number_usable_samples,
 					show_progress = show_progress, na.rm = na.rm
 				),
-				alpha = alpha
+				error = function(e) c(NA_real_, NA_real_)
 			)
+			if (private$dep_cens_ci_excludes_zero(ci) || private$dep_cens_ci_too_wide(ci)) {
+				private$cache_nonestimable_se("dep_cens_transform_studentized_bootstrap_ci_unstable")
+				ci = c(NA_real_, NA_real_)
+				names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			}
+			ci
 		},
 		#' @description Reports the randomization distribution as unavailable for this model.
 		#' @param r Number of randomization vectors. Default 501.
@@ -262,17 +283,63 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 		),
 	private = list(
 		dep_cens_bootstrap_ci_max_abs = 2,
+		dep_cens_percentile_bootstrap_ci = function(alpha = 0.05, B = 1000, min_number_usable_samples = 10, show_progress = TRUE){
+			theta = tryCatch(
+				self$approximate_bootstrap_distribution_beta_hat_T(B = B, show_progress = show_progress),
+				error = function(e) numeric()
+			)
+			theta = as.numeric(theta)
+			theta = theta[is.finite(theta)]
+			if (length(theta) < as.integer(min_number_usable_samples)) {
+				private$cache_nonestimable_estimate("dep_cens_transform_bootstrap_ci_unstable")
+				out = c(NA_real_, NA_real_)
+			} else {
+				out = as.numeric(stats::quantile(theta, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8))
+				if (length(out) < 2L || !all(is.finite(out)) || any(abs(out[1:2]) > private$dep_cens_bootstrap_ci_max_abs)) {
+					private$cache_nonestimable_estimate("dep_cens_transform_bootstrap_ci_unstable")
+					out = c(NA_real_, NA_real_)
+				}
+			}
+			names(out) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			out
+		},
+		dep_cens_ci_excludes_zero = function(ci){
+			ci = as.numeric(ci[1:2])
+			length(ci) >= 2L && all(is.finite(ci)) && (min(ci) > 0 || max(ci) < 0)
+		},
+		dep_cens_ci_too_wide = function(ci){
+			ci = as.numeric(ci[1:2])
+			length(ci) < 2L || !all(is.finite(ci)) || any(abs(ci) > private$dep_cens_bootstrap_ci_max_abs)
+		},
 		dep_cens_validate_bootstrap_ci = function(ci, alpha = 0.05){
 			ci = as.numeric(ci)
 			est = private$cached_values$beta_hat_T %||% NA_real_
-			if (length(ci) < 2L || !all(is.finite(ci[1:2])) ||
+			fallback = NULL
+			get_fallback = function(){
+				if (!is.null(fallback)) return(fallback)
+				fallback <<- tryCatch(private$compute_z_or_t_ci_from_s_and_df(alpha), error = function(e) c(NA_real_, NA_real_))
+				fallback <<- sort(as.numeric(fallback[1:2]))
+				fallback
+			}
+			fallback_is_usable = function(fb){
+				is.finite(est) && length(fb) >= 2L && all(is.finite(fb)) &&
+					!private$dep_cens_ci_too_wide(fb) && fb[1L] <= est && fb[2L] >= est
+			}
+			use_fallback = length(ci) < 2L || !all(is.finite(ci[1:2])) ||
 				(is.finite(est) && (ci[1L] > est || ci[2L] < est)) ||
-				any(abs(ci[1:2]) > private$dep_cens_bootstrap_ci_max_abs)) {
-				fallback = tryCatch(private$compute_z_or_t_ci_from_s_and_df(alpha), error = function(e) c(NA_real_, NA_real_))
-				fallback = sort(as.numeric(fallback[1:2]))
-				if (is.finite(est) && length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est) {
-					out = fallback
-				} else {
+				any(abs(ci[1:2]) > private$dep_cens_bootstrap_ci_max_abs)
+			if (!use_fallback && length(ci) >= 2L && all(is.finite(ci[1:2]))) {
+				ci_sorted = sort(ci[1:2])
+				fb = get_fallback()
+				if (fallback_is_usable(fb) && fb[1L] <= 0 && fb[2L] >= 0 &&
+					((ci_sorted[1L] > 0) || (ci_sorted[2L] < 0))) {
+					use_fallback = TRUE
+				}
+			}
+			if (use_fallback) {
+				fb = get_fallback()
+				if (fallback_is_usable(fb)) out = fb
+				else {
 					private$cache_nonestimable_se("dep_cens_transform_bootstrap_ci_unstable")
 					out = c(NA_real_, NA_real_)
 				}

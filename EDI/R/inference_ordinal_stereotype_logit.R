@@ -53,6 +53,7 @@ InferenceOrdinalStereotypeLogitRegr = R6::R6Class("InferenceOrdinalStereotypeLog
 		}
 	),
 	private = list(
+		supports_likelihood_tests = function(){ TRUE },
 		best_Xmm_colnames = NULL,
 		get_complexity_tier = function() "heavy",
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
@@ -137,7 +138,7 @@ InferenceOrdinalStereotypeLogitRegr = R6::R6Class("InferenceOrdinalStereotypeLog
 							warm_start_params = ws_args$start_params,
 							warm_start_fisher_info = ws_args$warm_start_fisher_info
 						)
-						list(b = res$b, ssq_b_j = res$ssq_b_1, params = res$params, fisher_information = res$fisher_information)
+						list(b = res$b, ssq_b_j = res$ssq_b_1, params = res$params, neg_loglik = res$neg_loglik, fisher_information = res$fisher_information)
 					}
 				},
 				fit_ok = function(mod, X_fit, keep){
@@ -149,10 +150,64 @@ InferenceOrdinalStereotypeLogitRegr = R6::R6Class("InferenceOrdinalStereotypeLog
 			if (!is.null(attempt$fit)){
 				private$set_fit_warm_start(attempt$fit$params, "params", fisher = attempt$fit$fisher_information)
 				private$best_Xmm_colnames = setdiff(colnames(attempt$X), "treatment")
+				if (!estimate_only) {
+					n_alpha = length(sort(unique(private$y))) - 1L
+					private$cached_values$likelihood_test_context = list(
+						X = attempt$X,
+						j_treat = as.integer(n_alpha + 1L),
+						full_params = attempt$fit$params,
+						full_neg_loglik = attempt$fit$neg_loglik
+					)
+				} else {
+					private$cached_values$likelihood_test_context = NULL
+				}
 				list(b = c(0, attempt$fit$b[1]), ssq_b_2 = attempt$fit$ssq_b_j)
 			} else {
+				private$cached_values$likelihood_test_context = NULL
 				NULL
 			}
+		},
+		get_likelihood_test_spec = function(){
+			private$shared(estimate_only = FALSE)
+			ctx = private$cached_values$likelihood_test_context
+			if (is.null(ctx)) return(NULL)
+			X_fit = ctx$X
+			y = as.numeric(private$y)
+			j_treat = as.integer(ctx$j_treat)
+			full_fit = list(params = ctx$full_params, neg_loglik = ctx$full_neg_loglik)
+			list(
+				X = X_fit, y = y, j = j_treat,
+				full_fit = full_fit,
+				fit_null = function(delta, start = NULL){
+					n_params = length(ctx$full_params)
+					res = tryCatch(
+						fast_stereotype_logit_cpp(
+							X_fit, y,
+							fixed_idx = j_treat, fixed_values = delta,
+							warm_start_params = start %||% private$get_fit_warm_start_for_length("params", n_params),
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+							smart_cold_start = private$smart_cold_start_default
+						),
+						error = function(e) NULL
+					)
+					if (is.null(res) || length(res) == 0L) return(NULL)
+					list(params = as.numeric(res$params), neg_loglik = as.numeric(res$neg_loglik))
+				},
+				extract_start = function(fit){ as.numeric(fit$params) },
+				score = function(fit){
+					get_stereotype_logit_score_cpp(X_fit, y, as.numeric(fit$params))
+				},
+				observed_information = function(fit){
+					-get_stereotype_logit_hessian_cpp(X_fit, y, as.numeric(fit$params))
+				},
+				fisher_information = function(fit){
+					fit$fisher_information %||% (-get_stereotype_logit_hessian_cpp(X_fit, y, as.numeric(fit$params)))
+				},
+				information = function(fit){
+					fit$information %||% fit$fisher_information %||% (-get_stereotype_logit_hessian_cpp(X_fit, y, as.numeric(fit$params)))
+				},
+				neg_loglik = function(fit){ as.numeric(fit$neg_loglik) }
+			)
 		},
 		build_design_matrix = function(){
 			X_cov = private$X
@@ -223,6 +278,7 @@ InferenceOrdinalContRatioRegr = R6::R6Class("InferenceOrdinalContRatioRegr",
 		}
 	),
 	private = list(
+		supports_likelihood_tests = function(){ TRUE },
 		best_Xmm_colnames = NULL,
 		get_complexity_tier = function() "heavy",
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
@@ -283,6 +339,8 @@ InferenceOrdinalContRatioRegr = R6::R6Class("InferenceOrdinalContRatioRegr",
 							b = res$b,
 							ssq_b_j = res$ssq_b_j %||% res$ssq_b_1,
 							ssq_b_2 = res$ssq_b_2 %||% res$ssq_b_j %||% res$ssq_b_1,
+							params = res$params,
+							neg_loglik = res$neg_loglik,
 							fisher_information = res$fisher_information
 						)
 					}
@@ -296,13 +354,67 @@ InferenceOrdinalContRatioRegr = R6::R6Class("InferenceOrdinalContRatioRegr",
 			if (!is.null(attempt$fit)){
 				private$set_fit_warm_start(attempt$fit$b, "beta", fisher = attempt$fit$fisher_information)
 				private$best_Xmm_colnames = setdiff(colnames(attempt$X), "treatment")
+				if (!estimate_only) {
+					n_alpha = length(sort(unique(private$y))) - 1L
+					private$cached_values$likelihood_test_context = list(
+						X = attempt$X,
+						j_treat = as.integer(n_alpha + 1L),
+						full_params = attempt$fit$params,
+						full_neg_loglik = attempt$fit$neg_loglik
+					)
+				} else {
+					private$cached_values$likelihood_test_context = NULL
+				}
 				list(
 					b = c(0, attempt$fit$b[1]),
 					ssq_b_2 = attempt$fit$ssq_b_2 %||% attempt$fit$ssq_b_j
 				)
 			} else {
+				private$cached_values$likelihood_test_context = NULL
 				NULL
 			}
+		},
+		get_likelihood_test_spec = function(){
+			private$shared(estimate_only = FALSE)
+			ctx = private$cached_values$likelihood_test_context
+			if (is.null(ctx)) return(NULL)
+			X_fit = ctx$X
+			y = as.numeric(private$y)
+			j_treat = as.integer(ctx$j_treat)
+			full_fit = list(params = ctx$full_params, neg_loglik = ctx$full_neg_loglik)
+			list(
+				X = X_fit, y = y, j = j_treat,
+				full_fit = full_fit,
+				fit_null = function(delta, start = NULL){
+					n_params = length(ctx$full_params)
+					res = tryCatch(
+						fast_continuation_ratio_regression_cpp(
+							X_fit, y,
+							fixed_idx = j_treat, fixed_values = delta,
+							warm_start_beta = start %||% private$get_fit_warm_start_for_length("beta", n_params),
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+							smart_cold_start = private$smart_cold_start_default
+						),
+						error = function(e) NULL
+					)
+					if (is.null(res) || length(res) == 0L) return(NULL)
+					list(params = as.numeric(res$params), neg_loglik = as.numeric(res$neg_loglik))
+				},
+				extract_start = function(fit){ as.numeric(fit$params) },
+				score = function(fit){
+					get_continuation_ratio_regression_score_cpp(X_fit, y, as.numeric(fit$params))
+				},
+				observed_information = function(fit){
+					-get_continuation_ratio_regression_hessian_cpp(X_fit, y, as.numeric(fit$params))
+				},
+				fisher_information = function(fit){
+					fit$fisher_information %||% (-get_continuation_ratio_regression_hessian_cpp(X_fit, y, as.numeric(fit$params)))
+				},
+				information = function(fit){
+					fit$information %||% fit$fisher_information %||% (-get_continuation_ratio_regression_hessian_cpp(X_fit, y, as.numeric(fit$params)))
+				},
+				neg_loglik = function(fit){ as.numeric(fit$neg_loglik) }
+			)
 		},
 		build_design_matrix = function(){
 			X_cov = private$X

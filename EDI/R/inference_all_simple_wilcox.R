@@ -101,6 +101,36 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 			}
 			private$cached_values$beta_hat_T
 		},
+		#' @description Wilcoxon rank-sum test p-value (not Wald). For delta != 0 shifts
+		#'   the control arm by delta before testing.
+		#' @param delta Null treatment effect. Default 0.
+		compute_asymp_two_sided_pval = function(delta = 0){
+			private$shared(estimate_only = FALSE)
+			yT = as.numeric(private$y[private$w == 1])
+			yC = as.numeric(private$y[private$w == 0])
+			if (length(yT) == 0L || length(yC) == 0L) return(NA_real_)
+			if (delta == 0 && !is.null(private$cached_values$wilcox_asymp_pval) && is.finite(private$cached_values$wilcox_asymp_pval)) {
+				return(private$cached_values$wilcox_asymp_pval)
+			}
+			pv = tryCatch(
+				stats::wilcox.test(yT, yC - delta, exact = FALSE)$p.value,
+				error = function(e) NA_real_
+			)
+			as.numeric(pv)
+		},
+		#' @description Returns the Hodges-Lehmann CI from wilcox.test directly.
+		#' @param alpha Significance level. Default 0.05.
+		compute_asymp_confidence_interval = function(alpha = 0.05){
+			private$shared(estimate_only = FALSE)
+			ci = private$cached_values$wilcox_conf_int
+			if (!is.null(ci) && length(ci) == 2L && all(is.finite(ci))) return(as.numeric(ci))
+			yT = as.numeric(private$y[private$w == 1])
+			yC = as.numeric(private$y[private$w == 0])
+			if (length(yT) == 0L || length(yC) == 0L) return(c(NA_real_, NA_real_))
+			mod = tryCatch(stats::wilcox.test(yT, yC, conf.int = TRUE, exact = FALSE, conf.level = 1 - alpha), error = function(e) NULL)
+			if (is.null(mod)) return(c(NA_real_, NA_real_))
+			as.numeric(mod$conf.int)
+		},
 		#' @description Jackknife bias correction is unstable for the
 		#'   Hodges-Lehmann estimator; report explicit non-estimability.
 		#' @param unit Deletion unit. Default \code{"auto"}.
@@ -234,7 +264,7 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 				private$cache_nonestimable_estimate("wilcox_empty_treatment_arm")
 				return(invisible(NULL))
 			}
-			mod = tryCatch(stats::wilcox.test(yT, yC, conf.int = TRUE), error = function(e) NULL)
+			mod = tryCatch(stats::wilcox.test(yT, yC, conf.int = TRUE, exact = FALSE), error = function(e) NULL)
 			if (is.null(mod)){
 				private$cache_nonestimable_estimate("wilcox_fit_unavailable")
 				return(invisible(NULL))
@@ -242,8 +272,10 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 			beta = private$hl_point_estimate(private$y, private$w)
 			ci   = mod$conf.int
 			se   = if (length(ci) == 2L) (ci[2] - ci[1]) / (2 * 1.96) else NA_real_
-			private$cached_values$beta_hat_T   = if (length(beta) == 1L && is.finite(beta)) beta else NA_real_
-			private$cached_values$s_beta_hat_T = if (length(se)   == 1L && is.finite(se) && se > 0) se else NA_real_
+			private$cached_values$beta_hat_T       = if (length(beta) == 1L && is.finite(beta)) beta else NA_real_
+			private$cached_values$s_beta_hat_T     = if (length(se)   == 1L && is.finite(se) && se > 0) se else NA_real_
+			private$cached_values$wilcox_asymp_pval = as.numeric(mod$p.value)
+			private$cached_values$wilcox_conf_int   = as.numeric(ci)
 
 			beta_hl = private$cached_values$beta_hat_T
 			private$cached_values$likelihood_test_context = list(

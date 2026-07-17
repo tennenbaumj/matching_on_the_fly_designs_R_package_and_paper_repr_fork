@@ -710,6 +710,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			design_obj = private$des_obj
 			is_blocking_design = is(design_obj, "DesignBlocking") &&
 				isTRUE(tryCatch(design_obj$is_blocking_design(), error = function(e) FALSE))
+			if (resolved_unit == "block") return(FALSE)
 			if (resolved_unit %in% c("pair", "matched_set")) return(FALSE)
 			if (resolved_unit == "cluster" && !is_blocking_design) return(FALSE)
 			if (!is_blocking_design) return(FALSE)
@@ -753,12 +754,11 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			if (any(abs(ci[1:2]) > max_abs)) return(TRUE)
 			scale_ref = max(1, abs(as.numeric(est)[1L]), na.rm = TRUE)
 			width = abs(diff(ci[1:2]))
-			max_width = min(
-				max_abs * scale_ref,
-				as.numeric(private$bootstrap_extreme_ci_width_threshold)[1L],
-				na.rm = TRUE
-			)
-			if (!is.finite(max_width) || max_width <= 0) max_width = max_abs * scale_ref
+			scaled_max_width = max_abs * scale_ref
+			absolute_max_width = as.numeric(private$bootstrap_extreme_ci_width_threshold)[1L]
+			if (!is.finite(absolute_max_width) || absolute_max_width <= 0) absolute_max_width = Inf
+			max_width = min(scaled_max_width, absolute_max_width, na.rm = TRUE)
+			if (!is.finite(max_width) || max_width <= 0) max_width = scaled_max_width
 			is.finite(width) && width > max_width
 		},
 		supports_reusable_bootstrap_worker = function(){

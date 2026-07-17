@@ -36,6 +36,8 @@ seq_des_inf$compute_estimate()
 \item \href{#method-InferenceAllSimpleWilcox-new}{\code{InferenceAllSimpleWilcox$new()}}
 \item \href{#method-InferenceAllSimpleWilcox-compute_estimate}{\code{InferenceAllSimpleWilcox$compute_estimate()}}
 \item \href{#method-InferenceAllSimpleWilcox-compute_estimate_with_bootstrap_weights}{\code{InferenceAllSimpleWilcox$compute_estimate_with_bootstrap_weights()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_asymp_two_sided_pval}{\code{InferenceAllSimpleWilcox$compute_asymp_two_sided_pval()}}
+\item \href{#method-InferenceAllSimpleWilcox-compute_asymp_confidence_interval}{\code{InferenceAllSimpleWilcox$compute_asymp_confidence_interval()}}
 \item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_estimate}{\code{InferenceAllSimpleWilcox$compute_jackknife_estimate()}}
 \item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_corrected_estimate}{\code{InferenceAllSimpleWilcox$compute_jackknife_corrected_estimate()}}
 \item \href{#method-InferenceAllSimpleWilcox-compute_jackknife_bias_estimate}{\code{InferenceAllSimpleWilcox$compute_jackknife_bias_estimate()}}
@@ -84,8 +86,6 @@ seq_des_inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_asymp_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_asymp_confidence_interval'><code>::InferenceAsympLik$compute_asymp_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_asymp_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_asymp_two_sided_pval'><code>::InferenceAsympLik$compute_asymp_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
@@ -178,6 +178,41 @@ Computes the weighted Hodges-Lehmann style bootstrap estimate.
 \item{\code{subject_or_block_weights}}{Bootstrap weights at the subject/block level.}
 
 \item{\code{estimate_only}}{If TRUE, skip variance calculations.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_asymp_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_asymp_two_sided_pval}{}}}
+\subsection{Method \code{compute_asymp_two_sided_pval()}}{
+Wilcoxon rank-sum test p-value (not Wald). For delta != 0 shifts
+  the control arm by delta before testing.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_asymp_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect. Default 0.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceAllSimpleWilcox-compute_asymp_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceAllSimpleWilcox-compute_asymp_confidence_interval}{}}}
+\subsection{Method \code{compute_asymp_confidence_interval()}}{
+Returns the Hodges-Lehmann CI from wilcox.test directly.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceAllSimpleWilcox$compute_asymp_confidence_interval(alpha = 0.05)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
 }
 \if{html}{\out{</div>}}
 }

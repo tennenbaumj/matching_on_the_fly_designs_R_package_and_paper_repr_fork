@@ -42,6 +42,15 @@ test_that("Weibull Frailty Inference works for KK designs", {
 	est_multi_onelik <- inf_multi_onelik$compute_estimate()
 	expect_true(is.numeric(est_multi_onelik))
 	expect_true(is.finite(est_multi_onelik))
+
+	# 5. Likelihood tests are now enabled for OneLik
+	expect_true("lik_ratio" %in% inf_univ_onelik$get_supported_testing_types())
+	pv_lr  <- inf_univ_onelik$compute_lik_ratio_two_sided_pval()
+	pv_sc  <- inf_univ_onelik$compute_score_two_sided_pval()
+	pv_gr  <- inf_univ_onelik$compute_gradient_two_sided_pval()
+	expect_true(is.finite(pv_lr)  && pv_lr  >= 0 && pv_lr  <= 1)
+	expect_true(is.finite(pv_sc)  && pv_sc  >= 0 && pv_sc  <= 1)
+	expect_true(is.finite(pv_gr)  && pv_gr  >= 0 && pv_gr  <= 1)
 })
 
 test_that("weibull frailty analytic score matches numerical gradient of its neg-loglik", {

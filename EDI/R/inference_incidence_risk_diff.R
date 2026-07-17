@@ -108,6 +108,7 @@ InferenceIncidRiskDiff = R6::R6Class("InferenceIncidRiskDiff",
 		}
 	),
 	private = list(
+		supports_likelihood_tests = function(){ FALSE },
 		best_X_colnames = NULL,
 		build_design_matrix = function(){
 			X_cov = private$X
