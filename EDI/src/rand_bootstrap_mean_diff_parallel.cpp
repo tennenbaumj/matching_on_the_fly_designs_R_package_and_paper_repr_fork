@@ -58,6 +58,7 @@ NumericVector compute_rand_bootstrap_mean_diff_parallel_cpp(
 	double delta,
 	int transform_code,
 	double zero_one_logit_clamp,
+	Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat,
 	int num_cores) {
 
 	int nsim = w_mat.cols();
@@ -71,6 +72,14 @@ NumericVector compute_rand_bootstrap_mean_diff_parallel_cpp(
 	double* res_ptr = results_vec.data();
 	const bool use_parallel = should_parallelize_replicates(nsim, n, num_cores);
 
+	const bool has_noise = noise_mat.isNotNull();
+	NumericMatrix noise_m;
+	const double* noise_ptr = nullptr;
+	if (has_noise) {
+		noise_m = NumericMatrix(noise_mat);
+		noise_ptr = noise_m.begin();
+	}
+
 #ifdef _OPENMP
 	if (use_parallel) omp_set_num_threads(num_cores);
 #endif
@@ -83,7 +92,8 @@ NumericVector compute_rand_bootstrap_mean_diff_parallel_cpp(
 		int n_T = 0;
 
 		for (int i = 0; i < n; ++i) {
-			const double yv = y0_ptr[i_col[i] - 1]; // i_mat is 1-based
+			double yv = y0_ptr[i_col[i] - 1]; // i_mat is 1-based
+			if (has_noise) yv += noise_ptr[(size_t)b * n + i];
 			const int is_t = (w_col[i] == 1);
 			if (is_t) {
 				sum_T += (delta != 0.0) ? brt_apply_shift(yv, delta, transform_code, zero_one_logit_clamp) : yv;
@@ -113,7 +123,7 @@ NumericVector compute_rand_bootstrap_mean_diff_parallel_cpp(
 	double delta,
 	int num_cores) {
 	return compute_rand_bootstrap_mean_diff_parallel_cpp(
-		y0, i_mat, w_mat, delta, 0, NA_REAL, num_cores
+		y0, i_mat, w_mat, delta, 0, NA_REAL, R_NilValue, num_cores
 	);
 }
 

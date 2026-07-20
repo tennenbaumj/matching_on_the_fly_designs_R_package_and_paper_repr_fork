@@ -196,7 +196,7 @@ InferenceAllSimpleMeanDiff = R6::R6Class("InferenceAllSimpleMeanDiff",
 			if (is.null(mats)) return(NULL)
 			compute_rand_bootstrap_mean_diff_parallel_cpp(
 				as.numeric(y0_full), mats$i_mat, mats$w_mat, as.numeric(delta),
-				transform_code, as.numeric(zero_one_logit_clamp), private$n_cpp_threads(ncol(mats$w_mat))
+				transform_code, as.numeric(zero_one_logit_clamp), mats$noise_mat, private$n_cpp_threads(ncol(mats$w_mat))
 			)
 		},
 		# Affine decomposition of the BRT null draws for the closed-form CI: with the additive

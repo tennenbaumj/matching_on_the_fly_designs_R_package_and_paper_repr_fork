@@ -2179,8 +2179,8 @@ qr_reduce_preserve_cols_cpp <- function(X_sexp, required_cols) {
     .Call(`_EDI_qr_reduce_preserve_cols_cpp`, X_sexp, required_cols)
 }
 
-compute_rand_bootstrap_mean_diff_parallel_cpp <- function(y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores) {
-    .Call(`_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp`, y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores)
+compute_rand_bootstrap_mean_diff_parallel_cpp <- function(y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, noise_mat, num_cores) {
+    .Call(`_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp`, y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, noise_mat, num_cores)
 }
 
 compute_rand_bootstrap_mean_diff_se_parallel_cpp <- function(y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores) {
