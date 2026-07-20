@@ -130,6 +130,10 @@ test_that("Inference seed: same seed gives same bootstrap CI (serial)", {
 
 test_that("Inference seed: same seed + same num_cores gives same rand p-value (fork cluster)", {
 	skip_on_os("windows")
+	skip_if(
+		isTRUE(EDI:::edi_env$mirai_has_been_used),
+		"fork clusters cannot be started safely after mirai has been used in this R session"
+	)
 	des = make_completed_fixed_design(seed = NULL, n = 20)
 	set_num_cores(2)
 	on.exit(unset_num_cores(), add = TRUE)
@@ -149,10 +153,11 @@ test_that("SimulationFramework seed: same seed gives same estimates (serial)", {
 			response_type = "continuous",
 			design_classes_and_params = list(DesignFixedBernoulli),
 			inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
-			inference_types_and_params = list(asymp_pval = list()),
-			n = 10L, Nrep = 3L, seed = 321,
-			results_filename = f, verbose = FALSE,
-			continue_from_last_result_row = FALSE
+				inference_types_and_params = list(asymp_pval = list()),
+				n = 10L, Nrep_W = 1L, Nrep_Y_w = 3L, seed = 321,
+				num_cores = 1L,
+				results_filename = f, verbose = FALSE,
+				continue_from_last_result_row = FALSE
 		)
 		sim$run()
 		SimulationFrameworkReport$new(sim)$get_results()
@@ -169,10 +174,11 @@ test_that("SimulationFramework seed: different seeds give different estimates", 
 			response_type = "continuous",
 			design_classes_and_params = list(DesignFixedBernoulli),
 			inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
-			inference_types_and_params = list(asymp_pval = list()),
-			n = 10L, Nrep = 5L, seed = seed,
-			results_filename = f, verbose = FALSE,
-			continue_from_last_result_row = FALSE
+				inference_types_and_params = list(asymp_pval = list()),
+				n = 10L, Nrep_W = 1L, Nrep_Y_w = 5L, seed = seed,
+				num_cores = 1L,
+				results_filename = f, verbose = FALSE,
+				continue_from_last_result_row = FALSE
 		)
 		sim$run()
 		SimulationFrameworkReport$new(sim)$get_results()

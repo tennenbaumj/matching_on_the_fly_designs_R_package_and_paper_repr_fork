@@ -202,6 +202,13 @@ add_assignment_only_cluster_id = function(X_design, strata_cols = character(0), 
 	list(X = X_out, cluster_col = cluster_col)
 }
 
+design_supports_zhang_incidence = function(des_obj){
+	is(des_obj, "DesignSeqOneByOneBernoulli") ||
+		is(des_obj, "DesignFixedBernoulli") ||
+		is(des_obj, "DesignSeqOneByOneKK14") ||
+		is(des_obj, "DesignFixedBinaryMatch")
+}
+
 build_result_key = function(rep_val, beta_val, dataset_val, response_val, design_val, inference_val, function_run_val){
 	paste(
 		as.integer(rep_val),
@@ -591,16 +598,16 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 	))
 	# Per-operation slow skips (avg >30s in comprehensive_tests_*_20260720.log)
 	skip_rand_slow            = is_any_inference_class(c("InferenceContinKKGLMM"))
-	skip_rand_ci_slow         = FALSE
+	skip_rand_ci_slow         = is_any_inference_class(c("InferenceSurvivalWeibullRegr", "InferencePropQuantileRegr"))
 	skip_bbt_ci_slow          = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))
 	skip_boot_stud_slow       = FALSE
 	skip_boot_ci_slow         = FALSE
-	skip_jack_slow            = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))
+	skip_jack_slow            = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik", "InferenceContinKKGLMM"))  # ClaytonCopula frailty refits; ContinKKGLMM jackknife estimate avg 54s / max 102s
 	skip_pboot_ci_slow        = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))
 	skip_rand_delta_pval_slow = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))  # delta=0.5 variant avg 205s
-	skip_brt_pval_smoothed_slow = is_any_inference_class(c("InferenceOrdinalKKGLMM", "InferenceOrdinalContRatioRegr"))  # smoothed pval avg 317s / 66s
+	skip_brt_pval_smoothed_slow = is_any_inference_class(c("InferenceOrdinalKKGLMM", "InferenceOrdinalContRatioRegr", "InferenceOrdinalStereotypeLogitRegr", "InferenceSurvivalDepCensTransformRegr"))  # smoothed pval avg 317s / 66s; added slow paths >30s
 	skip_brt_pval_typed_slow    = is_any_inference_class(c("InferenceCountKKHurdlePoissonOneLik", "InferenceCountKKCondPoissonOneLik"))  # studentized+sympt-t pval avg 264s / 82s
-	skip_brt_ci_all_slow        = is_any_inference_class(c("InferenceSurvivalGehanWilcox", "InferenceSurvivalWeibullRegr"))  # all CI types avg 33-518s
+	skip_brt_ci_all_slow        = is_any_inference_class(c("InferenceSurvivalGehanWilcox", "InferenceSurvivalWeibullRegr", "InferencePropBetaRegr"))  # all CI types avg 33-518s; PropBetaRegr BRT CI paths >30s
 	skip_brt_ci_smoothed_slow   = is_any_inference_class(c("InferenceAllSimpleWilcox", "InferencePropKKQuantileRegrOneLik"))  # smoothed CI avg 94s / 32s
 	skip_brt_ci_typed_slow      = is_any_inference_class(c("InferencePropKKQuantileRegrOneLik"))  # studentized CI avg 34s
 	# BRT pval: skip only if bootstrap structurally broken OR rand itself slow; ContinRobustRegr keeps BRT pval
@@ -978,10 +985,17 @@ call_direct_asymp = function(method_name, testing_type, ...){
 		return(invisible(NULL))
 	}
 
-	supports_exact_inference = is(seq_des_inf, "InferenceExact") || is(seq_des_inf, "InferenceIncidenceExactZhang") || is(seq_des_inf, "InferenceIncidExactZhang")
+	is_zhang_inference = is(seq_des_inf, "InferenceIncidenceExactZhang") || is(seq_des_inf, "InferenceIncidExactZhang")
+	zhang_valid_design = response_type == "incidence" &&
+		design_supports_zhang_incidence(seq_des_inf$.__enclos_env__$private$des_obj)
+	supports_exact_inference = if (is_zhang_inference) zhang_valid_design else is(seq_des_inf, "InferenceExact")
 	if (should_run_test_family("exact") && response_type == "incidence" && supports_exact_inference){
 		safe_call_family("exact", "compute_exact_two_sided_pval_for_treatment_effect", seq_des_inf$compute_exact_two_sided_pval_for_treatment_effect())
-		safe_call_family("exact", "compute_exact_confidence_interval", seq_des_inf$compute_exact_confidence_interval(args_for_type = list(Zhang = list(combination_method = "Fisher", pval_epsilon = pval_epsilon))))
+		if (is_zhang_inference) {
+			safe_call_family("exact", "compute_exact_confidence_interval", seq_des_inf$compute_exact_confidence_interval(args_for_type = list(Zhang = list(combination_method = "Fisher", pval_epsilon = pval_epsilon))))
+		} else {
+			safe_call_family("exact", "compute_exact_confidence_interval", seq_des_inf$compute_exact_confidence_interval(pval_epsilon = pval_epsilon))
+		}
 	}
 	skip_asymp = is(seq_des_inf, "InferenceExact") &&
 		!is(seq_des_inf, "InferenceAsymp") &&
@@ -1347,6 +1361,14 @@ compute_prop_mean_diff_coverage_truth = function(dataset_name, beta_T_val){
 	mu_t = pmin(1, pmax(0, y_p + beta_T_val))
 	mean(mu_t - mu_c)
 }
+compute_survival_mean_diff_coverage_truth = function(dataset_name, beta_T_val){
+	# DGP is a multiplicative time shift (y_t = y_c * exp(bt)), not additive, so the naive
+	# mean-difference target is mean(y_c) * (exp(beta_T) - 1), not beta_T. Ignores censoring's
+	# (identical-in-both-arms) effect on the observed mean, same level of approximation used
+	# elsewhere here (e.g. the tiny eps noise term).
+	y_c = datasets_and_response_models[[dataset_name]]$y_original$survival
+	mean(y_c) * (exp(beta_T_val) - 1)
+}
 
 COVERAGE_CLOSED_FORM = list(
 	InferenceIncidLogRegr                 = compute_incid_logit_coverage_truth,
@@ -1367,7 +1389,8 @@ COVERAGE_CLOSED_FORM = list(
 	InferenceIncidKKModifiedPoisson       = compute_incid_log_risk_ratio_coverage_truth,
 	InferenceIncidLogBinomial             = compute_incid_log_risk_ratio_coverage_truth,
 	InferenceAllSimpleMeanDiff__proportion = compute_prop_mean_diff_coverage_truth,
-	InferencePropGCompMeanDiff            = compute_prop_mean_diff_coverage_truth
+	InferencePropGCompMeanDiff            = compute_prop_mean_diff_coverage_truth,
+	InferenceAllSimpleMeanDiff__survival   = compute_survival_mean_diff_coverage_truth
 )
 
 # Monte Carlo via SimulationFramework: reuses its design-building (incl. auto strata/cluster
@@ -1622,22 +1645,26 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 		supports_exact_binomial_design =
 			design_type %in% c("KK14", "FixedBinaryMatch")
 
-		inference_banner("InferenceAllSimpleMeanDiff")
-		run_inference_checks(InferenceAllSimpleMeanDiff$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		if (supports_exact_fisher_design) {
-			inference_banner("InferenceIncidExactFisher")
-			run_inference_checks(InferenceIncidExactFisher$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		}
-		if (supports_exact_binomial_design) {
-			inference_banner("InferenceIncidExactBinomial")
-			run_inference_checks(InferenceIncidExactBinomial$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		}
-		inference_banner("InferenceIncidenceExactZhang")
-		err_msg_ez = tryCatch({
-			run_inference_checks(InferenceIncidenceExactZhang$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-			NULL
-		}, error = function(e) if (length(e$message) == 0L) "" else e$message)
-		if (!is.null(err_msg_ez)) message("  Skipping InferenceIncidenceExactZhang: ", err_msg_ez)
+			inference_banner("InferenceAllSimpleMeanDiff")
+			run_inference_checks(InferenceAllSimpleMeanDiff$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
+			if (supports_exact_fisher_design) {
+				inference_banner("InferenceIncidExactFisher")
+				run_inference_checks(InferenceIncidExactFisher$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
+			}
+			if (supports_exact_binomial_design) {
+				inference_banner("InferenceIncidExactBinomial")
+				run_inference_checks(InferenceIncidExactBinomial$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
+			}
+			if (design_supports_zhang_incidence(des_obj)) {
+				inference_banner("InferenceIncidenceExactZhang")
+				err_msg_ez = tryCatch({
+					run_inference_checks(InferenceIncidenceExactZhang$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
+					NULL
+				}, error = function(e) if (length(e$message) == 0L) "" else e$message)
+				if (!is.null(err_msg_ez)) message("  Skipping InferenceIncidenceExactZhang: ", err_msg_ez)
+			} else {
+				message("  Skipping InferenceIncidenceExactZhang: design is not Zhang-compatible.")
+			}
 		inference_banner("InferenceIncidWald")
 		run_inference_checks(InferenceIncidWald$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceIncidCMH")

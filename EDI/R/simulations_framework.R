@@ -604,11 +604,11 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       inference_types_and_params = NULL,
       results_filename      = "simulation_framework_results.csv.bz2",
       continue_from_last_result_row = TRUE,
-      reuse_cache           = TRUE,
-      stop_on_error         = TRUE,
-      save_to_disk_every_n_rep = 25L,
-      save_model_control_fits = TRUE
-    ) {
+	      reuse_cache           = TRUE,
+	      stop_on_error         = TRUE,
+	      save_to_disk_every_n_rep = 25L,
+	      save_model_control_fits = TRUE
+	    ) {
       valid_rt = c("continuous", "incidence", "proportion",
                    "count", "survival", "ordinal")
       if (any(!response_type %in% valid_rt))
@@ -661,8 +661,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       private$n_values         = n_values
       private$p_values         = p_values
       private$cond_exp_func_model_values = cond_exp_func_model_values
-      Nrep_W_val = as.integer(Nrep_W)
-      Nrep_Y_w_val = as.integer(Nrep_Y_w)
+	      Nrep_W_val = as.integer(Nrep_W)
+	      Nrep_Y_w_val = as.integer(Nrep_Y_w)
       if (Nrep_W_val < 1L) stop("Nrep_W must be a positive integer")
       if (Nrep_Y_w_val < 1L) stop("Nrep_Y_w must be a positive integer")
       private$Nrep_W           = Nrep_W_val
@@ -813,7 +813,8 @@ SimulationFramework = R6::R6Class("SimulationFramework",
       # force_serial was previously tied to has_pregen_designs to avoid JVM fork
       # issues; Java/GED is gone so parallelism is always safe.
       force_serial = FALSE
-      use_fork_cluster  = !force_serial && isTRUE(num_cores > 1L) && .Platform$OS.type == "unix"
+      mirai_already_used = isTRUE(tryCatch(asNamespace("EDI")$edi_env$mirai_has_been_used, error = function(e) FALSE))
+      use_fork_cluster  = !force_serial && isTRUE(num_cores > 1L) && .Platform$OS.type == "unix" && !mirai_already_used
       use_mirai_backend = !force_serial && isTRUE(num_cores > 1L) && !use_fork_cluster
       # Rep/DGP bars always show 100% under fork parallelism because workers
       # return complete reps; suppress them to avoid misleading output.

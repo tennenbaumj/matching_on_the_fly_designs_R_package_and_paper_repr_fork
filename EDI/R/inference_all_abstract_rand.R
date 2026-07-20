@@ -284,7 +284,11 @@ InferenceRand = R6::R6Class("InferenceRand",
 			if (should_run_asserts()) {
 				private$assert_design_supports_resampling("Randomization inference")
 				assertLogical(na.rm)
-				if (private$des_obj_priv_int$response_type == "incidence" && is.null(private$custom_randomization_statistic_function)) stop("Randomization tests are not supported for incidence. Use Zhang method.")
+				if (private$des_obj_priv_int$response_type == "incidence" &&
+						is.null(private$custom_randomization_statistic_function) &&
+						!private$should_use_design_randomization_for_incidence()) {
+					stop("Randomization tests are not supported for incidence. Use Zhang method.")
+				}
 			}
 			if (is.null(permutations)) permutations = private$generate_permutations(r)
 			if (identical(transform_responses, "none")) {
@@ -395,6 +399,18 @@ InferenceRand = R6::R6Class("InferenceRand",
 		compiled_cpp_stat_src = NULL,
 		# ---- end custom statistic support ----
 		randomization_mc_control = NULL,
+		is_bernoulli_design = function(){
+			is(private$des_obj, "DesignSeqOneByOneBernoulli") ||
+				is(private$des_obj, "DesignFixedBernoulli")
+		},
+		should_use_zhang_incidence_randomization = function(){
+			private$des_obj_priv_int$response_type == "incidence" &&
+				is.null(private$custom_randomization_statistic_function) &&
+				(private$is_bernoulli_design() || isTRUE(private$has_match_structure))
+		},
+		should_use_design_randomization_for_incidence = function(){
+			inherits(private$des_obj, "DesignFixedRerandomization")
+		},
 		normalize_delta_for_cache = function(delta, resolution = NULL){
 			if (!is.finite(delta)) return("NA")
 			if (!is.null(resolution) && is.finite(resolution) && resolution > 0) {

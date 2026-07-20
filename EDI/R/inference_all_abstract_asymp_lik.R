@@ -645,39 +645,60 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			upper_seed = if (length(wald_ci) >= 2L && is.finite(wald_ci[[2L]])) wald_ci[[2L]] else est + step
 
 			j = as.integer(spec$j)
-			fit_null_formals = tryCatch(names(formals(spec$fit_null)), error = function(e) character())
-			accepts_start = "start" %in% fit_null_formals
-			extract_start = spec$extract_start %||% function(fit_obj) {
-				fit_obj$params %||% fit_obj$b %||% {
-					co = fit_obj$coefficients
-					if (is.numeric(co)) as.numeric(co) else NULL
+				fit_null_fn = function(delta){
+					eval = tryCatch(
+						private$get_memoized_likelihood_test_eval(
+							delta = delta,
+							testing_type = "lik_ratio",
+							spec = spec,
+							warm_cache_key = "lik_ratio_ci",
+							include_score = FALSE,
+							include_full_negloglik = FALSE,
+							include_null_negloglik = FALSE
+						),
+						error = function(e) NULL
+					)
+					if (is.null(eval) || isTRUE(eval$invalid) || is.null(eval$null_fit)) return(NULL)
+					eval$null_fit
 				}
-			}
-			# The CI root search is not sequential; a warm start from the full fit can
-			# send null fits to a path-dependent local solution.
-			full_start = NULL
-			if (!is.null(full_start) && length(full_start) == 0L) full_start = NULL
-			fit_null_fn = function(delta){
-				fit = tryCatch(
-					if (accepts_start) spec$fit_null(delta, start = full_start) else spec$fit_null(delta),
-					error = function(e) NULL
-				)
-				if (is.null(fit)) return(NULL)
-				null_params = fit$params %||% fit$b %||% {
-					co = fit$coefficients
-					if (is.numeric(co)) as.numeric(co) else NULL
+				neg_loglik_fn = function(fit){
+					delta_fit = attr(fit, "edi_likelihood_test_delta", exact = TRUE)
+					eval = if (is.finite(delta_fit %||% NA_real_)) {
+						tryCatch(
+							private$get_memoized_likelihood_test_eval(
+								delta = delta_fit,
+								testing_type = "lik_ratio",
+								spec = spec,
+								warm_cache_key = "lik_ratio_ci",
+								include_score = FALSE,
+								include_full_negloglik = FALSE,
+								include_null_negloglik = TRUE
+							),
+							error = function(e) NULL
+						)
+					} else NULL
+					if (!is.null(eval) && is.finite(eval$null_negloglik %||% NA_real_)) return(eval$null_negloglik)
+					tryCatch(spec$neg_loglik(fit), error = function(e) NA_real_)
 				}
-				if (is.null(null_params) || length(null_params) < j || !is.finite(null_params[j])) return(NULL)
-				attr(fit, "edi_likelihood_test_delta") = delta
-				attr(fit, "edi_likelihood_test_testing_type") = "lik_ratio"
-				fit
-			}
-			neg_loglik_fn = function(fit){
-				tryCatch(spec$neg_loglik(fit), error = function(e) NA_real_)
-			}
-			score_fn = function(fit){
-				tryCatch(spec$score(fit), error = function(e) NULL)
-			}
+				score_fn = function(fit){
+					delta_fit = attr(fit, "edi_likelihood_test_delta", exact = TRUE)
+					eval = if (is.finite(delta_fit %||% NA_real_)) {
+						tryCatch(
+							private$get_memoized_likelihood_test_eval(
+								delta = delta_fit,
+								testing_type = "lik_ratio",
+								spec = spec,
+								warm_cache_key = "lik_ratio_ci",
+								include_score = TRUE,
+								include_full_negloglik = FALSE,
+								include_null_negloglik = FALSE
+							),
+							error = function(e) NULL
+						)
+					} else NULL
+					if (!is.null(eval) && !is.null(eval$score)) return(eval$score)
+					tryCatch(spec$score(fit), error = function(e) NULL)
+				}
 
 			ci_vals = tryCatch(lrt_ci_nr_cpp(
 				fit_null_fn    = fit_null_fn,

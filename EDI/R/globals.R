@@ -270,6 +270,13 @@ weighted_weibull_bootstrap_surrogate_fit = function(time, dead, X, row_weights, 
 # Creates a fork cluster and caps OMP/BLAS threads on each worker to 1.
 # Returns the cluster without storing it — callers decide where it lives.
 make_configured_fork_cluster = function(n_cores) {
+  if (isTRUE(edi_env$mirai_has_been_used)) {
+    stop(
+      "Cannot create a fork cluster after mirai-backed parallelism has been used in the same R session. ",
+      "Restart R or keep using force_mirai = TRUE. This avoids the nng is not fork-reentrant safe panic.",
+      call. = FALSE
+    )
+  }
   cl = tryCatch(
     parallel::makeForkCluster(n_cores),
     error = function(e) NULL
@@ -440,7 +447,6 @@ unset_num_cores = function() {
       tryCatch(mirai::daemons(0), error = function(e) invisible(NULL)) # Stop daemons
     }
     edi_env$global_mirai_num_cores = NULL
-    edi_env$mirai_has_been_used = FALSE
   }
   
   # Reset package threads to 1
@@ -497,6 +503,7 @@ get_bootstrap_dispatch_policy = function() {
       "^InferenceSurvivalDepCensTransformRegr$" = "percentile",
       "^InferenceSurvivalKKRankRegrIVWC$" = "percentile",
       "^InferenceOrdinalAdjCatLogitRegr$" = "percentile",
+      "^InferenceAllSimpleWilcox$" = "percentile",
       "^InferenceSurvivalKKStratCoxPHOneLik$" = "percentile",
 	      "^InferenceCountPoisson$" = "percentile",
 	      "^InferenceCountRobustPoisson$" = "percentile",

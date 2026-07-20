@@ -30,7 +30,7 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 				assertLogical(na.rm)
 			}
 			if (should_run_asserts()) {
-				if (private$des_obj_priv_int$response_type == "incidence" && is.null(private$custom_randomization_statistic_function)){
+				if (private$should_use_zhang_incidence_randomization()){
 					if (!identical(transform_responses, "none")) {
 						stop("transform_responses is not supported for incidence randomization inference.")
 					}
@@ -105,7 +105,7 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 				))
 			}
 			resp_type = private$des_obj_priv_int$response_type
-			if (resp_type == "incidence" && is.null(private$custom_randomization_statistic_function)){
+			if (private$should_use_zhang_incidence_randomization()){
 				rand_type = if (is.null(type)) "Zhang" else type
 				exact_args = private$normalize_exact_inference_args(
 					rand_type,
@@ -113,6 +113,12 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 					pval_epsilon = pval_epsilon
 				)
 				return(private$compute_exact_confidence_interval_rand(rand_type, alpha, exact_args))
+			}
+			if (should_run_asserts() &&
+					resp_type == "incidence" &&
+					is.null(private$custom_randomization_statistic_function) &&
+					!private$should_use_design_randomization_for_incidence()) {
+				stop("Randomization confidence intervals are not supported for incidence. Use Zhang method.")
 			}
 			if (should_run_asserts()) {
 				private$assert_no_incidence_only_randomization_args(resp_type, type, args_for_type)
@@ -124,6 +130,7 @@ InferenceRandCI = R6::R6Class("InferenceRandCI",
 			         isTRUE(private$kk_glmm_engine) ||
 			         isTRUE(private$kk_passthrough) ||
 			         inherits(self, "InferencePropZeroOneInflatedBetaRegr") ||
+			         inherits(self, "InferencePropQuantileRegr") ||
 			         inherits(self, "InferencePropGCompAbstract") ||
 			         inherits(self, "InferenceCountZeroAugmentedPoissonAbstract") ||
 			         inherits(self, "InferenceCountHurdleNegBin")

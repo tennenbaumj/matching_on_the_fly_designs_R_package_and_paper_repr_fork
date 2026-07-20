@@ -1,5 +1,5 @@
 make_completed_fixed_design <- function(response_type, x, w, y, dead = NULL) {
-	des <- DesignFixed$new(n = length(y), response_type = response_type, verbose = FALSE)
+	des <- EDI:::DesignFixed$new(n = length(y), response_type = response_type, verbose = FALSE)
 	des$add_all_subjects_to_experiment(data.frame(x = x))
 	des$overwrite_all_subject_assignments(w)
 	if (is.null(dead)) {

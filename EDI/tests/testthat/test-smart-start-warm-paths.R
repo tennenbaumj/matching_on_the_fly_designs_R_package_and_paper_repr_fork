@@ -4,7 +4,7 @@ test_that("likelihood inversion paths populate and reuse null-fit warm-start cac
 	x <- rnorm(n)
 	w <- rep(c(1, -1), length.out = n)
 	w01 <- (w + 1) / 2
-	des <- DesignFixed$new(n = n, response_type = "incidence", verbose = FALSE)
+	des <- EDI:::DesignFixed$new(n = n, response_type = "incidence", verbose = FALSE)
 	des$add_all_subjects_to_experiment(data.frame(x = x))
 	des$overwrite_all_subject_assignments(w)
 	linpred <- -0.2 + 0.7 * w01 + 0.3 * x
@@ -47,7 +47,7 @@ test_that("gradient testing type is available on representative likelihood famil
 	w <- rep(c(1, -1), length.out = n)
 	w01 <- (w + 1) / 2
 
-	des_logit <- DesignFixed$new(n = n, response_type = "incidence", verbose = FALSE)
+	des_logit <- EDI:::DesignFixed$new(n = n, response_type = "incidence", verbose = FALSE)
 	des_logit$add_all_subjects_to_experiment(data.frame(x = x))
 	des_logit$overwrite_all_subject_assignments(w)
 	des_logit$add_all_subject_responses(rbinom(n, 1, plogis(-0.1 + 0.5 * w01 + 0.2 * x)))
@@ -59,7 +59,7 @@ test_that("gradient testing type is available on representative likelihood famil
 	expect_gte(p_logit, 0)
 	expect_lte(p_logit, 1)
 
-	des_pois <- DesignFixed$new(n = n, response_type = "count", verbose = FALSE)
+	des_pois <- EDI:::DesignFixed$new(n = n, response_type = "count", verbose = FALSE)
 	des_pois$add_all_subjects_to_experiment(data.frame(x = x))
 	des_pois$overwrite_all_subject_assignments(w)
 	des_pois$add_all_subject_responses(rpois(n, lambda = exp(0.2 + 0.35 * w01 + 0.15 * x)))
@@ -71,7 +71,7 @@ test_that("gradient testing type is available on representative likelihood famil
 	expect_gte(p_pois, 0)
 	expect_lte(p_pois, 1)
 
-	des_nb <- DesignFixed$new(n = n, response_type = "count", verbose = FALSE)
+	des_nb <- EDI:::DesignFixed$new(n = n, response_type = "count", verbose = FALSE)
 	des_nb$add_all_subjects_to_experiment(data.frame(x = x))
 	des_nb$overwrite_all_subject_assignments(w)
 	mu_nb <- exp(0.15 + 0.3 * w01 + 0.1 * x)
@@ -84,7 +84,7 @@ test_that("gradient testing type is available on representative likelihood famil
 	expect_gte(p_nb, 0)
 	expect_lte(p_nb, 1)
 
-	des_weib <- DesignFixed$new(n = n, response_type = "survival", verbose = FALSE)
+	des_weib <- EDI:::DesignFixed$new(n = n, response_type = "survival", verbose = FALSE)
 	des_weib$add_all_subjects_to_experiment(data.frame(x = x))
 	des_weib$overwrite_all_subject_assignments(w)
 	y_surv <- exp(0.4 + 0.3 * w01 + 0.15 * x + rnorm(n, sd = 0.2))
@@ -121,7 +121,7 @@ test_that("bootstrap reusable workers retain warm-start state across refits", {
 	x <- rnorm(n)
 	w <- rep(c(1, -1), length.out = n)
 	w01 <- (w + 1) / 2
-	des <- DesignFixed$new(n = n, response_type = "count", verbose = FALSE)
+	des <- EDI:::DesignFixed$new(n = n, response_type = "count", verbose = FALSE)
 	des$add_all_subjects_to_experiment(data.frame(x = x))
 	des$overwrite_all_subject_assignments(w)
 	mu <- exp(0.25 + 0.4 * w01 + 0.2 * x)

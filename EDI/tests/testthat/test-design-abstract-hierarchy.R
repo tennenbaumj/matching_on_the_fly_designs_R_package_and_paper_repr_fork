@@ -17,7 +17,7 @@ test_that("Design hierarchy supports both fixed and sequential designs", {
 })
 
 test_that("plain DesignFixed supports analysis but not redraw-based resampling", {
-	des = DesignFixed$new(n = 4, response_type = "continuous", verbose = FALSE)
+	des = EDI:::DesignFixed$new(n = 4, response_type = "continuous", verbose = FALSE)
 	des$add_all_subjects_to_experiment(data.frame(x1 = 1:4))
 	des$overwrite_all_subject_assignments(c(-1, 1, -1, 1))
 	des$add_all_subject_responses(c(1, 3, 2, 4))
@@ -46,7 +46,7 @@ test_that("plain DesignFixed supports analysis but not redraw-based resampling",
 })
 
 test_that("DesignFixed batch ingest validates input shape and type", {
-	des = DesignFixed$new(n = 4, response_type = "continuous", verbose = FALSE)
+	des = EDI:::DesignFixed$new(n = 4, response_type = "continuous", verbose = FALSE)
 	expect_error(des$add_all_subjects_to_experiment(matrix(1:4, ncol = 1)), "data.frame")
 	expect_error(
 		des$add_all_subjects_to_experiment(data.frame(x1 = 1:3)),

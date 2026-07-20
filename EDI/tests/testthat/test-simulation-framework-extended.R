@@ -10,7 +10,7 @@ test_that("SimulationFramework supports parallel execution", {
 		inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 		inference_types_and_params = list(asymp_pval = list()),
 		n = 20L,
-		Nrep = 4L,
+		Nrep_W = 4L, Nrep_Y_w = 1L,
 		num_cores = 2L,
 		results_filename = results_file,
 		verbose = FALSE,
@@ -38,7 +38,7 @@ test_that("SimulationFramework supports mirai-backed replication parallelism", {
 		inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 		inference_types_and_params = list(asymp_pval = list()),
 		n = 20L,
-		Nrep = 4L,
+		Nrep_W = 4L, Nrep_Y_w = 1L,
 		num_cores = 2L,
 		results_filename = results_file,
 		verbose = FALSE,
@@ -63,7 +63,7 @@ test_that("SimulationFramework supports sequential KK designs and specific infer
 		),
 		inference_types_and_params = list(asymp_pval = list()),
 		n = 10L,
-		Nrep = 2L,
+		Nrep_W = 2L, Nrep_Y_w = 1L,
 		betaT = 0.5,
 		results_filename = tempfile(fileext = ".csv"),
 		verbose = FALSE,
@@ -83,12 +83,12 @@ test_that("SimulationFramework supports randomization and bootstrap inference", 
 		response_type = "continuous",
 		design_classes_and_params = list(DesignFixedBernoulli),
 		inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
-		inference_types_and_params = list(
-			boot_ci = list(B = 20),
-			rand_pval = list(r = 20)
-		),
+			inference_types_and_params = list(
+				boot_ci = list(B = 20, type = "percentile"),
+				rand_pval = list(r = 20)
+			),
 		n = 10L,
-		Nrep = 2L,
+		Nrep_W = 2L, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
 	)
@@ -120,7 +120,7 @@ test_that("SimulationFramework supports custom X_mat", {
 		p = p,
 		X_mat = X_custom,
 		cov_draw_method = NULL,
-		Nrep = 2L,
+		Nrep_W = 2L, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
 	)
@@ -138,7 +138,7 @@ test_that("SimulationFramework can keep and retrieve intermediate data", {
 		inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 		inference_types_and_params = list(asymp_pval = list()),
 		n = 10L,
-		Nrep = 3L,
+		Nrep_W = 3L, Nrep_Y_w = 1L,
 		keep_all_intermediate_data = TRUE,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
@@ -187,7 +187,7 @@ test_that("SimulationFramework supports custom replication and response hooks", 
 		inference_types_and_params = list(asymp_pval = list()),
 		n = 6L,
 		p = 1L,
-		Nrep = 1L,
+		Nrep_W = 1L, Nrep_Y_w = 1L,
 		betaT = 2,
 		custom_replication_data_generator = custom_data,
 		custom_apply_treatment_and_noise = custom_apply,
@@ -213,7 +213,7 @@ test_that("SimulationFramework handles Friedman nonlinear model", {
 		inference_types_and_params = list(asymp_pval = list()),
 		p = 6L,
 		n = 20L,
-		Nrep = 1L,
+		Nrep_W = 1L, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE,
 		stop_on_error = FALSE
@@ -234,7 +234,7 @@ test_that("SimulationFramework survival responses respect censoring", {
 		inference_types_and_params = list(asymp_pval = list()),
 		prob_censoring = 0.99, # Force heavy censoring
 		n = 50L,
-		Nrep = 1L,
+		Nrep_W = 1L, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
 	)
@@ -248,7 +248,7 @@ test_that("SimulationFramework survival responses respect censoring", {
 		inference_types_and_params = list(asymp_pval = list()),
 		prob_censoring = 0.0,
 		n = 50L,
-		Nrep = 1L,
+		Nrep_W = 1L, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
 	)
@@ -262,7 +262,7 @@ test_that("SimulationFramework survival responses respect censoring", {
 		inference_types_and_params = list(asymp_pval = list()),
 		prob_censoring = 1.0, 
 		n = 20L,
-		Nrep = 1L,
+		Nrep_W = 1L, Nrep_Y_w = 1L,
 		keep_all_intermediate_data = TRUE,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE

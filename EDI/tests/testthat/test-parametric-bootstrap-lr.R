@@ -10,7 +10,7 @@ make_param_boot_logit_design <- function(seed = 20260518L, n = 120L){
 	p <- plogis(-0.4 + 0.8 * w01 + 0.35 * x1 - 0.25 * x2)
 	y <- rbinom(n, 1, p)
 
-	des <- DesignFixed$new(n = n, response_type = "incidence", verbose = FALSE)
+	des <- EDI:::DesignFixed$new(n = n, response_type = "incidence", verbose = FALSE)
 	des$add_all_subjects_to_experiment(data.frame(x1 = x1, x2 = x2))
 	des$overwrite_all_subject_assignments(w)
 	des$add_all_subject_responses(y)
@@ -86,6 +86,10 @@ test_that("parametric bootstrap worker loader stores a simulated null draw", {
 
 test_that("generic parametric bootstrap LR is serial-parallel deterministic under a fixed seed", {
 	des <- make_param_boot_logit_design(seed = 20260521L, n = 100L)
+	if (isTRUE(EDI:::edi_env$mirai_has_been_used)) {
+		set_num_cores(2L, force_mirai = TRUE)
+		on.exit(unset_num_cores(), add = TRUE)
+	}
 
 	inf_serial <- InferenceIncidLogRegr$new(des, model_formula = ~ x1 + x2, verbose = FALSE)
 	inf_serial$set_seed(777)
@@ -115,6 +119,10 @@ test_that("generic parametric bootstrap LR is serial-parallel deterministic unde
 
 test_that("parametric bootstrap LR keeps deterministic mode off when no seed is set", {
 	des <- make_param_boot_logit_design(seed = 20260522L, n = 90L)
+	if (isTRUE(EDI:::edi_env$mirai_has_been_used)) {
+		set_num_cores(2L, force_mirai = TRUE)
+		on.exit(unset_num_cores(), add = TRUE)
+	}
 	inf <- InferenceIncidLogRegr$new(des, model_formula = ~ x1 + x2, verbose = FALSE)
 	inf$num_cores <- 2L
 	inf$.__enclos_env__$private$reusable_bootstrap_worker_enabled <- FALSE

@@ -33,7 +33,7 @@ test_that("Inference works for incidence", {
 })
 
 test_that("Simple incidence proportion difference uses pooled-variance t inference", {
-	des <- DesignFixed$new(n = 10, response_type = "incidence", verbose = FALSE)
+	des <- EDI:::DesignFixed$new(n = 10, response_type = "incidence", verbose = FALSE)
 	des$add_all_subjects_to_experiment(data.frame(x = 1:10))
 	des$overwrite_all_subject_assignments(c(1, 1, 1, 1, 1, -1, -1, -1, -1, -1))
 	des$add_all_subject_responses(c(1, 1, 0, 1, 0, 0, 1, 0, 0, 0))
@@ -77,7 +77,7 @@ test_that("Simple incidence proportion difference uses pooled-variance t inferen
 })
 
 test_that("Simple mean difference pooled-variance inference matches pooled t.test", {
-	des <- DesignFixed$new(n = 9, response_type = "continuous", verbose = FALSE)
+	des <- EDI:::DesignFixed$new(n = 9, response_type = "continuous", verbose = FALSE)
 	des$add_all_subjects_to_experiment(data.frame(x = 1:9))
 	w <- c(1, 1, 1, 1, -1, -1, -1, -1, -1)
 	y <- c(2.2, 2.6, 1.8, 3.1, 0.9, 1.0, 1.4, 0.8, 1.2)

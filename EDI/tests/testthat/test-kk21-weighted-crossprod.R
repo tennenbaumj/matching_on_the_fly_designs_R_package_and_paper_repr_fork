@@ -94,7 +94,7 @@ kk21_weibull_weight_reference <- function(x, time, event) {
 test_that("KK21 stepwise logistic weights match an R score-test reference", {
 	set.seed(79)
 	n <- 100L
-	X <- cbind(x1 = rnorm(n), x2 = runif(n, -1, 1), x3 = rep(c(-1, 1), n / 2L))
+	X <- cbind(x1 = rnorm(n), x2 = runif(n, -1, 1), x3 = rep(c(-1, 1, 1, -1), length.out = n))
 	treatment <- rep(c(0, 1), n / 2L)
 	y <- rbinom(n, 1, plogis(-0.2 + 0.5 * treatment + 0.7 * X[, 1L]))
 

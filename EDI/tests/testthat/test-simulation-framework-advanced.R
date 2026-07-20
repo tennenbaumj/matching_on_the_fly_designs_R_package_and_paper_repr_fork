@@ -11,7 +11,7 @@ test_that("SimulationFramework handles multiple cells and summarizes correctly",
 		n = c(10, 20),
 		p = c(1, 2),
 		betaT = c(0, 0.5),
-		Nrep = 2,
+		Nrep_W = 2, Nrep_Y_w = 1L,
 		inference_types_and_params = list(asymp_pval = list(delta = 0)),
 		results_filename = results_file,
 		verbose = FALSE,
@@ -41,7 +41,7 @@ test_that("SimulationFramework continue logic works for both csv and csv.bz2", {
 			design_classes_and_params = list(DesignFixedBernoulli),
 			inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 			inference_types_and_params = inf_types,
-			n = 10L, Nrep = 1L,
+			n = 10L, Nrep_W = 1L, Nrep_Y_w = 1L,
 			results_filename = results_file,
 			verbose = FALSE,
 			continue_from_last_result_row = FALSE
@@ -49,13 +49,13 @@ test_that("SimulationFramework continue logic works for both csv and csv.bz2", {
 		sim1$run()
 		expect_equal(nrow(SimulationFrameworkReport$new(sim1)$get_results()), 1)
 		
-		# Second run: continue, total Nrep = 3
+		# Second run: continue, total Nrep_W = 3, Nrep_Y_w = 1L
 		sim2 <- SimulationFramework$new(
 			response_type = "continuous",
 			design_classes_and_params = list(DesignFixedBernoulli),
 			inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 			inference_types_and_params = inf_types,
-			n = 10L, Nrep = 3L,
+			n = 10L, Nrep_W = 3L, Nrep_Y_w = 1L,
 			results_filename = results_file,
 			verbose = FALSE,
 			continue_from_last_result_row = TRUE
@@ -74,7 +74,7 @@ test_that("SimulationFramework handles seed for reproducibility", {
 		design_classes_and_params = list(DesignFixedBernoulli),
 		inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 		inference_types_and_params = list(asymp_pval = list()),
-		n = 10L, Nrep = 2L,
+		n = 10L, Nrep_W = 2L, Nrep_Y_w = 1L,
 		seed = 12345,
 		results_filename = results_file1,
 		verbose = FALSE,
@@ -89,7 +89,7 @@ test_that("SimulationFramework handles seed for reproducibility", {
 		design_classes_and_params = list(DesignFixedBernoulli),
 		inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 		inference_types_and_params = list(asymp_pval = list()),
-		n = 10L, Nrep = 2L,
+		n = 10L, Nrep_W = 2L, Nrep_Y_w = 1L,
 		seed = 12345,
 		results_filename = results_file2,
 		verbose = FALSE,
@@ -126,7 +126,7 @@ test_that("SimulationFramework handles factor covariate in design initialization
 		p = ncol(X_mat),
 		X_mat = X_mat,
 		cov_draw_method = NULL,
-		Nrep = 1,
+		Nrep_W = 1, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
 	)
@@ -141,7 +141,7 @@ test_that("SimulationFramework summarize handles all-NA results", {
 		design_classes_and_params = list(DesignFixedBernoulli),
 		inference_classes_and_params = list(InferenceAllSimpleMeanDiff),
 		inference_types_and_params = list(asymp_pval = list()),
-		Nrep = 1,
+		Nrep_W = 1, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
 	)
@@ -178,7 +178,7 @@ test_that("SimulationFramework respects clamping parameters", {
 		n = 10,
 		betaT = 100, # huge effect
 		incidence_clamp = 0.01,
-		Nrep = 1,
+		Nrep_W = 1, Nrep_Y_w = 1L,
 		verbose = FALSE,
 		continue_from_last_result_row = FALSE
 	)

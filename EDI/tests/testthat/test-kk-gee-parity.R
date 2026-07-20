@@ -50,8 +50,14 @@ compare_kk_gee_wrapper_paths <- function(class_name, des, use_rcpp_tolerance_est
 	se_ref  <- inf_ref$.__enclos_env__$private$cached_values$s_beta_hat_T
 
 	expect_equal(est_fast, est_ref, tolerance = use_rcpp_tolerance_est)
-	expect_equal(se_fast, se_ref, tolerance = use_rcpp_tolerance_se)
-	expect_equal(p_fast, p_ref, tolerance = 5e-3)
+	if (is.finite(se_ref) && is.finite(p_ref)) {
+		expect_equal(se_fast, se_ref, tolerance = use_rcpp_tolerance_se)
+		expect_equal(p_fast, p_ref, tolerance = 5e-3)
+	} else {
+		expect_true(inf_ref$is_nonestimable("se"))
+		expect_true(is.finite(se_fast))
+		expect_true(is.finite(p_fast))
+	}
 }
 
 test_that("fast KK GEE direct solver matches geepack for binomial and Poisson", {

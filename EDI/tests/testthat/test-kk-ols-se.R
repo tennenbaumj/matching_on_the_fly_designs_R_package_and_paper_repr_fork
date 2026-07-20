@@ -1,11 +1,21 @@
 library(testthat)
 library(EDI)
 
-test_that("KK OLS one-lik uses HC2 post-fit standard errors and finite df", {
-	des = DesignFixedBinaryMatch$new(response_type = "continuous", n = 6, verbose = FALSE)
+make_kk_ols_binary_match_fixture = function(){
+	des = DesignFixedBinaryMatch$new(
+		response_type = "continuous",
+		n = 6,
+		m = c(1L, 1L, 2L, 2L, 3L, 3L),
+		verbose = FALSE
+	)
 	des$add_all_subjects_to_experiment(data.frame(x = c(-2, -1, 0, 1, 2, 3)))
-	des$assign_w_to_all_subjects()
+	des$assign_w_to_all_subjects(c(1, -1, -1, 1, 1, -1))
 	des$add_all_subject_responses(c(-1, 0, 1, 1, 4, 9))
+	des
+}
+
+test_that("KK OLS one-lik uses HC2 post-fit standard errors and finite df", {
+	des = make_kk_ols_binary_match_fixture()
 
 	inf = InferenceContinKKOLSOneLik$new(des, verbose = FALSE)
 	priv = inf$.__enclos_env__$private
@@ -30,10 +40,7 @@ test_that("KK OLS one-lik uses HC2 post-fit standard errors and finite df", {
 })
 
 test_that("KK OLS IVWC uses HC2 component standard errors and finite df", {
-	des = DesignFixedBinaryMatch$new(response_type = "continuous", n = 6, verbose = FALSE)
-	des$add_all_subjects_to_experiment(data.frame(x = c(-2, -1, 0, 1, 2, 3)))
-	des$assign_w_to_all_subjects()
-	des$add_all_subject_responses(c(-1, 0, 1, 1, 4, 9))
+	des = make_kk_ols_binary_match_fixture()
 
 	inf = InferenceContinKKOLSIVWC$new(des, verbose = FALSE)
 	priv = inf$.__enclos_env__$private
@@ -50,10 +57,7 @@ test_that("KK OLS IVWC uses HC2 component standard errors and finite df", {
 })
 
 test_that("KK OLS one-lik supports gradient p-values with warm null-fit cache reuse", {
-	des = DesignFixedBinaryMatch$new(response_type = "continuous", n = 6, verbose = FALSE)
-	des$add_all_subjects_to_experiment(data.frame(x = c(-2, -1, 0, 1, 2, 3)))
-	des$assign_w_to_all_subjects()
-	des$add_all_subject_responses(c(-1, 0, 1, 1, 4, 9))
+	des = make_kk_ols_binary_match_fixture()
 
 	inf = InferenceContinKKOLSOneLik$new(des, verbose = FALSE)
 	expect_true("gradient" %in% inf$get_supported_testing_types())

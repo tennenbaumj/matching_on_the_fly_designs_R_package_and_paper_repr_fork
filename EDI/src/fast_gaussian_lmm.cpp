@@ -151,7 +151,7 @@ double neg_ll_and_grad(const LMMData& dat,
         }
 
         // --- gradient for log σ_e (weighted) ---
-        d_lse += gw * ((m - 1) + v_e * inv_a + vb_over_a * (S * S) * inv_a / v_e - W / v_e);
+        d_lse += gw * ((m - 1) + v_e * inv_a + vb_over_a * (S * S) * inv_a - W / v_e);
 
         // --- gradient for log σ_b (weighted) ---
         d_lsb += gw * ((m * v_b * inv_a) - vb_over_a * (S * S) * inv_a);

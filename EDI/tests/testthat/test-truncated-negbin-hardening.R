@@ -6,23 +6,23 @@ test_that("fast_truncated_negbin_count_cpp rejects invalid warm starts and input
 	y <- pmax(rnbinom(nrow(X), mu = lambda, size = 3), 1)
 
 	expect_error(
-		fast_truncated_negbin_count_cpp(X, y, warm_start_params = rep(0, ncol(X))),
+		EDI:::fast_truncated_negbin_count_cpp(X, y, warm_start_params = rep(0, ncol(X))),
 		"warm_start_params"
 	)
 	expect_error(
-		fast_truncated_negbin_count_cpp(X, y, warm_start_fisher_info = diag(ncol(X))),
+		EDI:::fast_truncated_negbin_count_cpp(X, y, warm_start_fisher_info = diag(ncol(X))),
 		"warm_start_fisher_info"
 	)
 	expect_error(
-		fast_truncated_negbin_count_cpp(X, c(y[-1], 1.5)),
+		EDI:::fast_truncated_negbin_count_cpp(X, c(y[-1], 1.5)),
 		"integer-valued counts"
 	)
 	expect_error(
-		fast_truncated_negbin_count_cpp(X, replace(y, 1, 0)),
+		EDI:::fast_truncated_negbin_count_cpp(X, replace(y, 1, 0)),
 		"positive counts"
 	)
 	expect_error(
-		fast_truncated_negbin_count_cpp(
+		EDI:::fast_truncated_negbin_count_cpp(
 			X, y,
 			warm_start_params = c(rep(0, ncol(X)), 25)
 		),
@@ -47,7 +47,7 @@ test_that("fast_truncated_negbin_count_cpp survives repeated stale bootstrap-sty
 
 		res <- tryCatch(
 			suppressWarnings(
-				fast_truncated_negbin_count_cpp(
+				EDI:::fast_truncated_negbin_count_cpp(
 					X = X,
 					y = y,
 					warm_start_params = prev_params,

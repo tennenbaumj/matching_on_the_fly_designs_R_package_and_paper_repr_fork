@@ -258,7 +258,7 @@ test_that("continuous lin, count negbin, and classical incidence estimators matc
 
 test_that("continuous blocked-cluster bootstrap keeps multivariate workers finite", {
 	set.seed(20260417)
-	block = rep(c("a", "b", "c"), each = 5L)
+	block = rep(c("a", "b", "c"), each = 8L)
 	X = data.frame(
 		block = factor(block),
 		x1 = rnorm(length(block)),

@@ -120,6 +120,33 @@ test_that("compute_rand_confidence_interval works for proportion response", {
 	message("Proportion Rand CI: [", ci[1], ", ", ci[2], "] Est: ", est)
 })
 
+test_that("proportion quantile randomization CI shifts on the logit scale once", {
+	set.seed(124)
+	n <- 48
+	des <- DesignSeqOneByOneiBCRD$new(n = n, response_type = "proportion", verbose = FALSE)
+	x <- rnorm(n)
+	for (i in 1:n) {
+		des$add_one_subject_to_experiment_and_assign(data.table(x1 = x[i]))
+	}
+	w <- des$.__enclos_env__$private$w
+	mu <- plogis(-0.25 + 0.7 * w + 0.2 * x)
+	y <- rbeta(n, shape1 = mu * 12, shape2 = (1 - mu) * 12)
+	add_all_subject_responses_seq(des, y)
+
+	inf <- InferencePropQuantileRegr$new(des, model_formula = ~ x1, verbose = FALSE)
+	ci <- inf$compute_rand_confidence_interval(
+		alpha = 0.10,
+		r = 31,
+		pval_epsilon = 0.10,
+		show_progress = FALSE,
+		ci_search_control = list(max_expansions = 2L, mc_enable = FALSE)
+	)
+
+	expect_equal(length(ci), 2)
+	expect_true(all(is.finite(ci)))
+	expect_true(ci[1] < ci[2])
+})
+
 test_that("compute_rand_confidence_interval works for survival response (uncensored)", {
 	set.seed(123)
 	n <- 50
@@ -179,7 +206,7 @@ test_that("compute_rand_confidence_interval throws error for unsupported types",
 	for (i in 1:n) des_incid$add_one_subject_to_experiment_and_assign(data.table(x=1))
 	add_all_subject_responses_seq(des_incid, rbinom(n, 1, 0.5))
 	inf_incid <- InferenceIncidLogRegr$new(des_incid)
-	expect_error(inf_incid$compute_rand_confidence_interval(), "Zhang incidence inference requires Bernoulli or matching designs")
+	expect_error(inf_incid$compute_rand_confidence_interval(), "Randomization confidence intervals are not supported for incidence")
 
 	des_count <- DesignSeqOneByOneBernoulli$new(n = n, response_type = "count", verbose = FALSE)
 	for (i in 1:n) des_count$add_one_subject_to_experiment_and_assign(data.table(x=1))
@@ -189,6 +216,33 @@ test_that("compute_rand_confidence_interval throws error for unsupported types",
 	expect_equal(length(ci_count), 2)
 	expect_true(ci_count[1] < ci_count[2])
 	expect_true(all(is.finite(ci_count)))
+})
+
+test_that("FixedRerandomization incidence randomization uses design draws, not Zhang", {
+	set.seed(123)
+	n <- 20
+	X <- data.frame(x1 = rnorm(n), x2 = rnorm(n))
+	des <- DesignFixedRerandomization$new(
+		n = n,
+		response_type = "incidence",
+		obj_val_cutoff = 100,
+		verbose = FALSE
+	)
+	des$add_all_subjects_to_experiment(X)
+	des$assign_w_to_all_subjects()
+	des$add_all_subject_responses(rbinom(n, 1, 0.5))
+
+	old_asserts <- EDI:::should_run_asserts()
+	on.exit(toggle_asserts(old_asserts), add = TRUE)
+	toggle_asserts(TRUE)
+
+	inf <- InferenceAllSimpleMeanDiff$new(des, verbose = FALSE)
+	expect_no_error(p <- inf$compute_rand_two_sided_pval(r = 11, show_progress = FALSE))
+	expect_true(is.finite(p))
+	expect_error(
+		inf$compute_rand_two_sided_pval(r = 11, type = "Zhang", show_progress = FALSE),
+		"Randomization type dispatch"
+	)
 })
 
 test_that("Zhang incidence inference is available through randomization and exact APIs", {
