@@ -1661,8 +1661,8 @@ compute_wilcox_matching_ivwc_bootstrap_parallel_cpp <- function(w_sexp, y_sexp, 
     .Call(`_EDI_compute_wilcox_matching_ivwc_bootstrap_parallel_cpp`, w_sexp, y_sexp, m_vec_sexp, indices_mat_sexp, m_mat_sexp, num_cores)
 }
 
-compute_wilcox_hl_rand_bootstrap_parallel_cpp <- function(y0_sexp, i_mat_sexp, w_mat_sexp, delta, transform_code, zero_one_logit_clamp, num_cores) {
-    .Call(`_EDI_compute_wilcox_hl_rand_bootstrap_parallel_cpp`, y0_sexp, i_mat_sexp, w_mat_sexp, delta, transform_code, zero_one_logit_clamp, num_cores)
+compute_wilcox_hl_rand_bootstrap_parallel_cpp <- function(y0_sexp, i_mat_sexp, w_mat_sexp, delta, transform_code, zero_one_logit_clamp, noise_mat, num_cores) {
+    .Call(`_EDI_compute_wilcox_hl_rand_bootstrap_parallel_cpp`, y0_sexp, i_mat_sexp, w_mat_sexp, delta, transform_code, zero_one_logit_clamp, noise_mat, num_cores)
 }
 
 compute_wilcox_distr_parallel_cpp <- function(w_mat_sexp, y_sexp, delta, num_cores) {

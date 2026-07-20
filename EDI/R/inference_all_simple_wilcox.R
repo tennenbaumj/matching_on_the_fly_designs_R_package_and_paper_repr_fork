@@ -185,7 +185,7 @@ InferenceAllSimpleWilcox = R6::R6Class("InferenceAllSimpleWilcox",
 			if (is.null(mats)) return(NULL)
 			compute_wilcox_hl_rand_bootstrap_parallel_cpp(
 				as.numeric(y0_full), mats$i_mat, mats$w_mat, as.numeric(delta),
-				transform_code, as.numeric(zero_one_logit_clamp), private$n_cpp_threads(ncol(mats$w_mat))
+				transform_code, as.numeric(zero_one_logit_clamp), mats$noise_mat, private$n_cpp_threads(ncol(mats$w_mat))
 			)
 		},
 		max_resample_attempts = 50L,

@@ -543,6 +543,7 @@ NumericVector compute_wilcox_hl_rand_bootstrap_parallel_cpp(
     double delta,
     int transform_code,
     double zero_one_logit_clamp,
+    Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat,
     int num_cores) {
 
 	NumericVector y0_vec(y0_sexp);
@@ -560,6 +561,14 @@ NumericVector compute_wilcox_hl_rand_bootstrap_parallel_cpp(
     const int* w_ptr = w_mat.data();
     double* res_ptr = results_vec.data();
 
+    const bool has_noise = noise_mat.isNotNull();
+    NumericMatrix noise_m;
+    const double* noise_ptr = nullptr;
+    if (has_noise) {
+        noise_m = NumericMatrix(noise_mat);
+        noise_ptr = noise_m.begin();
+    }
+
 #ifdef _OPENMP
     omp_set_num_threads(num_cores);
 #endif
@@ -574,7 +583,8 @@ NumericVector compute_wilcox_hl_rand_bootstrap_parallel_cpp(
         y_c.reserve(n);
 
         for (int i = 0; i < n; ++i) {
-            const double yv = y0_ptr[i_col[i] - 1]; // i_mat is 1-based
+            double yv = y0_ptr[i_col[i] - 1]; // i_mat is 1-based
+            if (has_noise) yv += noise_ptr[(size_t)b * n + i];
             if (!std::isfinite(yv)) continue;
             if (w_col[i] == 1) {
                 y_t.push_back(delta != 0.0 ? apply_shift(yv, delta, transform_code, zero_one_logit_clamp) : yv);
