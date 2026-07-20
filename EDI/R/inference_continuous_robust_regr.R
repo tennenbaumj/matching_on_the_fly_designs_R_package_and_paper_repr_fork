@@ -316,7 +316,7 @@ InferenceContinRobustRegr = R6::R6Class("InferenceContinRobustRegr",
 			}
 			compute_robust_rand_bootstrap_parallel_cpp(
 				as.numeric(y0_full), Xc, mats$i_mat, mats$w_mat,
-				as.numeric(delta), private$rlm_method, private$n_cpp_threads(ncol(mats$w_mat))
+				as.numeric(delta), private$rlm_method, mats$noise_mat, private$n_cpp_threads(ncol(mats$w_mat))
 			)
 		}
 	)

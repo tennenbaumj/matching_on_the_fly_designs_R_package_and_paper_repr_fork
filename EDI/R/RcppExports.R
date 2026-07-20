@@ -1369,8 +1369,8 @@ fast_robust_regression_cpp <- function(X_sexp, y_sexp, warm_start_beta = NULL, s
     .Call(`_EDI_fast_robust_regression_cpp`, X_sexp, y_sexp, warm_start_beta, smart_cold_start, method, j, c, maxit, tol, fixed_idx, fixed_values, warm_start_weights, warm_start_fisher_info, estimate_only)
 }
 
-compute_robust_rand_bootstrap_parallel_cpp <- function(y0, Xc, i_mat, w_mat, delta, method, num_cores) {
-    .Call(`_EDI_compute_robust_rand_bootstrap_parallel_cpp`, y0, Xc, i_mat, w_mat, delta, method, num_cores)
+compute_robust_rand_bootstrap_parallel_cpp <- function(y0, Xc, i_mat, w_mat, delta, method, noise_mat, num_cores) {
+    .Call(`_EDI_compute_robust_rand_bootstrap_parallel_cpp`, y0, Xc, i_mat, w_mat, delta, method, noise_mat, num_cores)
 }
 
 sample_int_replace_cpp <- function(n, size) {

@@ -2746,8 +2746,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_robust_rand_bootstrap_parallel_cpp
-NumericVector compute_robust_rand_bootstrap_parallel_cpp(const NumericVector& y0, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, std::string method, int num_cores);
-RcppExport SEXP _EDI_compute_robust_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP methodSEXP, SEXP num_coresSEXP) {
+NumericVector compute_robust_rand_bootstrap_parallel_cpp(const NumericVector& y0, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, std::string method, Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat, int num_cores);
+RcppExport SEXP _EDI_compute_robust_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP methodSEXP, SEXP noise_matSEXP, SEXP num_coresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -2757,8 +2757,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
     Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
     Rcpp::traits::input_parameter< std::string >::type method(methodSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type noise_mat(noise_matSEXP);
     Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
-    rcpp_result_gen = Rcpp::wrap(compute_robust_rand_bootstrap_parallel_cpp(y0, Xc, i_mat, w_mat, delta, method, num_cores));
+    rcpp_result_gen = Rcpp::wrap(compute_robust_rand_bootstrap_parallel_cpp(y0, Xc, i_mat, w_mat, delta, method, noise_mat, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5158,7 +5159,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_fast_ridit_scores_cpp", (DL_FUNC) &_EDI_fast_ridit_scores_cpp, 2},
     {"_EDI_fast_ridit_analysis_cpp", (DL_FUNC) &_EDI_fast_ridit_analysis_cpp, 3},
     {"_EDI_fast_robust_regression_cpp", (DL_FUNC) &_EDI_fast_robust_regression_cpp, 14},
-    {"_EDI_compute_robust_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_robust_rand_bootstrap_parallel_cpp, 7},
+    {"_EDI_compute_robust_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_robust_rand_bootstrap_parallel_cpp, 8},
     {"_EDI_sample_int_replace_cpp", (DL_FUNC) &_EDI_sample_int_replace_cpp, 2},
     {"_EDI_resample_group_rows_cpp", (DL_FUNC) &_EDI_resample_group_rows_cpp, 2},
     {"_EDI_scale_columns_cpp", (DL_FUNC) &_EDI_scale_columns_cpp, 1},
