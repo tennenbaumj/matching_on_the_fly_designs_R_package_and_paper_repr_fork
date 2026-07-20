@@ -1861,8 +1861,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_logrank_rand_bootstrap_parallel_cpp
-NumericVector compute_logrank_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
-RcppExport SEXP _EDI_compute_logrank_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+NumericVector compute_logrank_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat, int num_cores);
+RcppExport SEXP _EDI_compute_logrank_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP noise_matSEXP, SEXP num_coresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1871,8 +1871,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
     Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
     Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type noise_mat(noise_matSEXP);
     Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
-    rcpp_result_gen = Rcpp::wrap(compute_logrank_rand_bootstrap_parallel_cpp(y0, dead, i_mat, w_mat, delta, num_cores));
+    rcpp_result_gen = Rcpp::wrap(compute_logrank_rand_bootstrap_parallel_cpp(y0, dead, i_mat, w_mat, delta, noise_mat, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5109,7 +5110,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_fast_logistic_regression_weighted_cpp", (DL_FUNC) &_EDI_fast_logistic_regression_weighted_cpp, 12},
     {"_EDI_fast_logistic_regression_with_var_cpp", (DL_FUNC) &_EDI_fast_logistic_regression_with_var_cpp, 10},
     {"_EDI_fast_logrank_stats_cpp", (DL_FUNC) &_EDI_fast_logrank_stats_cpp, 3},
-    {"_EDI_compute_logrank_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_logrank_rand_bootstrap_parallel_cpp, 6},
+    {"_EDI_compute_logrank_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_logrank_rand_bootstrap_parallel_cpp, 7},
     {"_EDI_matrix_rank_cpp", (DL_FUNC) &_EDI_matrix_rank_cpp, 2},
     {"_EDI_get_negbin_regression_score_cpp", (DL_FUNC) &_EDI_get_negbin_regression_score_cpp, 3},
     {"_EDI_get_negbin_regression_hessian_cpp", (DL_FUNC) &_EDI_get_negbin_regression_hessian_cpp, 3},

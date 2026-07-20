@@ -151,6 +151,7 @@ NumericVector compute_logrank_rand_bootstrap_parallel_cpp(
     const IntegerMatrix& i_mat,
     const IntegerMatrix& w_mat,
     double delta,
+    Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat,
     int num_cores) {
 
   const int n = i_mat.nrow();
@@ -163,6 +164,14 @@ NumericVector compute_logrank_rand_bootstrap_parallel_cpp(
   double* res_ptr = results_vec.data();
   const double mult = std::exp(delta);
   const bool use_parallel = should_parallelize_replicates(nsim, n, num_cores);
+
+  const bool has_noise = noise_mat.isNotNull();
+  NumericMatrix noise_m;
+  const double* noise_ptr = nullptr;
+  if (has_noise) {
+    noise_m = NumericMatrix(noise_mat);
+    noise_ptr = noise_m.begin();
+  }
 
 #ifdef _OPENMP
   if (use_parallel) omp_set_num_threads(num_cores);
@@ -180,7 +189,9 @@ NumericVector compute_logrank_rand_bootstrap_parallel_cpp(
       for (int i = 0; i < n; ++i) {
         const int row0 = i_col[i] - 1; // i_mat is 1-based
         const int is_t = (w_col[i] == 1);
-        time_b[i] = (is_t && delta != 0.0) ? y0_ptr[row0] * mult : y0_ptr[row0];
+        double yv = y0_ptr[row0];
+        if (has_noise) yv += noise_ptr[(size_t)b * n + i];
+        time_b[i] = (is_t && delta != 0.0) ? yv * mult : yv;
         dead_b[i] = dead_ptr[row0];
         w_b[i] = is_t;
       }

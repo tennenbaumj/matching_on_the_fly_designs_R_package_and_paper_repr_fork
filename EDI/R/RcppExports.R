@@ -875,8 +875,8 @@ fast_logrank_stats_cpp <- function(w, y_r, dead) {
     .Call(`_EDI_fast_logrank_stats_cpp`, w, y_r, dead)
 }
 
-compute_logrank_rand_bootstrap_parallel_cpp <- function(y0, dead, i_mat, w_mat, delta, num_cores) {
-    .Call(`_EDI_compute_logrank_rand_bootstrap_parallel_cpp`, y0, dead, i_mat, w_mat, delta, num_cores)
+compute_logrank_rand_bootstrap_parallel_cpp <- function(y0, dead, i_mat, w_mat, delta, noise_mat, num_cores) {
+    .Call(`_EDI_compute_logrank_rand_bootstrap_parallel_cpp`, y0, dead, i_mat, w_mat, delta, noise_mat, num_cores)
 }
 
 matrix_rank_cpp <- function(A_r, tol = 1e-7) {
