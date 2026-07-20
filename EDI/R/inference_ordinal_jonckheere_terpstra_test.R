@@ -91,6 +91,10 @@ InferenceOrdinalJonckheereTerpstraTest = R6::R6Class(
 			if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) return(NULL)
 			# ordinal: no sharp-null shift supported
 			if (delta != 0) return(NULL)
+			# "smoothed" adds continuous Gaussian noise, which is not meaningful for integer
+			# ordinal category codes; decline and let the R-level fallback (which truncates
+			# via as.integer()) handle it, unchanged from before this kernel existed.
+			if (length(rand_bootstrap_draws) > 0L && !is.null(rand_bootstrap_draws[[1L]][["smooth_noise"]])) return(NULL)
 			mats = private$rand_bootstrap_draw_matrices(rand_bootstrap_draws)
 			if (is.null(mats)) return(NULL)
 			compute_jt_rand_bootstrap_parallel_cpp(

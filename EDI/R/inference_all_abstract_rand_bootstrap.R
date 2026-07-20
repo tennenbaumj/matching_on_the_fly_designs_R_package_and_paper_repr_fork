@@ -124,9 +124,6 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				!is.null(private[["compiled_cpp_stat_fn"]])
 			has_fast_kernel = !has_custom_randomization_statistic &&
 				private$has_private_method("compute_fast_rand_bootstrap_distr")
-			# Smoothed draws carry per-draw noise the C++ kernel cannot see; force worker/iteration path.
-			if (has_fast_kernel && draws_supplied && length(rand_bootstrap_draws) > 0L && !is.null(rand_bootstrap_draws[[1L]][["smooth_noise"]]))
-				has_fast_kernel = FALSE
 			if (!draws_supplied) {
 				if (!is.null(private$seed)) {
 					had_seed = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
@@ -485,13 +482,19 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			if (B == 0L) return(NULL)
 			i_mat = matrix(NA_integer_, nrow = n, ncol = B)
 			w_mat = matrix(NA_integer_, nrow = n, ncol = B)
+			has_noise = !is.null(rand_bootstrap_draws[[1L]][["smooth_noise"]])
+			noise_mat = if (has_noise) matrix(0, nrow = n, ncol = B) else NULL
 			for (b in seq_len(B)) {
 				draw = rand_bootstrap_draws[[b]]
 				if (is.null(draw$w_b) || length(draw$i_b) != n || length(draw$w_b) != n) return(NULL)
 				i_mat[, b] = as.integer(draw$i_b)
 				w_mat[, b] = as.integer(draw$w_b)
+				if (has_noise) {
+					if (is.null(draw[["smooth_noise"]]) || length(draw[["smooth_noise"]]) != n) return(NULL)
+					noise_mat[, b] = as.numeric(draw[["smooth_noise"]])
+				}
 			}
-			list(i_mat = i_mat, w_mat = w_mat)
+			list(i_mat = i_mat, w_mat = w_mat, noise_mat = noise_mat)
 		},
 		# Generates B bootstrap randomization draws. Each draw holds the resampled row indices
 		# (i_b), the pair-aware resampled match structure (m_vec_b, matching designs only), and,
@@ -653,8 +656,6 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			attr(sub_draws, "draws_id") = if (!is.null(draws_id)) paste0(draws_id, "_smc") else NULL
 			has_custom = !is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])
 			has_fast_kernel = !has_custom && private$has_private_method("compute_fast_rand_bootstrap_distr")
-			if (has_fast_kernel && length(draws) > 0L && !is.null(draws[[1L]][["smooth_noise"]]))
-				has_fast_kernel = FALSE
 			new_vals = NULL
 			if (has_fast_kernel) {
 				new_vals = tryCatch({
