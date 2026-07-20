@@ -439,7 +439,7 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 	if (grepl("confidence_interval", function_run, fixed = TRUE) && length(result) >= 2 && all(is.finite(result[1:2]))){
 		ci_lo = min(result[1:2])
 		ci_hi = max(result[1:2])
-		coverage_truth = get_coverage_truth(inference_class, dataset_name, beta_T)
+		coverage_truth = get_coverage_truth(inference_class, dataset_name, beta_T, response_type_hint = response_type)
 		beta_T_in_confidence_interval = (coverage_truth >= ci_lo && coverage_truth <= ci_hi)
 	}
 	run_row_id <<- run_row_id + 1L
@@ -738,6 +738,7 @@ supports_direct_testing_type = function(testing_type){
 				identical(label, "compute_bootstrap_two_sided_pval") ||
 				identical(label, "compute_bayesian_bootstrap_confidence_interval") ||
 				identical(label, "compute_bayesian_bootstrap_two_sided_pval") ||
+				grepl("bootstrap", label, fixed = TRUE) ||
 				grepl("jackknife", label, fixed = TRUE) ||
 				grepl("wald", label, ignore.case = TRUE) ||
 				grepl("score", label, ignore.case = TRUE) ||
@@ -1207,6 +1208,10 @@ instantiate_inference_generator = function(class_gen, des_obj, model_formula = N
 	NULL
 }
 
+is_skipped_inference_label = function(class_names){
+	rep(FALSE, length(class_names))
+}
+
 run_exhaustive_remaining_inference_classes = function(des_obj, response_type, design_type, dataset_name, n_rows, n_cols, model_formula = NULL){
 	ns = asNamespace("EDI")
 	nms = ls(ns, all.names = TRUE)
@@ -1295,81 +1300,163 @@ apply_treatment_effect_and_noise = function(y_t, w_t, response_type){
 
 # ── Model-specific coverage truth ───────────────────────────────────────────
 # beta_T is the treatment shift comprehensive_tests.R's own DGP (apply_treatment_effect_and_noise)
-# adds on each response's native scale. For classes whose own estimand IS that native-scale
-# additive shift (mean-diff-type estimators, or well-specified log-link/logit-link single-coefficient
-# models applied to an unconditional baseline) beta_T is already the right coverage target. But
-# InferenceIncidLogRegr/InferencePropBetaRegr/the Cox-family survival classes estimate a *marginal*
-# coefficient on a link scale that does not equal beta_T once baseline heterogeneity is present
-# (non-collapsibility), and the proportion/survival DGPs here (additive-clamped shift; multiplicative
-# time shift) do not even match those models' own assumed link — so there's no simple closed form.
-# InferenceIncidLogRegr's DGP (Bernoulli w/ logit link) *is* exactly what logistic regression assumes,
-# so its marginal log-odds-ratio target has an exact closed form. The rest are computed by Monte Carlo:
-# simulate a very large sample from this same DGP and fit the class's own estimator to it once; at
-# large n the MC noise is negligible and the fitted coefficient is the "least false"/KL-projection
-# parameter that a correctly-behaving CI should cover at the nominal rate, even under misspecification.
+# adds on each response's native scale. That IS the right coverage target for additive/collapsible
+# estimators (continuous OLS-type, count log-rate classes — a constant multiplicative Poisson shift
+# is exactly collapsible: log(mean_i(lambda_i*exp(bt))) - log(mean_i(lambda_i)) = bt algebraically).
+# It is NOT the right target for:
+#  (a) risk-difference/risk-ratio-type incidence/proportion estimators (mean-diff family) — their
+#      target is mean(p_t_i - p_c_i) or a ratio of means, not the logit-scale beta_T;
+#  (b) any class whose own coefficient is a marginal link-scale coefficient (logit/probit/Cox) —
+#      non-collapsibility makes the marginal coefficient differ from beta_T once baseline
+#      heterogeneity is present, and for proportion/survival the DGP here (additive-clamped shift;
+#      multiplicative time shift) doesn't even match the model's own assumed link, so there's no
+#      closed form at all for those.
+# (a) and InferenceIncidLogRegr (b, but exactly well-specified) get closed forms below. Everything
+# else in (b) is computed by Monte Carlo via SimulationFramework: simulate a very large sample from
+# this exact same DGP (custom_replication_data_generator/custom_apply_treatment_and_noise let us
+# reuse SimulationFramework's own — already-correct — design-building/covariate-injection logic
+# instead of re-deriving it) and fit the class's own estimator to it once. At large n the MC noise
+# is negligible and the fitted coefficient is the "least false"/KL-projection parameter that a
+# correctly-behaving CI should cover at the nominal rate, even under model misspecification.
 .coverage_truth_cache = new.env(parent = emptyenv())
 
-compute_incid_logit_coverage_truth = function(dataset_name, beta_T_val){
+incid_p_base_and_treated = function(dataset_name, beta_T_val){
 	y_i = datasets_and_response_models[[dataset_name]]$y_original$incidence
 	p_base = ifelse(is.finite(y_i) & y_i >= 0 & y_i <= 1, y_i, stats::plogis(y_i))
 	p_base = pmin(0.95, pmax(0.05, p_base))
-	p_t = stats::plogis(stats::qlogis(p_base) + beta_T_val)
-	stats::qlogis(mean(p_t)) - stats::qlogis(mean(p_base))
+	list(p_c = p_base, p_t = stats::plogis(stats::qlogis(p_base) + beta_T_val))
+}
+compute_incid_logit_coverage_truth = function(dataset_name, beta_T_val){
+	pp = incid_p_base_and_treated(dataset_name, beta_T_val)
+	stats::qlogis(mean(pp$p_t)) - stats::qlogis(mean(pp$p_c))
+}
+compute_incid_risk_diff_coverage_truth = function(dataset_name, beta_T_val){
+	pp = incid_p_base_and_treated(dataset_name, beta_T_val)
+	mean(pp$p_t - pp$p_c)
+}
+compute_incid_risk_ratio_coverage_truth = function(dataset_name, beta_T_val){
+	pp = incid_p_base_and_treated(dataset_name, beta_T_val)
+	mean(pp$p_t) / mean(pp$p_c)
+}
+compute_incid_log_risk_ratio_coverage_truth = function(dataset_name, beta_T_val){
+	log(compute_incid_risk_ratio_coverage_truth(dataset_name, beta_T_val))
+}
+compute_prop_mean_diff_coverage_truth = function(dataset_name, beta_T_val){
+	y_p = datasets_and_response_models[[dataset_name]]$y_original$proportion
+	mu_c = y_p
+	mu_t = pmin(1, pmax(0, y_p + beta_T_val))
+	mean(mu_t - mu_c)
 }
 
-compute_mc_coverage_truth = function(class_gen, response_type, dataset_name, beta_T_val, mc_n = 20000L){
+COVERAGE_CLOSED_FORM = list(
+	InferenceIncidLogRegr                 = compute_incid_logit_coverage_truth,
+	InferenceAllSimpleMeanDiff__incidence = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidWald                    = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidCMH                     = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidExtendedRobins          = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidRiskDiff                = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidMiettinenNurminenRiskDiff = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidNewcombeRiskDiff        = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidKKNewcombeRiskDiff      = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidGCompRiskDiff           = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidKKGCompRiskDiff         = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidBinomialIdentityRiskDiff = compute_incid_risk_diff_coverage_truth,
+	InferenceIncidGCompRiskRatio          = compute_incid_risk_ratio_coverage_truth,
+	InferenceIncidKKGCompRiskRatio        = compute_incid_risk_ratio_coverage_truth,
+	InferenceIncidModifiedPoisson         = compute_incid_log_risk_ratio_coverage_truth,
+	InferenceIncidKKModifiedPoisson       = compute_incid_log_risk_ratio_coverage_truth,
+	InferenceIncidLogBinomial             = compute_incid_log_risk_ratio_coverage_truth,
+	InferenceAllSimpleMeanDiff__proportion = compute_prop_mean_diff_coverage_truth,
+	InferencePropGCompMeanDiff            = compute_prop_mean_diff_coverage_truth
+)
+
+# Monte Carlo via SimulationFramework: reuses its design-building (incl. auto strata/cluster
+# injection for KK-matched designs) rather than hand-rolling that logic here.
+compute_mc_coverage_truth_simframe = function(class_gen, design_gen, response_type, dataset_name, beta_T_val, mc_n){
 	y_base = datasets_and_response_models[[dataset_name]]$y_original[[response_type]]
-	n0 = length(y_base)
-	y_rep = rep(y_base, ceiling(mc_n / n0))[seq_len(mc_n)]
-	dead_mc = rep(1, mc_n)
-	if (response_type == "survival") {
-		t_f_mc = stats::quantile(y_rep, .95)
-		cens = stats::runif(mc_n) < prob_censoring | y_rep >= t_f_mc
-		if (any(cens)) {
-			y_rep[cens] = stats::runif(sum(cens), 0, y_rep[cens])
-			dead_mc[cens] = 0
-		}
+	custom_data = function(state, rep){
+		n0 = length(y_base)
+		y_rep = rep(y_base, ceiling(state$n / n0))[seq_len(state$n)]
+		list(X = data.frame(x1 = stats::rnorm(state$n)), y_linear_model = y_rep)
 	}
-	des_obj = DesignFixedBernoulli$new(response_type = response_type, n = mc_n, design_formula = ~1)
-	des_obj$add_all_subjects_to_experiment(data.frame(x1 = rep(0, mc_n)))
-	des_obj$assign_w_to_all_subjects()
-	w_mc = des_obj$get_w()
-	y_final = vapply(seq_len(mc_n), function(i) apply_treatment_effect_and_noise(y_rep[i], w_mc[i], response_type), numeric(1))
-	des_obj$add_all_subject_responses(y_final, dead_mc)
-	inf_obj = class_gen$new(des_obj, model_formula = ~1)
-	as.numeric(inf_obj$compute_estimate())[1L]
+	custom_apply = function(y_linear_model, w, state){
+		n = length(y_linear_model)
+		y_lin = y_linear_model
+		dead_mc = rep(1L, n)
+		if (response_type == "survival") {
+			t_f_mc = stats::quantile(y_lin, .95)
+			cens = stats::runif(n) < prob_censoring | y_lin >= t_f_mc
+			if (any(cens)) {
+				y_lin[cens] = stats::runif(sum(cens), 0, y_lin[cens])
+				dead_mc[cens] = 0
+			}
+		}
+		y = vapply(seq_len(n), function(i) apply_treatment_effect_and_noise(y_lin[i], w[i], response_type), numeric(1))
+		list(y = y, dead = dead_mc)
+	}
+	sim = SimulationFramework$new(
+		response_type = response_type,
+		design_classes_and_params = list(design_gen),
+		inference_classes_and_params = list(class_gen),
+		inference_types_and_params = list(rand_pval = list()),
+		n = mc_n, p = 1L, Nrep_W = 1L, Nrep_Y_w = 1L,
+		betaT = beta_T_val,
+		custom_replication_data_generator = custom_data,
+		custom_apply_treatment_and_noise = custom_apply,
+		results_filename = tempfile(fileext = ".csv"),
+		continue_from_last_result_row = FALSE,
+		verbose = FALSE,
+		stop_on_error = FALSE
+	)
+	sim$run()
+	res = SimulationFrameworkReport$new(sim)$get_results()
+	as.numeric(res$estimate[1L])
 }
 
-COVERAGE_MC_RESPONSE_TYPE = list(
-	InferencePropBetaRegr                = "proportion",
-	InferenceSurvivalCoxPHRegr           = "survival",
-	InferenceSurvivalKKLWACoxPHOneLik    = "survival",
-	InferenceSurvivalKKStratCoxPHOneLik  = "survival",
-	InferenceSurvivalKKClaytonCopulaOneLik  = "survival",
-	InferenceSurvivalKKWeibullFrailtyOneLik = "survival"
-)
-COVERAGE_MC_CLASS_GEN = list(
-	InferencePropBetaRegr                = InferencePropBetaRegr,
-	InferenceSurvivalCoxPHRegr           = InferenceSurvivalCoxPHRegr,
-	InferenceSurvivalKKLWACoxPHOneLik    = InferenceSurvivalKKLWACoxPHOneLik,
-	InferenceSurvivalKKStratCoxPHOneLik  = InferenceSurvivalKKStratCoxPHOneLik,
-	InferenceSurvivalKKClaytonCopulaOneLik  = InferenceSurvivalKKClaytonCopulaOneLik,
-	InferenceSurvivalKKWeibullFrailtyOneLik = InferenceSurvivalKKWeibullFrailtyOneLik
+# design_gen: plain DesignFixedBernoulli unless the class structurally requires a KK-matched
+# design (verified directly: these error with "requires a KK matching-on-the-fly design" otherwise).
+COVERAGE_MC_SPEC = list(
+	InferencePropBetaRegr                = list(rt = "proportion", design = quote(DesignFixedBernoulli),  gen = quote(InferencePropBetaRegr),                mc_n = 20000L),
+	InferencePropFractionalLogit         = list(rt = "proportion", design = quote(DesignFixedBernoulli),  gen = quote(InferencePropFractionalLogit),         mc_n = 20000L),
+	InferencePropZeroOneInflatedBetaRegr = list(rt = "proportion", design = quote(DesignFixedBernoulli),  gen = quote(InferencePropZeroOneInflatedBetaRegr), mc_n = 20000L),
+	InferencePropQuantileRegr            = list(rt = "proportion", design = quote(DesignFixedBernoulli),  gen = quote(InferencePropQuantileRegr),            mc_n = 20000L),
+	InferencePropKKGEE                   = list(rt = "proportion", design = quote(DesignFixedBinaryMatch), gen = quote(InferencePropKKGEE),                   mc_n = 3000L),
+	InferencePropKKGLMM                  = list(rt = "proportion", design = quote(DesignFixedBinaryMatch), gen = quote(InferencePropKKGLMM),                  mc_n = 3000L),
+	InferencePropKKQuantileRegrOneLik    = list(rt = "proportion", design = quote(DesignFixedBinaryMatch), gen = quote(InferencePropKKQuantileRegrOneLik),    mc_n = 3000L),
+	InferenceIncidProbitRegr             = list(rt = "incidence",  design = quote(DesignFixedBernoulli),  gen = quote(InferenceIncidProbitRegr),             mc_n = 20000L),
+	InferenceIncidKKGEE                  = list(rt = "incidence",  design = quote(DesignFixedBinaryMatch), gen = quote(InferenceIncidKKGEE),                  mc_n = 3000L),
+	InferenceIncidKKCondLogitOneLik      = list(rt = "incidence",  design = quote(DesignFixedBinaryMatch), gen = quote(InferenceIncidKKCondLogitOneLik),      mc_n = 3000L),
+	InferenceIncidKKCondLogitPlusGLMMOneLik = list(rt = "incidence", design = quote(DesignFixedBinaryMatch), gen = quote(InferenceIncidKKCondLogitPlusGLMMOneLik), mc_n = 3000L),
+	InferenceSurvivalCoxPHRegr           = list(rt = "survival",   design = quote(DesignFixedBernoulli),  gen = quote(InferenceSurvivalCoxPHRegr),           mc_n = 20000L),
+	InferenceSurvivalStratCoxPHRegr      = list(rt = "survival",   design = quote(DesignFixedBernoulli),  gen = quote(InferenceSurvivalStratCoxPHRegr),      mc_n = 20000L),
+	InferenceSurvivalWeibullRegr         = list(rt = "survival",   design = quote(DesignFixedBernoulli),  gen = quote(InferenceSurvivalWeibullRegr),         mc_n = 20000L),
+	InferenceSurvivalDepCensTransformRegr = list(rt = "survival",  design = quote(DesignFixedBernoulli),  gen = quote(InferenceSurvivalDepCensTransformRegr), mc_n = 20000L),
+	InferenceSurvivalKKLWACoxPHOneLik    = list(rt = "survival",   design = quote(DesignFixedBernoulli),  gen = quote(InferenceSurvivalKKLWACoxPHOneLik),    mc_n = 20000L),
+	InferenceSurvivalKKStratCoxPHOneLik  = list(rt = "survival",   design = quote(DesignFixedBernoulli),  gen = quote(InferenceSurvivalKKStratCoxPHOneLik),  mc_n = 20000L),
+	InferenceSurvivalKKClaytonCopulaOneLik  = list(rt = "survival", design = quote(DesignFixedBernoulli), gen = quote(InferenceSurvivalKKClaytonCopulaOneLik),  mc_n = 20000L),
+	InferenceSurvivalKKWeibullFrailtyOneLik = list(rt = "survival", design = quote(DesignFixedBernoulli), gen = quote(InferenceSurvivalKKWeibullFrailtyOneLik), mc_n = 20000L),
+	InferenceSurvivalKKWeibullMarginal   = list(rt = "survival",   design = quote(DesignFixedBinaryMatch), gen = quote(InferenceSurvivalKKWeibullMarginal),  mc_n = 3000L)
 )
 
-get_coverage_truth = function(inference_class, dataset_name, beta_T_val){
+get_coverage_truth = function(inference_class, dataset_name, beta_T_val, response_type_hint = NA_character_){
 	base_class = sub(" [\\(\\[].*$", "", inference_class)
-	if (identical(base_class, "InferenceIncidLogRegr")) {
-		return(tryCatch(compute_incid_logit_coverage_truth(dataset_name, beta_T_val), error = function(e) beta_T_val))
+	closed_form_fn = COVERAGE_CLOSED_FORM[[base_class]]
+	if (is.null(closed_form_fn) && identical(base_class, "InferenceAllSimpleMeanDiff") && !is.na(response_type_hint)) {
+		closed_form_fn = COVERAGE_CLOSED_FORM[[paste0("InferenceAllSimpleMeanDiff__", response_type_hint)]]
 	}
-	response_type_mc = COVERAGE_MC_RESPONSE_TYPE[[base_class]]
-	if (!is.null(response_type_mc)) {
+	if (!is.null(closed_form_fn)) {
+		return(tryCatch(closed_form_fn(dataset_name, beta_T_val), error = function(e) beta_T_val))
+	}
+	spec = COVERAGE_MC_SPEC[[base_class]]
+	if (!is.null(spec)) {
 		key = paste(base_class, dataset_name, beta_T_val, sep = "||")
 		if (exists(key, envir = .coverage_truth_cache, inherits = FALSE)) {
 			return(get(key, envir = .coverage_truth_cache, inherits = FALSE))
 		}
 		truth = tryCatch(
-			compute_mc_coverage_truth(COVERAGE_MC_CLASS_GEN[[base_class]], response_type_mc, dataset_name, beta_T_val),
+			compute_mc_coverage_truth_simframe(
+				eval(spec$gen), eval(spec$design), spec$rt, dataset_name, beta_T_val, spec$mc_n
+			),
 			error = function(e) beta_T_val
 		)
 		if (!is.finite(truth)) truth = beta_T_val

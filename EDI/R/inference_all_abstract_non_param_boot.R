@@ -668,6 +668,12 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 					}
 					stop("Bootstrap confidence interval returned NA bounds")
 				}
+				if (isTRUE(all(ci[1:2] == ci[1L]))) {
+					if (isTRUE(private$harden)) {
+						return(private$missing_bootstrap_ci(alpha, "bootstrap_degenerate_confidence_interval", stage = "se"))
+					}
+					stop("Degenerate bootstrap confidence interval")
+				}
 				if (type %in% c("studentized", "bootstrap-t", "symmetric-percentile-t") &&
 				    private$studentized_interval_scale_unstable(theta = boot_stats$theta, ci = ci, est = est, alpha = alpha)) {
 					if (isTRUE(private$harden)) {

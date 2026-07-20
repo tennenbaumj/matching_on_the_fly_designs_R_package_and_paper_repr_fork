@@ -220,6 +220,7 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 				attr(draws, "draws_id") = paste0(attr(draws, "draws_id"), "_smoothed")
 				est = as.numeric(tryCatch(self$compute_estimate(), error = function(e) NA_real_))
 				est = if (length(est) == 0L) NA_real_ else est[1]
+				if (!is.finite(est)) return(missing_ci("rand_bootstrap_ci_estimate_unavailable"))
 				t0s = self$approximate_rand_bootstrap_distribution_beta_hat_T(
 					B = B, delta = 0, transform_responses = transform_arg,
 					show_progress = FALSE, rand_bootstrap_draws = draws,
@@ -254,6 +255,7 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 			}
 			est = as.numeric(tryCatch(self$compute_estimate(), error = function(e) NA_real_))
 			est = if (length(est) == 0L) NA_real_ else est[1]
+			if (!is.finite(est)) return(missing_ci("rand_bootstrap_ci_estimate_unavailable"))
 			# Null distribution at delta = 0 doubles as the scale estimate for the bound search.
 			t0s = self$approximate_rand_bootstrap_distribution_beta_hat_T(
 				B = B,
@@ -269,9 +271,7 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 				return(missing_ci("rand_bootstrap_ci_too_few_finite_null_draws"))
 			}
 			if (!is.finite(est)) {
-				est = stats::median(t0s_finite)
-				if (type_lc %in% c("studentized", "symmetric-percentile-t") && exists("t_obs_stud") && !is.finite(t_obs_stud)) t_obs_stud = est
-				if (identical(type_lc, "smoothed") && exists("t_obs_sm") && !is.finite(t_obs_sm)) t_obs_sm = est
+				return(missing_ci("rand_bootstrap_ci_estimate_unavailable"))
 			}
 			se_guess = stats::sd(t0s_finite)
 			response_scale = stats::sd(private$y, na.rm = TRUE)

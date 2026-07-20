@@ -190,6 +190,7 @@ Collate:
     'inference_proportion_KK_combined.R'
     'inference_proportion_KK_quantile_regr_ivwc.R'
     'inference_proportion_KK_quantile_regr_one_lik.R'
+    'inference_proportion_quantile_regr.R'
     'inference_proportion_zero_one_inflated_beta.R'
     'inference_suite.R'
     'inference_survival_coxph.R'
@@ -218,4 +219,3 @@ URL: https://github.com/kapelner/matching_on_the_fly_designs_R_package_and_paper
 Config/roxygen2/version: 8.0.0
 Config/roxygen2/load: source
 RoxygenNote: 7.3.3
-
