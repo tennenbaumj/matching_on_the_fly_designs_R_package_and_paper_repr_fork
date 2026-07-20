@@ -14,6 +14,7 @@ compute_survival_stat_diff_rand_bootstrap_parallel_cpp(
   w_mat,
   delta,
   do_rmst,
+  noise_mat,
   num_cores
 )
 }

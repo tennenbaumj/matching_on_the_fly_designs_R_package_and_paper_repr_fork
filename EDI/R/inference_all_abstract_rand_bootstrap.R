@@ -310,6 +310,24 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 		#'   \code{type}), and its coverage behavior has not been validated by simulation in this
 		#'   package. Treat it as a discreteness patch that is qualitatively motivated by the
 		#'   literature above, not a certified implementation of it.
+		#'
+		#'   \strong{Performance.} Every class with a C++ \code{compute_fast_rand_bootstrap_distr}
+		#'   kernel that operates on real-valued responses (Wilcox HL, simple mean difference, OLS,
+		#'   robust regression, CoxPH, Weibull marginal, log-rank, RMST, KM-diff) accepts the smoothing
+		#'   noise directly in its kernel. This only speeds up \code{\link{InferenceRandBootstrapCI}}'s
+		#'   \code{compute_rand_bootstrap_confidence_interval(type = "smoothed")}, since CI inversion
+		#'   pre-materializes one set of fresh assignments up front (common random numbers reused
+		#'   across every \code{delta} evaluated during root-finding) and the fast kernel can engage on
+		#'   each evaluation; measured on \code{InferenceAllSimpleWilcox}, \code{n = 30}, \code{B = 99}:
+		#'   the forced-slow-fallback CI took 25.5s, the fast-kernel CI took 0.5s (about 50x). A
+		#'   \emph{standalone} \code{compute_rand_bootstrap_two_sided_pval(type = "smoothed")} call
+		#'   (no CI inversion) is \strong{not} accelerated by this: it deliberately draws the fresh
+		#'   assignment lazily per replicate (\code{materialize_w = FALSE}), so
+		#'   \code{rand_bootstrap_draw_matrices()} cannot build the matrices the fast kernels need and
+		#'   the R-level fallback still runs regardless of this fix. The two ordinal classes
+		#'   (\code{InferenceOrdinalRidit}, \code{InferenceOrdinalJonckheereTerpstraTest}) still use the
+		#'   slower R-level fallback in every case, because adding continuous Gaussian noise to integer
+		#'   category codes is not statistically meaningful — see the response-type caveat above.
 		#' @return 	A two-sided p-value.
 		compute_rand_bootstrap_two_sided_pval = function(B = 501, delta = 0, transform_responses = "none", na.rm = TRUE, show_progress = TRUE, bootstrap_type = NULL, rand_bootstrap_draws = NULL, zero_one_logit_clamp = .Machine$double.eps, type = "percentile"){
 			if (should_run_asserts()) {
