@@ -3,6 +3,7 @@
 #' Inference for mean difference. Note that warm starts are disabled for this class
 #' as the Bai adjusted t-test is a closed-form estimator and does not benefit from initialization.
 #'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #'
 #' @examples
 #' \donttest{

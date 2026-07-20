@@ -8,6 +8,9 @@ Weibull Frailty IVWC Inference for KK Designs
 
 Weibull Frailty IVWC Inference for KK Designs
 }
+\details{
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
+}
 \section{Super classes}{
 \code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{::InferenceAbstractKKWeibullFrailtyIVWC} -> \code{InferenceSurvivalKKWeibullFrailtyIVWC}
 }

@@ -7,6 +7,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 	inherit = Inference,
 	lock_objects = FALSE,
 	public = list(
+		# ---- custom statistic support ----
 		#' @description Set Custom Randomization Statistic Computation
 		#' @param custom_randomization_statistic_function  A function that returns a scalar value.
 		set_custom_randomization_statistic_function = function(custom_randomization_statistic_function){
@@ -55,6 +56,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 			private$cached_values$rand_distr_cache = list()
 			private$cached_values$custom_stat_analysis = NULL
 		},
+		# ---- end custom statistic support ----
 		#' @description Computes the randomization distribution of the treatment effect estimate under the sharp null.
 		#'
 		#' @param r  					Number of randomization vectors. Default 501.
@@ -387,9 +389,11 @@ InferenceRand = R6::R6Class("InferenceRand",
 		}
 	),
 	private = list(
+		# ---- custom statistic support ----
 		custom_randomization_statistic_function = NULL,
 		compiled_cpp_stat_fn = NULL,
 		compiled_cpp_stat_src = NULL,
+		# ---- end custom statistic support ----
 		randomization_mc_control = NULL,
 		normalize_delta_for_cache = function(delta, resolution = NULL){
 			if (!is.finite(delta)) return("NA")
@@ -596,7 +600,8 @@ InferenceRand = R6::R6Class("InferenceRand",
 		compute_two_sided_randomization_pval_from_t0s = function(t0s, t){
 			na_t0s = !is.finite(t0s)
 			nsim_adj = sum(!na_t0s)
-			if (nsim_adj == 0L) {
+			min_required = max(10L, as.integer(length(t0s) * 0.10))
+			if (nsim_adj < min_required) {
 				if (isTRUE(private$harden)) private$cache_nonestimable_estimate("randomization_too_few_finite_estimates")
 				return(NA_real_)
 			}
@@ -907,6 +912,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 			if (isTRUE(debug)) return(list(val = val, error = iter_error))
 			val
 		},
+		# ---- custom statistic support ----
 		get_compiled_cpp_stat = function() private[["compiled_cpp_stat_fn"]],
 		analyze_custom_randomization_statistic = function(){
 			if (!is.null(private$cached_values$custom_stat_analysis)) return(private$cached_values$custom_stat_analysis)
@@ -975,6 +981,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 			eval_env$.custom_randomization_statistic_function = fn
 			eval(quote(.custom_randomization_statistic_function()), envir = eval_env)
 		},
+		# ---- end custom statistic support ----
 		compute_treatment_estimate_during_randomization_inference = function(estimate_only = TRUE){
 			if (identical(private$des_obj_priv_int$response_type, "proportion") &&
 			    (inherits(self, "InferenceAbstractKKQuantileRegrIVWC") || inherits(self, "InferenceAbstractKKQuantileRegrOneLik"))){

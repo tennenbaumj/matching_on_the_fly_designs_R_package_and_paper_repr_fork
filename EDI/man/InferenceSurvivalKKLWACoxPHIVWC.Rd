@@ -23,6 +23,8 @@ seq_des$add_all_subject_responses(runif(10))
 inf = InferenceSurvivalKKLWACoxPHIVWC$new(seq_des)
 inf$compute_estimate()
 }
+
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 }
 \section{Super classes}{
 \code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{::InferenceAbstractKKLWACoxIVWC} -> \code{InferenceSurvivalKKLWACoxPHIVWC}

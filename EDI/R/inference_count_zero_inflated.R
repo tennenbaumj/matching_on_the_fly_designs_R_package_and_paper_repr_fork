@@ -73,13 +73,7 @@ InferenceCountZeroInflatedNegBin = R6::R6Class("InferenceCountZeroInflatedNegBin
 		za_family = function() glmmTMB::nbinom2(link = "log"),
 		za_description = function() "Zero-Inflated Negative Binomial",
 		get_supported_testing_types_impl = function(){
-			c("wald", "score", "lik_ratio")
-		},
-		compute_gradient_two_sided_pval_impl = function(delta){
-			stop(class(self)[1], " does not support gradient p-values.", call. = FALSE)
-		},
-		compute_gradient_confidence_interval_impl = function(alpha){
-			stop(class(self)[1], " does not support gradient confidence intervals.", call. = FALSE)
+			c("wald", "score", "lik_ratio", "gradient")
 		}
 	)
 )

@@ -53,6 +53,8 @@ inf = InferenceContinKKQuantileRegrIVWC$new(seq_des)
 inf$compute_estimate()
 }
 
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
+
 ## ------------------------------------------------
 ## Method `InferenceContinKKQuantileRegrIVWC$new`
 ## ------------------------------------------------

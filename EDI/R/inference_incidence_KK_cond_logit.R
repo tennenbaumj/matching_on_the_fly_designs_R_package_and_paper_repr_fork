@@ -383,6 +383,8 @@ InferenceIncidKKCondLogitOneLik = R6::R6Class("InferenceIncidKKCondLogitOneLik",
 )
 #' Conditional Logistic IVWC Inference for KK Designs with Binary Responses
 #'
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 InferenceIncidKKCondLogitIVWC = R6::R6Class("InferenceIncidKKCondLogitIVWC",
 	lock_objects = FALSE,

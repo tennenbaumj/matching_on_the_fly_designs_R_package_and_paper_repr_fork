@@ -13,6 +13,9 @@ This class implements a compound estimator for KK matching-on-the-fly designs wi
 survival responses using a Clayton copula with Weibull AFT margins for matched
 pairs and a standard Weibull AFT model for the reservoir. The two treatment-effect
 estimates (on the log-time ratio scale) are combined by inverse-variance weighting.
+
+
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 }
 \section{Super classes}{
 \code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{InferenceSurvivalKKClaytonCopulaIVWC}

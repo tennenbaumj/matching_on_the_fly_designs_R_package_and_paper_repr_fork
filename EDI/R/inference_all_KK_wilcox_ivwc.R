@@ -156,6 +156,8 @@ InferenceAbstractKKWilcoxBaseIVWC = R6::R6Class("InferenceAbstractKKWilcoxBaseIV
 #' inf = InferenceAllKKWilcoxIVWC$new(seq_des)
 #' inf$compute_estimate()
 #' }
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 InferenceAllKKWilcoxIVWC = R6::R6Class("InferenceAllKKWilcoxIVWC",
 	lock_objects = FALSE,

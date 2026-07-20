@@ -12,6 +12,9 @@ Robust-Regression IVWC Compound Inference for KK Designs
 Fits a variance-weighted compound estimator for KK matching-on-the-fly designs
 with continuous responses using robust linear regression (`MASS::rlm`) for the
 matched-pair and reservoir components separately.
+
+
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 }
 \section{Super classes}{
 \code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{::InferenceKKPassThroughCompoundNoParamBootstrap} -> \code{InferenceContinKKRobustRegrIVWC}

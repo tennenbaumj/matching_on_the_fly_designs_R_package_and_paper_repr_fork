@@ -217,19 +217,13 @@ InferenceCountNegBin = R6::R6Class("InferenceCountNegBin",
 			TRUE
 		},
 		supports_lik_ratio_param_bootstrap = function(){
-			FALSE
+			TRUE
 		},
 		supports_likelihood_tests = function(){
 			TRUE
 		},
 		get_supported_testing_types_impl = function(){
-			c("wald", "score", "gradient")
-		},
-		compute_lik_ratio_two_sided_pval_impl = function(delta){
-			stop(class(self)[1], " does not support likelihood-ratio p-values.", call. = FALSE)
-		},
-		compute_lik_ratio_confidence_interval_impl = function(alpha){
-			stop(class(self)[1], " does not support likelihood-ratio confidence intervals.", call. = FALSE)
+			c("wald", "score", "lik_ratio", "gradient")
 		},
 		simulate_under_lik_null = function(spec, delta, null_fit){
 			b_null   = as.numeric(null_fit$b)

@@ -64,7 +64,12 @@ InferenceRandBootstrapCI = R6::R6Class("InferenceRandBootstrapCI",
 		#'   mode if unavailable.
 		#'   \code{"smoothed"} adds per-draw kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
 		#'   to the resampled responses before imposing the null shift, reducing discreteness.
-		#'   Only meaningful for continuous responses.
+		#'   Only meaningful for continuous responses. See
+		#'   \code{\link{InferenceRandBootstrap}}'s \code{compute_rand_bootstrap_two_sided_pval} for
+		#'   the theoretical justification (Silverman 1981; Silverman & Young 1987; Hall, DiCiccio &
+		#'   Romano 1989) and an explicit caveat that the bandwidth used here (\eqn{\hat{\sigma}/\sqrt{n}},
+		#'   fixed, unexposed, with no zero-noise escape hatch) is a pragmatic ad hoc choice rather
+		#'   than one derived from or validated against those sources.
 		#' @return A bootstrap randomization confidence interval. The interval lives on the
 		#'   response-transformation scale used by the test (identity for continuous, logit for
 		#'   proportion, log for count and survival). Bounds may be conservative (wider than

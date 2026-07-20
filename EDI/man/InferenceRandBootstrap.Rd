@@ -222,18 +222,47 @@ across \code{delta} values. Default \code{NULL}.}
 \item{\code{zero_one_logit_clamp}}{The clamping amount for exact 0 and 1 values when logging.}
 
 \item{\code{type}}{Test statistic type. \code{"percentile"} (default) uses the raw
-estimator as the BRT test statistic, giving an asymptotic p-value that inherits
-the unconditional superpopulation validity of the BRT.
-\code{"studentized"} divides each null draw's signed deviation from the null by its
-per-draw standard error: \eqn{p = 2\min(P(z^0_b \ge z), P(z^0_b \le z))} where
-\eqn{z^0_b = (t^0_b - \delta)/\hat{s}^0_b}; yields asymmetric CI under inversion.
-\code{"symmetric-percentile-t"} uses the absolute pivot
-\eqn{p = P(|t^0_b - \delta|/\hat{s}^0_b \ge |t - \delta|/\hat{s})}; CI is symmetric.
-Both SE-based types require the class to expose \code{s_beta_hat_T}; fall back to
-\code{"percentile"} if the SE is unavailable.
-\code{"smoothed"} adds kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
-to each resampled draw before imposing the null shift, reducing discreteness in the
-null distribution. Only meaningful for continuous responses.}
+  estimator as the BRT test statistic, giving an asymptotic p-value that inherits
+  the unconditional superpopulation validity of the BRT.
+  \code{"studentized"} divides each null draw's signed deviation from the null by its
+  per-draw standard error: \eqn{p = 2\min(P(z^0_b \ge z), P(z^0_b \le z))} where
+  \eqn{z^0_b = (t^0_b - \delta)/\hat{s}^0_b}; yields asymmetric CI under inversion.
+  \code{"symmetric-percentile-t"} uses the absolute pivot
+  \eqn{p = P(|t^0_b - \delta|/\hat{s}^0_b \ge |t - \delta|/\hat{s})}; CI is symmetric.
+  Both SE-based types require the class to expose \code{s_beta_hat_T}; fall back to
+  \code{"percentile"} if the SE is unavailable.
+  \code{"smoothed"} adds kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
+  to each resampled draw before imposing the null shift, reducing discreteness in the
+  null distribution. Only meaningful for continuous responses.
+
+  \strong{Theoretical justification.} Order-statistic/rank-based estimators (e.g. the
+  Hodges-Lehmann pseudo-median) take only finitely many values, so their bootstrap/
+  randomization null distribution is a step function; this both coarsens p-values and
+  destabilizes the \code{uniroot}-based \code{delta} search in
+  \code{\link{InferenceRandBootstrapCI}}'s \code{compute_rand_bootstrap_confidence_interval},
+  which assumes an approximately continuous, monotone p-value curve. Restoring continuity
+  by convolving the resampling distribution with a shrinking-bandwidth kernel is the
+  classical "smoothed bootstrap" device: Silverman (1981, "Density ratios, empirical
+  likelihood and cot death", \emph{Applied Statistics} 30(2):142-145) for kernel smoothing
+  of a resampled empirical distribution; Silverman & Young (1987, "The bootstrap: To
+  smooth or not to smooth?", \emph{Biometrika} 74(3):469-479) for applying that smoothing
+  directly to the bootstrap resampling scheme; and Hall, DiCiccio & Romano (1989, "On
+  smoothing and the bootstrap", \emph{Annals of Statistics} 17(2):692-704) for the
+  bandwidth conditions under which smoothing improves, rather than degrades, coverage
+  accuracy.
+
+  \strong{Implementation caveat (ad hoc, not a certified instance of the above).} The
+  bandwidth used here, \eqn{\hat{\sigma}/\sqrt{n}} (the raw SE-of-the-mean scale of the
+  response), is a pragmatic engineering choice, not one derived from or validated against
+  the bandwidth-selection results in the sources above. Those references smooth the
+  \emph{resampling distribution itself} with a bandwidth chosen to trade off bias against
+  variance (often shrinking slower than \eqn{n^{-1/2}}, e.g. \eqn{n^{-1/5}}-type
+  KDE rates); here, noise is instead added directly to each already-resampled response at
+  a fixed \eqn{n^{-1/2}} rate. The bandwidth is not exposed as a parameter, has no
+  zero-noise escape hatch (the only way to disable smoothing is to pick a different
+  \code{type}), and its coverage behavior has not been validated by simulation in this
+  package. Treat it as a discreteness patch that is qualitatively motivated by the
+  literature above, not a certified implementation of it.}
 }
 \if{html}{\out{</div>}}
 }

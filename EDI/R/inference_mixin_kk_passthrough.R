@@ -263,16 +263,20 @@ InferenceMixinKKPassThrough = list(
 		best_Xmm_colnames = NULL,
 		compute_basic_match_data = function() private$compute_basic_kk_match_data_impl(),
 		supports_information_preference = function(){
-			FALSE
+			isTRUE(private$supports_likelihood_tests())
 		},
 		supports_observed_information = function(){
-			FALSE
+			isTRUE(private$supports_likelihood_tests())
 		},
 		get_supported_testing_types_impl = function(){
-			"wald"
+			if (isTRUE(private$supports_likelihood_tests())) {
+				c("wald", "score", "gradient", "lik_ratio")
+			} else {
+				"wald"
+			}
 		},
 		get_supported_information_preferences_impl = function(){
-			"auto"
+			if (isTRUE(private$supports_likelihood_tests())) c("auto", "observed") else "auto"
 		},
 		use_reusable_kk_bootstrap_worker = function(){
 			FALSE

@@ -4,6 +4,8 @@
 #' with continuous responses using robust linear regression (`MASS::rlm`) for the
 #' matched-pair and reservoir components separately.
 #'
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 InferenceContinKKRobustRegrIVWC = R6::R6Class("InferenceContinKKRobustRegrIVWC",
 	lock_objects = FALSE,

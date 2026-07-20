@@ -182,19 +182,7 @@ InferenceCountKKGLMM = R6::R6Class("InferenceCountKKGLMM",
 			isTRUE(private$use_rcpp)
 		},
 		get_supported_testing_types_impl = function(){
-			if (isTRUE(private$use_rcpp)) c("wald", "lik_ratio") else "wald"
-		},
-		compute_score_two_sided_pval_impl = function(delta){
-			stop(class(self)[1], " does not support score p-values.", call. = FALSE)
-		},
-		compute_score_confidence_interval_impl = function(alpha){
-			stop(class(self)[1], " does not support score confidence intervals.", call. = FALSE)
-		},
-		compute_gradient_two_sided_pval_impl = function(delta){
-			stop(class(self)[1], " does not support gradient p-values.", call. = FALSE)
-		},
-		compute_gradient_confidence_interval_impl = function(alpha){
-			stop(class(self)[1], " does not support gradient confidence intervals.", call. = FALSE)
+			if (isTRUE(private$use_rcpp)) c("wald", "score", "lik_ratio", "gradient") else "wald"
 		},
 		shared = function(estimate_only = FALSE){
 			if (private$use_rcpp) {

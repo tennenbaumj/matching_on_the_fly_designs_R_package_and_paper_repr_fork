@@ -7,6 +7,9 @@
 Inference for mean difference. Note that warm starts are disabled for this class
 as the Bai adjusted t-test is a closed-form estimator and does not benefit from initialization.
 }
+\details{
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
+}
 \examples{
 \donttest{
 seq_des = DesignSeqOneByOneKK14$new(n = 10, response_type = 'continuous')

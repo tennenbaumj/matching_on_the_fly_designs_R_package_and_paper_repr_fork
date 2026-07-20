@@ -418,7 +418,7 @@ InferenceCountKKHurdlePoissonIVWC = R6::R6Class("InferenceCountKKHurdlePoissonIV
 #' @export
 InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoissonOneLik",
 	lock_objects = FALSE,
-	inherit = InferenceAsympLik,
+	inherit = InferenceParamBootstrap,
 	public = as.list(modifyList(as.list(InferenceMixinKKPassThrough$public), list(
 		#' @description Initialize
 		#' @param des_obj A completed \code{Design} object with count responses.
@@ -618,7 +618,8 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 		#' @return A numeric vector of bootstrap estimates.
 		approximate_bootstrap_distribution_beta_hat_T = function(B = 501, show_progress = TRUE, debug = FALSE, bootstrap_type = NULL){
 			eval(body(InferenceMixinKKPassThrough$public$approximate_bootstrap_distribution_beta_hat_T))
-		}
+		},
+		supports_lik_ratio_param_bootstrap = function() TRUE
 	))),
 	private = as.list(modifyList(as.list(InferenceMixinKKPassThrough$private), list(
 		m = NULL,
@@ -1078,6 +1079,63 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 		shared = function(estimate_only = FALSE){
 			private$shared_combined_hurdle(estimate_only = estimate_only)
 		},
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			dat        = spec$dat
+			params_null = as.numeric(null_fit$params)
+			p          = ncol(dat$X_fit)
+			beta       = params_null[seq_len(p)]
+			log_sigma  = params_null[p + 1L]
+			sigma      = exp(min(log_sigma, 8))
+			if (!is.finite(sigma) || sigma < 0) return(NULL)
+
+			y_matched_sim = dat$y_matched
+			if (length(dat$matched_idx) > 0L) {
+				G      = max(as.integer(dat$group_id))
+				u_g    = rnorm(G, 0, sigma)
+				eta_m  = as.numeric(dat$X_matched %*% beta) + u_g[as.integer(dat$group_id)]
+				lam_m  = exp(pmin(eta_m, 20))
+				pi_pos = plogis(eta_m)
+				is_pos = as.logical(rbinom(length(eta_m), 1L, pi_pos))
+				y_matched_sim = integer(length(eta_m))
+				for (i in which(is_pos)){
+					u = runif(1, exp(-lam_m[i]), 1)
+					y_matched_sim[i] = max(qpois(u, lam_m[i]), 1L)
+				}
+			}
+
+			y_reservoir_sim = dat$y_reservoir
+			if (length(dat$reservoir_idx) > 0L) {
+				lam_r           = exp(pmin(as.numeric(dat$X_reservoir %*% beta), 20))
+				y_reservoir_sim = rpois(length(lam_r), lam_r)
+			}
+
+			dat_sim             = dat
+			dat_sim$y_matched   = as.numeric(y_matched_sim)
+			dat_sim$y_reservoir = as.numeric(y_reservoir_sim)
+
+			j        = spec$j
+			full_res = tryCatch(
+				private$fit_combined_hurdle(dat_sim, estimate_only = FALSE),
+				error = function(e) NULL
+			)
+			if (is.null(full_res) || !isTRUE(full_res$converged)) return(NULL)
+			if (length(full_res$b) < j || !is.finite(full_res$b[j])) return(NULL)
+			list(
+				full_fit = full_res,
+				fit_null = function(d, start = NULL){
+					private$fit_combined_hurdle(
+						dat             = dat_sim,
+						estimate_only   = FALSE,
+						fixed_idx       = j,
+						fixed_values    = d,
+						warm_start_params = start %||% as.numeric(full_res$params)
+					)
+				},
+				neg_loglik = function(fit){
+					as.numeric(fit$neg_loglik %||% private$combined_hurdle_neg_loglik(as.numeric(fit$params), dat_sim))
+				}
+			)
+		},
 		get_likelihood_test_spec = function(){
 			private$shared_combined_hurdle(estimate_only = FALSE)
 			dat = private$cached_values$likelihood_test_context
@@ -1122,7 +1180,7 @@ InferenceCountKKHurdlePoissonOneLik = R6::R6Class("InferenceCountKKHurdlePoisson
 #' @export
 InferenceCountKKCondPoissonOneLik = R6::R6Class("InferenceCountKKCondPoissonOneLik",
 	lock_objects = FALSE,
-	inherit = InferenceAsympLik,
+	inherit = InferenceParamBootstrap,
 	public = as.list(modifyList(as.list(InferenceMixinKKPassThrough$public), list(
 		#' @description Initialize
 		#' @param des_obj A completed \code{Design} object with count responses.
@@ -1297,7 +1355,8 @@ InferenceCountKKCondPoissonOneLik = R6::R6Class("InferenceCountKKCondPoissonOneL
 		#' @return A numeric vector of bootstrap estimates.
 		approximate_bootstrap_distribution_beta_hat_T = function(B = 501, show_progress = TRUE, debug = FALSE, bootstrap_type = NULL){
 			eval(body(InferenceMixinKKPassThrough$public$approximate_bootstrap_distribution_beta_hat_T))
-		}
+		},
+		supports_lik_ratio_param_bootstrap = function() TRUE
 	))),
 	private = as.list(modifyList(as.list(InferenceMixinKKPassThrough$private), list(
 		cached_mod = NULL,
@@ -1663,6 +1722,53 @@ InferenceCountKKCondPoissonOneLik = R6::R6Class("InferenceCountKKCondPoissonOneL
 		},
 		shared = function(estimate_only = FALSE){
 			private$shared_combined_cpoisson(estimate_only = estimate_only)
+		},
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			dat         = spec$dat
+			params_null = as.numeric(null_fit$params %||% null_fit$b)
+			p           = ncol(dat$X_diff_v)
+			beta_0      = params_null[1L]
+			beta_T      = params_null[2L]
+			beta_x      = if (p > 0L) params_null[seq.int(3L, p + 2L)] else numeric(0)
+			j           = spec$j
+
+			yT_sim = dat$yT_v
+			if (length(dat$yT_v) > 0L) {
+				eta_pair = beta_T + if (p > 0L) as.numeric(dat$X_diff_v %*% beta_x) else 0
+				prob     = plogis(eta_pair)
+				yT_sim   = as.numeric(rbinom(length(dat$n_k_v), as.integer(dat$n_k_v), prob))
+			}
+
+			y_r_sim = dat$y_r
+			if (length(dat$y_r) > 0L) {
+				eta_r   = beta_0 + beta_T * dat$w_r + if (p > 0L) as.numeric(dat$X_r %*% beta_x) else 0
+				y_r_sim = as.numeric(rpois(length(dat$y_r), exp(pmin(eta_r, 20))))
+			}
+
+			dat_sim       = dat
+			dat_sim$yT_v  = yT_sim
+			dat_sim$y_r   = y_r_sim
+
+			full_res = tryCatch(
+				private$fit_combined_cpoisson(dat_sim, estimate_only = FALSE),
+				error = function(e) NULL
+			)
+			if (is.null(full_res) || length(full_res$b) < 2L || !is.finite(full_res$b[2L])) return(NULL)
+			list(
+				full_fit = full_res,
+				fit_null = function(d, start = NULL){
+					private$fit_combined_cpoisson(
+						dat           = dat_sim,
+						estimate_only = FALSE,
+						fixed_idx     = j,
+						fixed_values  = d,
+						warm_start_params = start %||% as.numeric(full_res$params)
+					)
+				},
+				neg_loglik = function(fit){
+					as.numeric(fit$neg_loglik)
+				}
+			)
 		},
 		get_likelihood_test_spec = function(){
 			private$shared_combined_cpoisson(estimate_only = FALSE)

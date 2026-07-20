@@ -195,7 +195,7 @@ InferenceOrdinalKKGEE = R6::R6Class("InferenceOrdinalKKGEE",
 #' @export
 InferenceOrdinalKKGLMM = R6::R6Class("InferenceOrdinalKKGLMM",
 	lock_objects = FALSE,
-	inherit = InferenceAsympLik,
+	inherit = InferenceParamBootstrap,
 	public = utils::modifyList(as.list(InferenceMixinKKGLMMShared$public), list(
 		#' @description Initialize the inference object.
 		#' @param des_obj A completed \code{Design} object with an ordinal response.
@@ -479,6 +479,94 @@ InferenceOrdinalKKGLMM = R6::R6Class("InferenceOrdinalKKGLMM",
 				neg_loglik = function(fit){
 					as.numeric(fit$neg_loglik %||% fit$neg_ll)
 				}
+			)
+		},
+		supports_lik_ratio_param_bootstrap = function() isTRUE(private$use_rcpp),
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			if (!isTRUE(private$use_rcpp)) return(NULL)
+			params_null = as.numeric(c(null_fit$alpha, null_fit$b, null_fit$log_sigma))
+			y = as.integer(spec$y)
+			K = as.integer(spec$K)
+			group_id = as.integer(spec$group_id)
+			X_fit = spec$X
+			j_treat = spec$j
+			n = nrow(X_fit)
+			G = max(group_id)
+			n_alpha = K - 1L
+			n_gh = as.integer(spec$n_gh %||% 20L)
+			n_params = length(params_null)
+
+			alpha_par = params_null[seq_len(n_alpha)]
+			alpha_direct = numeric(n_alpha)
+			alpha_direct[1L] = alpha_par[1L]
+			if (n_alpha >= 2L) {
+				for (k in seq(2L, n_alpha))
+					alpha_direct[k] = alpha_direct[k - 1L] + exp(alpha_par[k])
+			}
+			betas = params_null[(n_alpha + 1L):(n_alpha + ncol(X_fit))]
+			log_sigma = params_null[length(params_null)]
+			sigma = exp(min(log_sigma, 8.0))
+			if (!is.finite(sigma) || sigma <= 0) return(NULL)
+
+			u = rnorm(G, 0, sigma)
+			eta = as.numeric(X_fit %*% betas) + u[group_id]
+			y_sim = integer(n)
+			for (i in seq_len(n)) {
+				cum_p = plogis(alpha_direct - eta[i])
+				cat_p = pmax(c(cum_p[1L], diff(cum_p), 1 - cum_p[n_alpha]), 0)
+				s = sum(cat_p)
+				y_sim[i] = if (is.finite(s) && s > 0) sample.int(K, 1L, prob = cat_p / s) else 1L
+			}
+			if (length(unique(y_sim)) < K) return(NULL)
+
+			warm_start = private$get_fit_warm_start_for_length("params", n_params) %||% params_null
+			fit = tryCatch(
+				fast_ordinal_glmm_cpp(
+					X = X_fit, y = y_sim, group_id = group_id, K = K,
+					j_T = 0L,
+					smart_cold_start = private$smart_cold_start_default,
+					estimate_only = FALSE,
+					n_gh = n_gh,
+					warm_start_params = warm_start,
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+					optimization_alg = private$optimization_alg %||% "lbfgs"
+				),
+				error = function(e) NULL
+			)
+			if (is.null(fit) || !isTRUE(fit$converged)) return(NULL)
+			full_fit_boot = list(
+				alpha = fit$alpha, b = fit$b, log_sigma = fit$log_sigma,
+				params = as.numeric(c(fit$alpha, fit$b, fit$log_sigma)),
+				neg_loglik = as.numeric(fit$neg_loglik %||% fit$neg_ll)
+			)
+			if (!is.finite(full_fit_boot$neg_loglik)) return(NULL)
+
+			list(
+				full_fit = full_fit_boot,
+				fit_null = function(d, start = NULL){
+					ws = start %||% private$get_fit_warm_start_for_length("params", n_params) %||% params_null
+					fit2 = tryCatch(
+						fast_ordinal_glmm_cpp(
+							X = X_fit, y = y_sim, group_id = group_id, K = K,
+							j_T = 0L,
+							smart_cold_start = TRUE,
+							estimate_only = FALSE,
+							n_gh = n_gh,
+							warm_start_params = ws,
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+							optimization_alg = private$optimization_alg %||% "lbfgs",
+							fixed_idx = j_treat, fixed_values = d
+						),
+						error = function(e) NULL
+					)
+					if (is.null(fit2) || !isTRUE(fit2$converged)) return(NULL)
+					list(
+						alpha = fit2$alpha, b = fit2$b, log_sigma = fit2$log_sigma,
+						params = as.numeric(c(fit2$alpha, fit2$b, fit2$log_sigma)),
+						neg_loglik = as.numeric(fit2$neg_loglik %||% fit2$neg_ll)
+					)
+				},
+				neg_loglik = function(fit) as.numeric(fit$neg_loglik)
 			)
 		}
 	))

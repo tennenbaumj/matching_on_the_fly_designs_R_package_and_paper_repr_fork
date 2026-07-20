@@ -19,6 +19,9 @@ Under \code{harden = TRUE}, multivariate fits preserve the treatment column and
 progressively retry reduced covariate sets after QR-based rank reduction and
 correlation-based pruning. Extreme finite coefficients / standard errors are
 rejected and treated as non-estimable.
+
+
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 }
 \section{Super classes}{
 \code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{InferenceSurvivalKKStratCoxPHIVWC}

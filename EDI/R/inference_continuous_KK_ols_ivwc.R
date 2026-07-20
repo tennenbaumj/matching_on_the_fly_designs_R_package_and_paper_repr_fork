@@ -17,6 +17,8 @@
 #' inf = InferenceContinKKOLSIVWC$new(seq_des)
 #' inf$compute_estimate()
 #' }
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 InferenceContinKKOLSIVWC = R6::R6Class("InferenceContinKKOLSIVWC",
 	lock_objects = FALSE,

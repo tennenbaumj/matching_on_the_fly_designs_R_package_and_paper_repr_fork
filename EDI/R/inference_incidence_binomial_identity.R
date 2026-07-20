@@ -164,7 +164,7 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 			TRUE
 		},
 		get_supported_testing_types_impl = function(){
-			c("wald", "lik_ratio")
+			c("wald", "score", "lik_ratio", "gradient")
 		},
 		supports_lik_ratio_param_bootstrap = function(){
 			TRUE
@@ -235,6 +235,9 @@ InferenceIncidBinomialIdentityRiskDiff = R6::R6Class("InferenceIncidBinomialIden
 				},
 				information = function(fit){
 					-get_identity_binomial_regression_hessian_cpp(X_fit, y, as.numeric(fit$b))
+				},
+				score = function(fit){
+					as.numeric(get_identity_binomial_regression_score_cpp(X_fit, y, as.numeric(fit$b)))
 				},
 				neg_loglik = function(fit){
 					mu = as.numeric(X_fit %*% as.numeric(fit$b))

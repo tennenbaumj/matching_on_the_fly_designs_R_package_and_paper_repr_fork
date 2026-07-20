@@ -13,6 +13,10 @@ Fits a compound mean-difference estimator for KK matching-on-the-fly designs.
 For matched pairs, it uses the average within-pair difference. For reservoir
 subjects, it uses the treated-minus-control difference in means. The two
 estimates are combined via inverse-variance weighting.
+
+
+
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 }
 \examples{
 \dontrun{

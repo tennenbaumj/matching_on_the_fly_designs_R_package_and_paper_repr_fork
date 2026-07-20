@@ -212,10 +212,8 @@ InferenceOrdinalPartialProportionalOddsRegr = R6::R6Class(
 
 			fit = private$fit_partial_proportional_odds()
 			if (is.null(fit) || !is.finite(fit$beta)){
-				private$cached_values$beta_hat_T = NA_real_
-				if (estimate_only) return(invisible(NULL))
-				private$cached_values$s_beta_hat_T = NA_real_
-				private$cached_values$df = private$n - 1
+				private$cache_nonestimable_estimate("ppor_fit_unavailable")
+				if (!estimate_only) private$cached_values$df = private$n - 1
 				return(invisible(NULL))
 			}
 
@@ -340,8 +338,8 @@ InferenceOrdinalPartialProportionalOddsRegr = R6::R6Class(
 			}
 			private$set_fit_warm_start(as.numeric(res$params), "params", fisher = res$fisher_information)
 
-			se_beta = if (is.finite(res$ssq_b_2) && res$ssq_b_2 > 0) {
-				sqrt(res$ssq_b_2)
+			se_beta = if (is.finite(res$ssq_b_j) && res$ssq_b_j > 0) {
+				sqrt(res$ssq_b_j)
 			} else {
 				NA_real_
 			}

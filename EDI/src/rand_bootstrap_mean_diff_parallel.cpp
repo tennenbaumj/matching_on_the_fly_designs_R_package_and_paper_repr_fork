@@ -116,3 +116,73 @@ NumericVector compute_rand_bootstrap_mean_diff_parallel_cpp(
 		y0, i_mat, w_mat, delta, 0, NA_REAL, num_cores
 	);
 }
+
+// Batch kernel returning a 2-row matrix: row 0 = t0_b (mean diff), row 1 = se0_b (Welch SE).
+// Used by the studentized/symmetric-percentile-t BRT to get both statistics in one C++ pass.
+// [[Rcpp::export]]
+NumericMatrix compute_rand_bootstrap_mean_diff_se_parallel_cpp(
+	const NumericVector& y0,
+	const IntegerMatrix& i_mat,
+	const IntegerMatrix& w_mat,
+	double delta,
+	int transform_code,
+	double zero_one_logit_clamp,
+	int num_cores) {
+
+	int nsim = w_mat.cols();
+	int n    = w_mat.rows();
+
+	NumericMatrix result(2, nsim);
+
+	const double* y0_ptr  = y0.begin();
+	const int*    i_ptr   = i_mat.begin();
+	const int*    w_ptr   = w_mat.begin();
+	double* t0_ptr  = result.begin();          // row 0
+	double* se_ptr  = result.begin() + nsim;   // row 1
+
+	const bool use_parallel = should_parallelize_replicates(nsim, n, num_cores);
+
+#ifdef _OPENMP
+	if (use_parallel) omp_set_num_threads(num_cores);
+#endif
+
+#pragma omp parallel for schedule(static) if(use_parallel)
+	for (int b = 0; b < nsim; ++b) {
+		const int* i_col = i_ptr + (size_t)b * n;
+		const int* w_col = w_ptr + (size_t)b * n;
+		double sum_T = 0, sum_T2 = 0;
+		double sum_C = 0, sum_C2 = 0;
+		int n_T = 0;
+
+		for (int i = 0; i < n; ++i) {
+			const double yv_raw = y0_ptr[i_col[i] - 1];  // i_mat is 1-based
+			const int is_t = (w_col[i] == 1);
+			if (is_t) {
+				const double yv = (delta != 0.0) ? brt_apply_shift(yv_raw, delta, transform_code, zero_one_logit_clamp) : yv_raw;
+				sum_T  += yv;
+				sum_T2 += yv * yv;
+				++n_T;
+			} else {
+				sum_C  += yv_raw;
+				sum_C2 += yv_raw * yv_raw;
+			}
+		}
+
+		const int n_C = n - n_T;
+		if (n_T < 2 || n_C < 2) {
+			t0_ptr[b] = NA_REAL;
+			se_ptr[b] = NA_REAL;
+		} else {
+			const double mean_T = sum_T / n_T;
+			const double mean_C = sum_C / n_C;
+			t0_ptr[b] = mean_T - mean_C;
+			// Welch SE: sqrt(var_T/n_T + var_C/n_C), each variance via one-pass formula
+			const double var_T = (sum_T2 - sum_T * mean_T) / (n_T - 1);
+			const double var_C = (sum_C2 - sum_C * mean_C) / (n_C - 1);
+			const double se_sq = var_T / n_T + var_C / n_C;
+			se_ptr[b] = (se_sq > 0.0) ? std::sqrt(se_sq) : 0.0;
+		}
+	}
+
+	return result;
+}

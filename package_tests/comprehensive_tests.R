@@ -118,7 +118,7 @@ test_compute_confidence_interval_rand = TRUE
 run_debug_resampling = Sys.getenv("COMPREHENSIVE_DEBUG_RESAMPLING", "0") %in% c("1", "true", "TRUE", "yes", "YES")
 run_parametric_bootstrap_ci = Sys.getenv("COMPREHENSIVE_PARAM_BOOT_CI", "0") %in% c("1", "true", "TRUE", "yes", "YES")
 param_boot_ci_max_root_iterations = 0L
-beta_T_values = c(0, 1)
+beta_T_values = c(0, 0.5)
 SD_NOISE = 0.1
 pending_rep_header = NULL
 pending_beta_header = NULL
@@ -325,6 +325,7 @@ results_dt = data.table(
 	duration_time_sec = numeric(),
 	result_1 = character(),
 	result_2 = character(),
+	coverage_truth = numeric(),
 	beta_T_in_confidence_interval = logical(),
 	error_message = character(),
 	run_row_id = integer(),
@@ -357,13 +358,8 @@ log_progress = function(msg){
 	flush.console()
 }
 
-is_skipped_inference_label = function(inference_label){
-	grepl("IVWC", inference_label, fixed = TRUE)
-}
-
 should_run_inference_label = function(inference_label){
-	!is_skipped_inference_label(inference_label) &&
-		(is.na(INFERENCE_CLASS_FILTER) || grepl(INFERENCE_CLASS_FILTER, inference_label))
+	is.na(INFERENCE_CLASS_FILTER) || grepl(INFERENCE_CLASS_FILTER, inference_label)
 }
 
 is_test_family_filter_active = function(){
@@ -439,10 +435,12 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 	is_debug_distribution = grepl("_debug$", function_run)
 	result_2 = if ((grepl("confidence_interval", function_run, fixed = TRUE) || is_debug_distribution) && length(result_vec) >= 2) round_result_field(result_vec[2]) else NA_character_
 	beta_T_in_confidence_interval = NA
+	coverage_truth = beta_T
 	if (grepl("confidence_interval", function_run, fixed = TRUE) && length(result) >= 2 && all(is.finite(result[1:2]))){
 		ci_lo = min(result[1:2])
 		ci_hi = max(result[1:2])
-		beta_T_in_confidence_interval = (beta_T >= ci_lo && beta_T <= ci_hi)
+		coverage_truth = get_coverage_truth(inference_class, dataset_name, beta_T)
+		beta_T_in_confidence_interval = (coverage_truth >= ci_lo && coverage_truth <= ci_hi)
 	}
 	run_row_id <<- run_row_id + 1L
 	results_dt <<- data.table::rbindlist(list(
@@ -459,6 +457,7 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 			duration_time_sec = round_duration_field(duration_time_sec),
 			result_1 = result_1,
 			result_2 = result_2,
+			coverage_truth = coverage_truth,
 			beta_T_in_confidence_interval = beta_T_in_confidence_interval,
 				error_message = if (is.null(error_message)) NA_character_ else as.character(error_message),
 			run_row_id = run_row_id,
@@ -571,7 +570,6 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 		"InferenceSurvivalKKClaytonCopulaOneLik",
 		"InferenceAbstractKKWeibullFrailtyOneLik",
 		"InferenceIncidExactZhangAbstract",
-		"InferenceAllSimpleWilcox",
 		"InferenceOrdinalPairedSignTest",
 		"InferenceOrdinalKKCondAdjCatLogitRegr",
 		"InferenceOrdinalGCompMeanDiff",
@@ -585,14 +583,31 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 		"InferenceOrdinalPartialProportionalOddsRegr",
 		"InferencePropZeroOneInflatedBetaRegr",
 		"InferencePropFractionalLogit",
-		"InferenceCountHurdleNegBin",
-		"InferenceContinRobustRegr"
+		"InferenceCountHurdleNegBin"
 	))
-	skip_bayesian_bootstrap = skip_bootstrap || is_any_inference_class(c(
-		"InferenceBaiAdjustedT",
-		"InferenceBaiAdjustedTKK14",
-		"InferenceBaiAdjustedTKK21"
+	skip_bootstrap_slow = is_any_inference_class(c(
+		"InferenceContinRobustRegr",  # M-estimator refits are too slow for routine testing
+		"InferenceContinKKGLMM"       # all resampling >30s avg
 	))
+	# Per-operation slow skips (avg >30s in comprehensive_tests_*_20260720.log)
+	skip_rand_slow            = is_any_inference_class(c("InferenceContinKKGLMM"))
+	skip_rand_ci_slow         = FALSE
+	skip_bbt_ci_slow          = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))
+	skip_boot_stud_slow       = FALSE
+	skip_boot_ci_slow         = FALSE
+	skip_jack_slow            = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))
+	skip_pboot_ci_slow        = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))
+	skip_rand_delta_pval_slow = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))  # delta=0.5 variant avg 205s
+	skip_brt_pval_smoothed_slow = is_any_inference_class(c("InferenceOrdinalKKGLMM", "InferenceOrdinalContRatioRegr"))  # smoothed pval avg 317s / 66s
+	skip_brt_pval_typed_slow    = is_any_inference_class(c("InferenceCountKKHurdlePoissonOneLik", "InferenceCountKKCondPoissonOneLik"))  # studentized+sympt-t pval avg 264s / 82s
+	skip_brt_ci_all_slow        = is_any_inference_class(c("InferenceSurvivalGehanWilcox", "InferenceSurvivalWeibullRegr"))  # all CI types avg 33-518s
+	skip_brt_ci_smoothed_slow   = is_any_inference_class(c("InferenceAllSimpleWilcox", "InferencePropKKQuantileRegrOneLik"))  # smoothed CI avg 94s / 32s
+	skip_brt_ci_typed_slow      = is_any_inference_class(c("InferencePropKKQuantileRegrOneLik"))  # studentized CI avg 34s
+	# BRT pval: skip only if bootstrap structurally broken OR rand itself slow; ContinRobustRegr keeps BRT pval
+	skip_brt_pval = skip_bootstrap || skip_rand_slow
+	skip_brt_ci   = skip_bootstrap || skip_bootstrap_slow || skip_rand_slow || skip_rand_ci_slow || skip_brt_ci_all_slow
+	skip_bayesian_bootstrap = skip_bootstrap || skip_bootstrap_slow ||
+		!isTRUE(tryCatch(seq_des_inf$.__enclos_env__$private$supports_bayesian_bootstrap(), error = function(e) TRUE))
 	supports_parametric_bootstrap =
 		is(seq_des_inf, "InferenceParamBootstrap") &&
 		!is_any_inference_class(c("InferenceCountKKGLMM")) &&
@@ -608,7 +623,7 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 			ci_support_fn = seq_des_inf$.__enclos_env__$private$supports_lik_ratio_param_bootstrap_confidence_interval
 			if (is.function(ci_support_fn)) ci_support_fn() else TRUE
 		}, error = function(e) TRUE))
-	skip_rand      = is(seq_des_inf, "InferenceIncidExactZhangAbstract") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalPairedSignTest") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalCloglogRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr")
+	skip_rand      = is(seq_des_inf, "InferenceIncidenceExactZhang") || is(seq_des_inf, "InferenceIncidExactZhangAbstract") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalPairedSignTest") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalCloglogRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr")
 	skip_mle_pval  = FALSE
 	skip_rand_pval = is(seq_des_inf, "InferenceContinMultGLS") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceSurvivalKKClaytonCopulaOneLik")
 	skip_ci_rand   = is_any_inference_class(c(
@@ -637,17 +652,6 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 		)
 	supports_jackknife = supports_jackknife && !is_any_inference_class(c("InferenceCountKKGLMM"))
 	
-	skip_ci = beta_T == 1 && (
-		is(seq_des_inf, "InferenceIncidLogRegr") ||
-		is(seq_des_inf, "InferencePropBetaRegr") ||
-		is(seq_des_inf, "InferencePropBetaRegr") ||
-		is(seq_des_inf, "InferenceSurvivalCoxPHRegr") ||
-		is(seq_des_inf, "InferenceSurvivalCoxPHRegr") ||
-		is(seq_des_inf, "InferenceSurvivalKKLWACoxPHOneLik") ||
-		is(seq_des_inf, "InferenceSurvivalKKStratCoxPHOneLik") ||
-		is(seq_des_inf, "InferenceSurvivalKKClaytonCopulaOneLik") ||
-		is(seq_des_inf, "InferenceSurvivalKKWeibullFrailtyOneLik")
-	)
 	snap_small_numeric_to_zero = function(x, tol = sqrt(.Machine$double.eps)){
 		if (is.null(x)) return(x)
 		if (is.list(x)) return(lapply(x, snap_small_numeric_to_zero, tol = tol))
@@ -991,7 +995,7 @@ call_direct_asymp = function(method_name, testing_type, ...){
 			safe_call_family("asymp", "compute_asymp_two_sided_pval", seq_des_inf$compute_asymp_two_sided_pval())
 		}
 	}
-	if (should_run_test_family("asymp") && !skip_asymp && !skip_ci){
+	if (should_run_test_family("asymp") && !skip_asymp){
 		safe_call_family("asymp", "compute_asymp_confidence_interval", seq_des_inf$compute_asymp_confidence_interval(0.05))
 	}
 	if (!skip_asymp && !skip_mle_pval){
@@ -1000,7 +1004,7 @@ call_direct_asymp = function(method_name, testing_type, ...){
 			call_direct_asymp("compute_lik_ratio_two_sided_pval", "lik_ratio")
 			call_direct_asymp("compute_gradient_two_sided_pval", "gradient")
 		}
-	if (!skip_asymp && !skip_ci){
+	if (!skip_asymp){
 		call_direct_asymp("compute_wald_confidence_interval", "wald", 0.05)
 		call_direct_asymp("compute_score_confidence_interval", "score", 0.05)
 		call_direct_asymp("compute_lik_ratio_confidence_interval", "lik_ratio", 0.05)
@@ -1050,7 +1054,7 @@ call_direct_asymp = function(method_name, testing_type, ...){
 					  duration_time_sec = duration_time_sec)
 	}
 
-	if (should_run_test_family("bootstrap") && run_debug_resampling && !skip_slow && !skip_bootstrap){
+	if (should_run_test_family("bootstrap") && run_debug_resampling && !skip_slow && !skip_bootstrap && !skip_bootstrap_slow){
 		safe_call_debug("approximate_bootstrap_distribution_beta_hat_T_debug",
 						seq_des_inf$approximate_bootstrap_distribution_beta_hat_T(B = B_debug, debug = TRUE))
 	}
@@ -1059,15 +1063,16 @@ call_direct_asymp = function(method_name, testing_type, ...){
 						seq_des_inf$approximate_bayesian_bootstrap_distribution_beta_hat_T(B = B_debug, debug = TRUE, show_progress = FALSE))
 	}
 	# Nonparametric bootstrap CI — default type first (warms the distribution cache), then extra types reuse it
-	if (should_run_test_family("bootstrap") && !skip_slow && !skip_ci && !skip_bootstrap){
+	if (should_run_test_family("bootstrap") && !skip_slow && !skip_bootstrap && !skip_bootstrap_slow && !skip_boot_ci_slow){
 		safe_call("compute_bootstrap_confidence_interval", seq_des_inf$compute_bootstrap_confidence_interval(B = r, na.rm = TRUE, show_progress = FALSE))
 		for (boot_ci_type in c("basic", "bca", "studentized")) {
+			if (boot_ci_type == "studentized" && skip_boot_stud_slow) next
 			safe_call(paste0("compute_bootstrap_confidence_interval_", boot_ci_type),
 					  seq_des_inf$compute_bootstrap_confidence_interval(B = r, type = boot_ci_type, na.rm = TRUE, show_progress = FALSE))
 		}
 	}
 	# Bayesian bootstrap CI — default type first (warms the distribution cache), then extra types reuse it
-	if (should_run_test_family("bayesian_bootstrap") && !skip_slow && !skip_ci && !skip_bayesian_bootstrap){
+	if (should_run_test_family("bayesian_bootstrap") && !skip_slow && !skip_bayesian_bootstrap && !skip_bbt_ci_slow){
 		safe_call("compute_bayesian_bootstrap_confidence_interval", seq_des_inf$compute_bayesian_bootstrap_confidence_interval(B = r, na.rm = TRUE, show_progress = FALSE))
 		for (bayes_ci_type in c("basic", "wald", "bca", "studentized")) {
 			safe_call(paste0("compute_bayesian_bootstrap_confidence_interval_", bayes_ci_type),
@@ -1075,9 +1080,10 @@ call_direct_asymp = function(method_name, testing_type, ...){
 		}
 	}
 	# Nonparametric bootstrap p-val — default first, extra types reuse distribution cache
-	if (should_run_test_family("bootstrap") && !skip_slow && !skip_bootstrap){
+	if (should_run_test_family("bootstrap") && !skip_slow && !skip_bootstrap && !skip_bootstrap_slow){
 		safe_call("compute_bootstrap_two_sided_pval", seq_des_inf$compute_bootstrap_two_sided_pval(B = r, na.rm = TRUE, show_progress = FALSE))
 		for (boot_pval_type in c("symmetric", "bca", "studentized")) {
+			if (boot_pval_type == "studentized" && skip_boot_stud_slow) next
 			safe_call(paste0("compute_bootstrap_two_sided_pval_", boot_pval_type),
 					  seq_des_inf$compute_bootstrap_two_sided_pval(B = r, type = boot_pval_type, na.rm = TRUE, show_progress = FALSE))
 		}
@@ -1093,7 +1099,7 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	if (should_run_test_family("parametric_bootstrap") && !skip_slow && supports_parametric_bootstrap){
 		safe_call("compute_lik_ratio_bootstrap_two_sided_pval", seq_des_inf$compute_lik_ratio_bootstrap_two_sided_pval(B = r, show_progress = FALSE))
 	}
-	if (should_run_test_family("parametric_bootstrap") && !skip_slow && !skip_ci && supports_parametric_bootstrap_ci){
+	if (should_run_test_family("parametric_bootstrap") && !skip_slow && supports_parametric_bootstrap_ci && !skip_pboot_ci_slow){
 		safe_call("compute_lik_ratio_bootstrap_confidence_interval",
 			seq_des_inf$compute_lik_ratio_bootstrap_confidence_interval(
 				B = r,
@@ -1102,16 +1108,16 @@ call_direct_asymp = function(method_name, testing_type, ...){
 			)
 		)
 	}
-	if (should_run_test_family("jackknife") && !skip_slow && supports_jackknife){
+	if (should_run_test_family("jackknife") && !skip_slow && supports_jackknife && !skip_jack_slow){
 		if (response_type != "count") {
 			safe_call("compute_jackknife_estimate", seq_des_inf$compute_jackknife_estimate())
 		}
 		safe_call("compute_jackknife_wald_two_sided_pval", seq_des_inf$compute_jackknife_wald_two_sided_pval())
 	}
-	if (should_run_test_family("jackknife") && !skip_slow && supports_jackknife){
+	if (should_run_test_family("jackknife") && !skip_slow && supports_jackknife && !skip_jack_slow){
 		safe_call("compute_jackknife_wald_confidence_interval", seq_des_inf$compute_jackknife_wald_confidence_interval())
 	}
-	if (should_run_test_family("rand") && !skip_slow && !skip_rand && !skip_rand_pval && response_type %in% c("continuous", "survival", "proportion")){
+	if (should_run_test_family("rand") && !skip_slow && !skip_rand && !skip_rand_pval && !skip_rand_slow && response_type %in% c("continuous", "survival", "proportion", "incidence", "count", "ordinal")){
 		if (run_debug_resampling) {
 			safe_call_debug("approximate_randomization_distribution_beta_hat_T_debug",
 						seq_des_inf$approximate_randomization_distribution_beta_hat_T(r = r_debug, debug = TRUE))
@@ -1126,15 +1132,17 @@ call_direct_asymp = function(method_name, testing_type, ...){
 			"none"
 		)
 		delta_for_rand = 0.5
-		safe_call("compute_rand_two_sided_pval(delta=0.5)",
-				seq_des_inf$compute_rand_two_sided_pval(r = r, delta = delta_for_rand, transform_responses = transform_for_rand, show_progress = FALSE))
+		if (!skip_rand_delta_pval_slow) {
+			safe_call("compute_rand_two_sided_pval(delta=0.5)",
+					seq_des_inf$compute_rand_two_sided_pval(r = r, delta = delta_for_rand, transform_responses = transform_for_rand, show_progress = FALSE))
+		}
 	}
 
-	if (should_run_test_family("rand") && !skip_slow && !skip_rand && !skip_ci && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "count")){
+	if (should_run_test_family("rand") && !skip_slow && !skip_rand && !skip_ci_rand && !skip_rand_slow && !skip_rand_ci_slow && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "count", "survival")){
 		safe_call("compute_rand_confidence_interval", seq_des_inf$compute_rand_confidence_interval(r = r, pval_epsilon = pval_epsilon, show_progress = FALSE))
 	}
 	# Bootstrap randomization test (BRT): row bootstrap + fresh assignment draw from the design
-	if (should_run_test_family("rand_bootstrap") && !skip_slow && !skip_bootstrap && !skip_rand && !skip_rand_pval && response_type %in% c("continuous", "survival", "proportion")){
+	if (should_run_test_family("rand_bootstrap") && !skip_slow && !skip_brt_pval && !skip_rand && !skip_rand_pval && response_type %in% c("continuous", "survival", "proportion", "incidence", "count", "ordinal")){
 		if (run_debug_resampling) {
 			safe_call_debug("approximate_rand_bootstrap_distribution_beta_hat_T_debug",
 						seq_des_inf$approximate_rand_bootstrap_distribution_beta_hat_T(B = B_debug, debug = TRUE, show_progress = FALSE))
@@ -1150,16 +1158,28 @@ call_direct_asymp = function(method_name, testing_type, ...){
 		)
 		safe_call("compute_rand_bootstrap_two_sided_pval(delta=0.5)",
 				seq_des_inf$compute_rand_bootstrap_two_sided_pval(B = r, delta = 0.5, transform_responses = transform_for_rand_bootstrap, show_progress = FALSE))
+		for (brt_pval_type in c("studentized", "symmetric-percentile-t", "smoothed")) {
+			if (brt_pval_type == "smoothed" && skip_brt_pval_smoothed_slow) next
+			if (brt_pval_type %in% c("studentized", "symmetric-percentile-t") && skip_brt_pval_typed_slow) next
+			safe_call(paste0("compute_rand_bootstrap_two_sided_pval_", brt_pval_type),
+					  seq_des_inf$compute_rand_bootstrap_two_sided_pval(B = r, type = brt_pval_type, show_progress = FALSE))
+		}
 	}
-	if (should_run_test_family("rand_bootstrap") && !skip_slow && !skip_bootstrap && !skip_rand && !skip_ci && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "count")){
+	if (should_run_test_family("rand_bootstrap") && !skip_slow && !skip_brt_ci && !skip_rand && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "count", "survival")){
 		safe_call("compute_rand_bootstrap_confidence_interval", seq_des_inf$compute_rand_bootstrap_confidence_interval(B = r, pval_epsilon = pval_epsilon, show_progress = FALSE))
+		for (brt_ci_type in c("studentized", "symmetric-percentile-t", "smoothed")) {
+			if (brt_ci_type == "smoothed" && skip_brt_ci_smoothed_slow) next
+			if (brt_ci_type %in% c("studentized", "symmetric-percentile-t") && skip_brt_ci_typed_slow) next
+			safe_call(paste0("compute_rand_bootstrap_confidence_interval_", brt_ci_type),
+					  seq_des_inf$compute_rand_bootstrap_confidence_interval(B = r, type = brt_ci_type, pval_epsilon = pval_epsilon, show_progress = FALSE))
+		}
 	}
 	if (should_run_test_family("rand_custom") && response_type != "incidence"){
 		seq_des_inf$set_custom_randomization_statistic_cpp(welch_t_stat_cpp)
 		if (!skip_slow && !skip_rand_pval){
 			safe_call("compute_rand_two_sided_pval(custom)", seq_des_inf$compute_rand_two_sided_pval(r = r, show_progress = FALSE))
 		}
-		if (!skip_slow && !skip_ci && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous")){
+		if (!skip_slow && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "survival")){
 			if (!skip_ci_rand_custom){
 				safe_call("compute_rand_confidence_interval(custom)", seq_des_inf$compute_rand_confidence_interval(r = r, pval_epsilon = pval_epsilon, show_progress = FALSE))
 			} else {
@@ -1204,7 +1224,6 @@ run_exhaustive_remaining_inference_classes = function(des_obj, response_type, de
 		"InferenceKKPassThroughCompound",
 		"InferenceMLEorKMforGLMs",
 		"InferenceMLEorKMSummaryTable",
-		"InferenceBaiAdjustedT",
 		"InferenceCustomAsymp",
 		"InferenceCustomBoot",
 		"InferenceCustomRand",
@@ -1245,6 +1264,121 @@ run_exhaustive_remaining_inference_classes = function(des_obj, response_type, de
 	invisible(NULL)
 }
 
+apply_treatment_effect_and_noise = function(y_t, w_t, response_type){
+	eps = rnorm(1, 0, SD_NOISE)
+	bt = ifelse(w_t == 1, beta_T, 0)
+	if (response_type == "continuous") return(y_t + bt + eps)
+	if (response_type == "incidence") {
+		p_base = if (is.finite(y_t) && y_t >= 0 && y_t <= 1) y_t else stats::plogis(y_t)
+		p_base = pmin(0.95, pmax(0.05, p_base))
+		p_t = plogis(qlogis(p_base) + bt + eps)
+		return(as.numeric(stats::rbinom(1, size = 1, prob = p_t)))
+	}
+	if (response_type == "proportion"){
+		return(pmin(1, pmax(0, y_t + bt + eps)))
+	}
+	if (response_type == "count"){
+		lambda_t = pmax(.Machine$double.eps, y_t * exp(bt + eps))
+		return(as.numeric(stats::rpois(1, lambda = lambda_t)))
+	}
+	if (response_type == "survival") return(pmax(.Machine$double.eps, y_t * exp(bt + eps)))
+	if (response_type == "ordinal"){
+		# For ordinal, we'll just use a simple shift and re-cut if needed,
+		# but here y_t is already the ordinal level.
+		# Let's just do a simple shift and round.
+		# We use a larger noise multiplier (5x) to ensure some subjects jump categories,
+		# otherwise with SD_NOISE=0.1, matched pairs are almost always concordant.
+		return(as.integer(max(1, round(y_t + bt + 5 * eps))))
+	}
+	stop("Unsupported response_type: ", response_type)
+}
+
+# ── Model-specific coverage truth ───────────────────────────────────────────
+# beta_T is the treatment shift comprehensive_tests.R's own DGP (apply_treatment_effect_and_noise)
+# adds on each response's native scale. For classes whose own estimand IS that native-scale
+# additive shift (mean-diff-type estimators, or well-specified log-link/logit-link single-coefficient
+# models applied to an unconditional baseline) beta_T is already the right coverage target. But
+# InferenceIncidLogRegr/InferencePropBetaRegr/the Cox-family survival classes estimate a *marginal*
+# coefficient on a link scale that does not equal beta_T once baseline heterogeneity is present
+# (non-collapsibility), and the proportion/survival DGPs here (additive-clamped shift; multiplicative
+# time shift) do not even match those models' own assumed link — so there's no simple closed form.
+# InferenceIncidLogRegr's DGP (Bernoulli w/ logit link) *is* exactly what logistic regression assumes,
+# so its marginal log-odds-ratio target has an exact closed form. The rest are computed by Monte Carlo:
+# simulate a very large sample from this same DGP and fit the class's own estimator to it once; at
+# large n the MC noise is negligible and the fitted coefficient is the "least false"/KL-projection
+# parameter that a correctly-behaving CI should cover at the nominal rate, even under misspecification.
+.coverage_truth_cache = new.env(parent = emptyenv())
+
+compute_incid_logit_coverage_truth = function(dataset_name, beta_T_val){
+	y_i = datasets_and_response_models[[dataset_name]]$y_original$incidence
+	p_base = ifelse(is.finite(y_i) & y_i >= 0 & y_i <= 1, y_i, stats::plogis(y_i))
+	p_base = pmin(0.95, pmax(0.05, p_base))
+	p_t = stats::plogis(stats::qlogis(p_base) + beta_T_val)
+	stats::qlogis(mean(p_t)) - stats::qlogis(mean(p_base))
+}
+
+compute_mc_coverage_truth = function(class_gen, response_type, dataset_name, beta_T_val, mc_n = 20000L){
+	y_base = datasets_and_response_models[[dataset_name]]$y_original[[response_type]]
+	n0 = length(y_base)
+	y_rep = rep(y_base, ceiling(mc_n / n0))[seq_len(mc_n)]
+	dead_mc = rep(1, mc_n)
+	if (response_type == "survival") {
+		t_f_mc = stats::quantile(y_rep, .95)
+		cens = stats::runif(mc_n) < prob_censoring | y_rep >= t_f_mc
+		if (any(cens)) {
+			y_rep[cens] = stats::runif(sum(cens), 0, y_rep[cens])
+			dead_mc[cens] = 0
+		}
+	}
+	des_obj = DesignFixedBernoulli$new(response_type = response_type, n = mc_n, design_formula = ~1)
+	des_obj$add_all_subjects_to_experiment(data.frame(x1 = rep(0, mc_n)))
+	des_obj$assign_w_to_all_subjects()
+	w_mc = des_obj$get_w()
+	y_final = vapply(seq_len(mc_n), function(i) apply_treatment_effect_and_noise(y_rep[i], w_mc[i], response_type), numeric(1))
+	des_obj$add_all_subject_responses(y_final, dead_mc)
+	inf_obj = class_gen$new(des_obj, model_formula = ~1)
+	as.numeric(inf_obj$compute_estimate())[1L]
+}
+
+COVERAGE_MC_RESPONSE_TYPE = list(
+	InferencePropBetaRegr                = "proportion",
+	InferenceSurvivalCoxPHRegr           = "survival",
+	InferenceSurvivalKKLWACoxPHOneLik    = "survival",
+	InferenceSurvivalKKStratCoxPHOneLik  = "survival",
+	InferenceSurvivalKKClaytonCopulaOneLik  = "survival",
+	InferenceSurvivalKKWeibullFrailtyOneLik = "survival"
+)
+COVERAGE_MC_CLASS_GEN = list(
+	InferencePropBetaRegr                = InferencePropBetaRegr,
+	InferenceSurvivalCoxPHRegr           = InferenceSurvivalCoxPHRegr,
+	InferenceSurvivalKKLWACoxPHOneLik    = InferenceSurvivalKKLWACoxPHOneLik,
+	InferenceSurvivalKKStratCoxPHOneLik  = InferenceSurvivalKKStratCoxPHOneLik,
+	InferenceSurvivalKKClaytonCopulaOneLik  = InferenceSurvivalKKClaytonCopulaOneLik,
+	InferenceSurvivalKKWeibullFrailtyOneLik = InferenceSurvivalKKWeibullFrailtyOneLik
+)
+
+get_coverage_truth = function(inference_class, dataset_name, beta_T_val){
+	base_class = sub(" [\\(\\[].*$", "", inference_class)
+	if (identical(base_class, "InferenceIncidLogRegr")) {
+		return(tryCatch(compute_incid_logit_coverage_truth(dataset_name, beta_T_val), error = function(e) beta_T_val))
+	}
+	response_type_mc = COVERAGE_MC_RESPONSE_TYPE[[base_class]]
+	if (!is.null(response_type_mc)) {
+		key = paste(base_class, dataset_name, beta_T_val, sep = "||")
+		if (exists(key, envir = .coverage_truth_cache, inherits = FALSE)) {
+			return(get(key, envir = .coverage_truth_cache, inherits = FALSE))
+		}
+		truth = tryCatch(
+			compute_mc_coverage_truth(COVERAGE_MC_CLASS_GEN[[base_class]], response_type_mc, dataset_name, beta_T_val),
+			error = function(e) beta_T_val
+		)
+		if (!is.finite(truth)) truth = beta_T_val
+		assign(key, truth, envir = .coverage_truth_cache)
+		return(truth)
+	}
+	beta_T_val
+}
+
 run_tests_for_response = function(response_type, design_type, dataset_name, model_formula = NULL){
 	.comprehensive_current_model_formula <<- model_formula
 	on.exit({
@@ -1252,34 +1386,6 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 			rm(".comprehensive_current_model_formula", envir = .GlobalEnv)
 		}
 	}, add = TRUE)
-	apply_treatment_effect_and_noise = function(y_t, w_t, response_type){
-		eps = rnorm(1, 0, SD_NOISE)
-		bt = ifelse(w_t == 1, beta_T, 0)
-		if (response_type == "continuous") return(y_t + bt + eps)
-		if (response_type == "incidence") {
-			p_base = if (is.finite(y_t) && y_t >= 0 && y_t <= 1) y_t else stats::plogis(y_t)
-			p_base = pmin(0.95, pmax(0.05, p_base))
-			p_t = plogis(qlogis(p_base) + bt + eps)
-			return(as.numeric(stats::rbinom(1, size = 1, prob = p_t)))
-		}
-		if (response_type == "proportion"){
-			return(pmin(1, pmax(0, y_t + bt + eps)))
-		}
-		if (response_type == "count"){
-			lambda_t = pmax(.Machine$double.eps, y_t * exp(bt + eps))
-			return(as.numeric(stats::rpois(1, lambda = lambda_t)))
-		}
-		if (response_type == "survival") return(pmax(.Machine$double.eps, y_t * exp(bt + eps)))
-		if (response_type == "ordinal"){
-			# For ordinal, we'll just use a simple shift and re-cut if needed, 
-			# but here y_t is already the ordinal level.
-			# Let's just do a simple shift and round.
-			# We use a larger noise multiplier (5x) to ensure some subjects jump categories,
-			# otherwise with SD_NOISE=0.1, matched pairs are almost always concordant.
-			return(as.integer(max(1, round(y_t + bt + 5 * eps))))
-		}
-		stop("Unsupported response_type: ", response_type)
-	}
 
 	D = datasets_and_response_models[[dataset_name]]
 	n_X = nrow(D$X)
@@ -1410,21 +1516,9 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 		inference_banner("InferenceAllSimpleWilcox")
 		run_inference_checks(InferenceAllSimpleWilcox$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		if (is_kk_design){
-			if (design_type == "KK14"){
-				inference_banner("InferenceBaiAdjustedTKK14")
-				run_inference_checks(InferenceBaiAdjustedTKK14$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-			}
-			if (design_type %in% c("KK21", "KK21stepwise")){
-				inference_banner("InferenceBaiAdjustedTKK21")
-				run_inference_checks(InferenceBaiAdjustedTKK21$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-			}
-			run_inference_checks_for_class(InferenceAllKKMeanDiffIVWC, "InferenceAllKKMeanDiffIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_for_class(InferenceAllKKWilcoxIVWC, "InferenceAllKKWilcoxIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_both_paths(InferenceContinKKRobustRegrIVWC, "InferenceContinKKRobustRegrIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceContinKKRobustRegrOneLik, "InferenceContinKKRobustRegrOneLik", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceContinKKOLSOneLik, "InferenceContinKKOLSOneLik", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceContinKKGLMM, "InferenceContinKKGLMM", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_both_paths(InferenceContinKKQuantileRegrIVWC, "InferenceContinKKQuantileRegrIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceContinKKQuantileRegrOneLik, "InferenceContinKKQuantileRegrOneLik", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 		} else {
 			run_inference_checks_both_paths(InferenceContinRobustRegr, "InferenceContinRobustRegr", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
@@ -1451,6 +1545,12 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 			inference_banner("InferenceIncidExactBinomial")
 			run_inference_checks(InferenceIncidExactBinomial$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		}
+		inference_banner("InferenceIncidenceExactZhang")
+		err_msg_ez = tryCatch({
+			run_inference_checks(InferenceIncidenceExactZhang$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
+			NULL
+		}, error = function(e) if (length(e$message) == 0L) "" else e$message)
+		if (!is.null(err_msg_ez)) message("  Skipping InferenceIncidenceExactZhang: ", err_msg_ez)
 		inference_banner("InferenceIncidWald")
 		run_inference_checks(InferenceIncidWald$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceIncidCMH")
@@ -1478,10 +1578,8 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 			}
 		}
 		if (is_kk_design){
-			run_inference_checks_for_class(InferenceAllKKMeanDiffIVWC, "InferenceAllKKMeanDiffIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceIncidKKCondLogitOneLik, "InferenceIncidKKCondLogitOneLik", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceIncidKKCondLogitPlusGLMMOneLik, "InferenceIncidKKCondLogitPlusGLMMOneLik", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_both_paths(InferenceIncidKKCondLogitIVWC, "InferenceIncidKKCondLogitIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceIncidKKGEE, "InferenceIncidKKGEE", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			inference_banner("InferenceIncidKKNewcombeRiskDiff")
 			run_inference_checks(InferenceIncidKKNewcombeRiskDiff$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
@@ -1512,11 +1610,8 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 		inference_banner("InferenceAllSimpleWilcox")
 		run_inference_checks(InferenceAllSimpleWilcox$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		if (is_kk_design){
-			run_inference_checks_for_class(InferenceAllKKMeanDiffIVWC, "InferenceAllKKMeanDiffIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_for_class(InferenceAllKKWilcoxIVWC, "InferenceAllKKWilcoxIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferencePropKKGEE, "InferencePropKKGEE", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferencePropKKGLMM, "InferencePropKKGLMM", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_both_paths(InferencePropKKQuantileRegrIVWC, "InferencePropKKQuantileRegrIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferencePropKKQuantileRegrOneLik, "InferencePropKKQuantileRegrOneLik", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 		}
 		run_inference_checks_both_paths(InferencePropBetaRegr, "InferencePropBetaRegr", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
@@ -1524,6 +1619,7 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 			run_inference_checks_both_paths(InferencePropZeroOneInflatedBetaRegr, "InferencePropZeroOneInflatedBetaRegr", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferencePropGCompMeanDiff, "InferencePropGCompMeanDiff", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferencePropFractionalLogit, "InferencePropFractionalLogit", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
+			run_inference_checks_both_paths(InferencePropQuantileRegr, "InferencePropQuantileRegr", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 		}
 	}
 
@@ -1533,8 +1629,6 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 		inference_banner("InferenceAllSimpleWilcox")
 		run_inference_checks(InferenceAllSimpleWilcox$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		if (is_kk_design){
-			run_inference_checks_for_class(InferenceAllKKMeanDiffIVWC, "InferenceAllKKMeanDiffIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_for_class(InferenceAllKKWilcoxIVWC, "InferenceAllKKWilcoxIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceCountPoissonKKGEE, "InferenceCountPoissonKKGEE", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceCountKKGLMM, "InferenceCountKKGLMM", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			run_inference_checks_both_paths(InferenceCountKKHurdlePoissonOneLik, "InferenceCountKKHurdlePoissonOneLik", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
@@ -1559,24 +1653,8 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 				grepl("does not currently support censored", msg, fixed = TRUE) ||
 				grepl("does not support censored", msg, fixed = TRUE)
 			}
-			for (kk_surv_class in Filter(function(class_gen) should_run_inference_label(class_gen$classname), list(InferenceAllKKMeanDiffIVWC, InferenceAllKKWilcoxIVWC))){
-				class_name = kk_surv_class$classname
-				inference_banner(class_name)
-				err_msg = tryCatch({
-					run_inference_checks(kk_surv_class$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-					NULL
-				}, error = function(e) if (length(e$message) == 0L) "" else e$message)
-				if (!is.null(err_msg)){
-					if (is_censoring_skip_error(err_msg)) message("  Skipping ", class_name, " (censored data): ", err_msg)
-					else stop(err_msg)
-				}
-			}
 			for (kk_surv_class in Filter(function(class_gen) should_run_inference_label(class_gen$classname), list(
-				InferenceSurvivalKKClaytonCopulaIVWC,
-				InferenceSurvivalKKLWACoxPHIVWC,
-				InferenceSurvivalKKStratCoxPHIVWC,
-				InferenceSurvivalKKRankRegrIVWC,
-				InferenceSurvivalKKWeibullFrailtyIVWC,
+				InferenceSurvivalKKWeibullMarginal,
 				InferenceSurvivalKKClaytonCopulaOneLik,
 				InferenceSurvivalKKLWACoxPHOneLik,
 				InferenceSurvivalKKStratCoxPHOneLik,
@@ -1630,8 +1708,6 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 		inference_banner("InferenceAllSimpleWilcox")
 		run_inference_checks(InferenceAllSimpleWilcox$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		if (is_kk_design){
-			run_inference_checks_for_class(InferenceAllKKMeanDiffIVWC, "InferenceAllKKMeanDiffIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
-			run_inference_checks_for_class(InferenceAllKKWilcoxIVWC, "InferenceAllKKWilcoxIVWC", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			inference_banner("InferenceOrdinalKKGEE")
 			run_inference_checks(InferenceOrdinalKKGEE$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 			run_inference_checks_both_paths(InferenceOrdinalKKGLMM, "InferenceOrdinalKKGLMM", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)

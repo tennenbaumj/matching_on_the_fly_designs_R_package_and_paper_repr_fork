@@ -95,7 +95,11 @@ InferenceSurvivalStratCoxPHRegr = R6::R6Class("InferenceSurvivalStratCoxPHRegr",
 			if (!estimate_only && !is.null(private$cached_values$s_beta_hat_T) && is.finite(private$cached_values$s_beta_hat_T)) return(invisible(NULL))
 			mod = private$generate_mod(estimate_only = estimate_only)
 			private$cached_values$beta_hat_T = mod$beta_hat_T %||% as.numeric(mod$b[2])
-			if (is.finite(private$cached_values$beta_hat_T) && abs(private$cached_values$beta_hat_T) > 0.5) {
+			if (!is.finite(private$cached_values$beta_hat_T)) {
+				private$cache_nonestimable_estimate("strat_cox_fit_unavailable")
+				return(invisible(NULL))
+			}
+			if (abs(private$cached_values$beta_hat_T) > 0.5) {
 				private$cache_nonestimable_estimate("strat_cox_extreme_estimate")
 				return(invisible(NULL))
 			}

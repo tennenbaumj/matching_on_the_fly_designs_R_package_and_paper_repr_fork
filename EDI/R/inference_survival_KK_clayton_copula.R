@@ -5,6 +5,8 @@
 #' pairs and a standard Weibull AFT model for the reservoir. The two treatment-effect
 #' estimates (on the log-time ratio scale) are combined by inverse-variance weighting.
 #'
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 InferenceSurvivalKKClaytonCopulaIVWC = R6::R6Class("InferenceSurvivalKKClaytonCopulaIVWC",
 	lock_objects = FALSE,

@@ -9,7 +9,7 @@ KK Hurdle Poisson Combined-Likelihood Inference for Count Responses
 KK Hurdle Poisson Combined-Likelihood Inference for Count Responses
 }
 \section{Super classes}{
-\code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{InferenceCountKKHurdlePoissonOneLik}
+\code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{::InferenceParamBootstrap} -> \code{InferenceCountKKHurdlePoissonOneLik}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -28,6 +28,7 @@ KK Hurdle Poisson Combined-Likelihood Inference for Count Responses
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_wald_confidence_interval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_wald_confidence_interval()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-compute_wald_two_sided_pval}{\code{InferenceCountKKHurdlePoissonOneLik$compute_wald_two_sided_pval()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-approximate_bootstrap_distribution_beta_hat_T}{\code{InferenceCountKKHurdlePoissonOneLik$approximate_bootstrap_distribution_beta_hat_T()}}
+\item \href{#method-InferenceCountKKHurdlePoissonOneLik-supports_lik_ratio_param_bootstrap}{\code{InferenceCountKKHurdlePoissonOneLik$supports_lik_ratio_param_bootstrap()}}
 \item \href{#method-InferenceCountKKHurdlePoissonOneLik-clone}{\code{InferenceCountKKHurdlePoissonOneLik$clone()}}
 }
 }
@@ -80,6 +81,9 @@ KK Hurdle Poisson Combined-Likelihood Inference for Count Responses
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_testing_type'><code>::InferenceAsympLik$get_testing_type()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_information_preference'><code>::InferenceAsympLik$set_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_testing_type'><code>::InferenceAsympLik$set_testing_type()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_confidence_interval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_confidence_interval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_two_sided_pval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_two_sided_pval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="get_last_param_bootstrap_diagnostics"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-get_last_param_bootstrap_diagnostics'><code>::InferenceParamBootstrap$get_last_param_bootstrap_diagnostics()</code></a></span></li>
 </ul>
 </details>
 }}
@@ -370,6 +374,15 @@ Creates the bootstrap distribution of the estimate for the treatment effect.
 \subsection{Returns}{
 A numeric vector of bootstrap estimates.
 }
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-supports_lik_ratio_param_bootstrap"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKHurdlePoissonOneLik-supports_lik_ratio_param_bootstrap}{}}}
+\subsection{Method \code{supports_lik_ratio_param_bootstrap()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKHurdlePoissonOneLik$supports_lik_ratio_param_bootstrap()}\if{html}{\out{</div>}}
+}
+
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountKKHurdlePoissonOneLik-clone"></a>}}

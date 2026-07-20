@@ -9,7 +9,7 @@ Conditional-Poisson Inference for KK Designs with Combined Likelihood
 Conditional-Poisson Inference for KK Designs with Combined Likelihood
 }
 \section{Super classes}{
-\code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{InferenceCountKKCondPoissonOneLik}
+\code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{::InferenceParamBootstrap} -> \code{InferenceCountKKCondPoissonOneLik}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -28,6 +28,7 @@ Conditional-Poisson Inference for KK Designs with Combined Likelihood
 \item \href{#method-InferenceCountKKCondPoissonOneLik-compute_lik_ratio_two_sided_pval}{\code{InferenceCountKKCondPoissonOneLik$compute_lik_ratio_two_sided_pval()}}
 \item \href{#method-InferenceCountKKCondPoissonOneLik-compute_gradient_two_sided_pval}{\code{InferenceCountKKCondPoissonOneLik$compute_gradient_two_sided_pval()}}
 \item \href{#method-InferenceCountKKCondPoissonOneLik-approximate_bootstrap_distribution_beta_hat_T}{\code{InferenceCountKKCondPoissonOneLik$approximate_bootstrap_distribution_beta_hat_T()}}
+\item \href{#method-InferenceCountKKCondPoissonOneLik-supports_lik_ratio_param_bootstrap}{\code{InferenceCountKKCondPoissonOneLik$supports_lik_ratio_param_bootstrap()}}
 \item \href{#method-InferenceCountKKCondPoissonOneLik-clone}{\code{InferenceCountKKCondPoissonOneLik$clone()}}
 }
 }
@@ -80,6 +81,9 @@ Conditional-Poisson Inference for KK Designs with Combined Likelihood
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_testing_type'><code>::InferenceAsympLik$get_testing_type()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_information_preference'><code>::InferenceAsympLik$set_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_testing_type'><code>::InferenceAsympLik$set_testing_type()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_confidence_interval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_confidence_interval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_two_sided_pval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_two_sided_pval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="get_last_param_bootstrap_diagnostics"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-get_last_param_bootstrap_diagnostics'><code>::InferenceParamBootstrap$get_last_param_bootstrap_diagnostics()</code></a></span></li>
 </ul>
 </details>
 }}
@@ -363,6 +367,15 @@ Creates the bootstrap distribution of the estimate for the treatment effect.
 \subsection{Returns}{
 A numeric vector of bootstrap estimates.
 }
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceCountKKCondPoissonOneLik-supports_lik_ratio_param_bootstrap"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceCountKKCondPoissonOneLik-supports_lik_ratio_param_bootstrap}{}}}
+\subsection{Method \code{supports_lik_ratio_param_bootstrap()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceCountKKCondPoissonOneLik$supports_lik_ratio_param_bootstrap()}\if{html}{\out{</div>}}
+}
+
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceCountKKCondPoissonOneLik-clone"></a>}}

@@ -133,6 +133,7 @@ InferencePropKKGLMM = R6::R6Class("InferencePropKKGLMM",
 			list(
 				X = d$X_conc,
 				j = j_treat,
+				d = d,
 				full_fit = private$cached_mod,
 				fit_null = function(delta, start = NULL){
 					fast_clogit_plus_glmm_cpp(
@@ -181,6 +182,76 @@ InferencePropKKGLMM = R6::R6Class("InferencePropKKGLMM",
 				neg_loglik = function(fit){
 					as.numeric(fit$neg_loglik %||% fit$neg_ll)
 				}
+			)
+		},
+		supports_lik_ratio_param_bootstrap = function() TRUE,
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			d = spec$d
+			params_null = as.numeric(null_fit$params)
+			p = ncol(d$X_conc)
+			beta_null = params_null[seq_len(p)]
+			log_sigma = params_null[p + 1L]
+			sigma = exp(min(log_sigma, private$max_abs_log_sigma))
+			if (!is.finite(sigma) || sigma < 0) return(NULL)
+			j = spec$j
+			n_params = length(params_null)
+
+			y_disc_sim = if (d$has_discordant && nrow(d$X_disc) > 0) {
+				eta_disc = as.numeric(d$X_disc %*% beta_null)
+				as.numeric(rbinom(length(eta_disc), 1L, plogis(eta_disc)))
+			} else {
+				d$y_disc
+			}
+
+			y_conc_sim = if (d$has_concordant && nrow(d$X_conc) > 0) {
+				G = max(d$group_conc)
+				u = rnorm(G, 0, sigma)
+				eta_conc = as.numeric(d$X_conc %*% beta_null) + u[d$group_conc]
+				as.numeric(rbinom(length(eta_conc), 1L, plogis(eta_conc)))
+			} else {
+				d$y_conc
+			}
+
+			d_sim = utils::modifyList(d, list(y_disc = y_disc_sim, y_conc = y_conc_sim))
+
+			full_res = tryCatch(
+				fast_clogit_plus_glmm_cpp(
+					X_disc = d_sim$X_disc, y_disc = d_sim$y_disc,
+					X_conc = d_sim$X_conc, y_conc = d_sim$y_conc,
+					group_conc = d_sim$group_conc,
+					has_discordant = d_sim$has_discordant,
+					has_concordant = d_sim$has_concordant,
+					warm_start_params = params_null,
+					max_abs_log_sigma = private$max_abs_log_sigma,
+					optimization_alg = private$optimization_alg
+				),
+				error = function(e) NULL
+			)
+			if (is.null(full_res) || !isTRUE(full_res$converged)) return(NULL)
+			full_fit_boot = list(params = as.numeric(full_res$params), neg_loglik = as.numeric(full_res$neg_loglik %||% full_res$neg_ll))
+			if (!is.finite(full_fit_boot$neg_loglik)) return(NULL)
+
+			list(
+				full_fit = full_fit_boot,
+				fit_null = function(d2, start = NULL){
+					res = tryCatch(
+						fast_clogit_plus_glmm_cpp(
+							X_disc = d_sim$X_disc, y_disc = d_sim$y_disc,
+							X_conc = d_sim$X_conc, y_conc = d_sim$y_conc,
+							group_conc = d_sim$group_conc,
+							has_discordant = d_sim$has_discordant,
+							has_concordant = d_sim$has_concordant,
+							warm_start_params = start %||% full_fit_boot$params,
+							max_abs_log_sigma = private$max_abs_log_sigma,
+							fixed_idx = j, fixed_values = d2,
+							optimization_alg = private$optimization_alg
+						),
+						error = function(e) NULL
+					)
+					if (is.null(res) || !isTRUE(res$converged)) return(NULL)
+					list(params = as.numeric(res$params), neg_loglik = as.numeric(res$neg_loglik %||% res$neg_ll))
+				},
+				neg_loglik = function(fit) as.numeric(fit$neg_loglik)
 			)
 		}
 	)

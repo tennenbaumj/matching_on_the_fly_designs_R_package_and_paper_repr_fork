@@ -224,8 +224,26 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 	),
 		private = list(
 		supports_reusable_bootstrap_worker = function(){
-			FALSE
-			},
+			TRUE
+		},
+		# Override the generic design-backed worker to freeze best_X_colnames /
+		# best_Xzi_colnames in the worker state.  load_bootstrap_sample_into_design_backed_worker
+		# clears best_X_colnames (line 855) which would force a full design-reduction on every
+		# BRT draw — saving and restoring it here skips that and goes straight to the C++ fit.
+		create_bootstrap_worker_state = function(){
+			ws = private$create_design_backed_bootstrap_worker_state()
+			ws$base_best_X_colnames   = private$best_X_colnames
+			ws$base_best_Xzi_colnames = private$best_Xzi_colnames
+			ws
+		},
+		load_bootstrap_sample_into_worker = function(worker_state, indices){
+			private$load_bootstrap_sample_into_design_backed_worker(worker_state, indices)
+			worker_state$worker_priv$best_X_colnames   = worker_state$base_best_X_colnames
+			worker_state$worker_priv$best_Xzi_colnames = worker_state$base_best_Xzi_colnames
+		},
+		compute_bootstrap_worker_estimate = function(worker_state){
+			private$compute_bootstrap_worker_estimate_via_compute_treatment_estimate(worker_state)
+		},
 			cached_mod = NULL,
 			za_X_cov_all = NULL,
 			za_Xzi_cov_all = NULL,

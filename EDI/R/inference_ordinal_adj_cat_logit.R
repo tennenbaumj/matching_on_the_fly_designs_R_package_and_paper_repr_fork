@@ -16,7 +16,7 @@
 #' @export
 InferenceOrdinalAdjCatLogitRegr = R6::R6Class("InferenceOrdinalAdjCatLogitRegr",
 	lock_objects = FALSE,
-	inherit = InferenceAsympLikStdModCacheNoParamBootstrap,
+	inherit = InferenceAsympLikStdModCache,
 	public = list(
 		#' @description Initialize an adjacent-category-logit inference object.
 		#' @param des_obj A completed \code{Design} object with an ordinal response.
@@ -207,7 +207,68 @@ InferenceOrdinalAdjCatLogitRegr = R6::R6Class("InferenceOrdinalAdjCatLogitRegr",
 				neg_loglik = function(fit){ as.numeric(fit$neg_loglik) }
 			)
 		},
-		build_design_matrix = function(){
+		supports_lik_ratio_param_bootstrap = function() TRUE,
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			params_null = as.numeric(null_fit$b)
+			n_params    = length(params_null)
+			K           = as.integer(spec$K)
+			n_alpha     = K - 1L
+			X_fit       = spec$X
+			j           = spec$j
+			n           = nrow(X_fit)
+
+			alphas = params_null[seq_len(n_alpha)]
+			betas  = params_null[(n_alpha + 1L):n_params]
+			cum_alpha_right = rev(cumsum(rev(alphas)))
+
+			eta = as.numeric(X_fit %*% betas)
+			y_sim = integer(n)
+			for (i in seq_len(n)){
+				e     = eta[i]
+				log_u = c(cum_alpha_right - (K - seq_len(n_alpha)) * e, 0)
+				log_u = log_u - max(log_u)
+				p     = exp(log_u)
+				p     = pmax(p, 0)
+				s     = sum(p)
+				y_sim[i] = if (is.finite(s) && s > 0) sample.int(K, 1L, prob = p / s) else 1L
+			}
+			if (length(unique(y_sim)) < K) return(NULL)
+
+			ws   = private$get_fit_warm_start_for_length("params", n_params) %||% params_null
+			full = tryCatch(
+				fast_adjacent_category_logit_cpp(
+					X = X_fit, y = y_sim, K = K,
+					j_T = 0L, estimate_only = FALSE,
+					warm_start_params = ws,
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params)
+				),
+				error = function(e) NULL
+			)
+			if (is.null(full) || !isTRUE(full$converged)) return(NULL)
+			full$params = as.numeric(c(full$b, full$gamma %||% NULL))
+			if (length(full$b) < n_params) full$b = c(full$b, rep(0, n_params - length(full$b)))
+			list(
+				full_fit = full,
+				fit_null = function(d, start = NULL){
+					ws2 = start %||% private$get_fit_warm_start_for_length("params", n_params) %||% params_null
+					f2  = tryCatch(
+						fast_adjacent_category_logit_cpp(
+							X = X_fit, y = y_sim, K = K,
+							j_T = 0L, estimate_only = FALSE,
+							warm_start_params = ws2,
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+							fixed_idx = j, fixed_values = d
+						),
+						error = function(e) NULL
+					)
+					if (is.null(f2) || !isTRUE(f2$converged)) return(NULL)
+					f2$params = as.numeric(c(f2$b, f2$gamma %||% NULL))
+					f2
+				},
+				neg_loglik = function(fit) as.numeric(fit$neg_loglik %||% fit$neg_ll)
+			)
+		},
+				build_design_matrix = function(){
 			X_cov = private$X
 			if (is.null(X_cov) || ncol(X_cov) == 0) {
 				X = matrix(private$w, ncol = 1L)

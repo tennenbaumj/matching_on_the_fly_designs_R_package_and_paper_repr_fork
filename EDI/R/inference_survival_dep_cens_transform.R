@@ -17,7 +17,7 @@
 #' @export
 InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTransformRegr",
 	lock_objects = FALSE,
-	inherit = InferenceAsympLikStdModCacheNoParamBootstrap,
+	inherit = InferenceAsympLikStdModCache,
 	public = list(
 		#' @description Initialize a dependent-censoring transformation inference object.
 		#' @param des_obj A completed \code{Design} object with a survival response.
@@ -473,7 +473,75 @@ InferenceSurvivalDepCensTransformRegr = R6::R6Class("InferenceSurvivalDepCensTra
 			}
 			attempt$fit
 		},
-		build_design_matrix = function(){
+		supports_lik_ratio_param_bootstrap = function() TRUE,
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			params_null  = as.numeric(null_fit$b)
+			n_params     = length(params_null)
+			X_fit        = spec$X
+			j            = spec$j
+			n            = nrow(X_fit)
+			p            = ncol(X_fit)
+
+			beta_event   = params_null[seq_len(p)]
+			beta_cens    = params_null[(p + 1L):(2L * p)]
+			log_sig_e    = params_null[2L * p + 1L]
+			log_sig_c    = params_null[2L * p + 2L]
+			atanh_rho    = params_null[2L * p + 3L]
+
+			sigma_event  = exp(min(log_sig_e, 8))
+			sigma_cens   = exp(min(log_sig_c, 8))
+			rho          = tanh(atanh_rho)
+			if (!is.finite(sigma_event) || !is.finite(sigma_cens) || !is.finite(rho)) return(NULL)
+
+			mu_event     = as.numeric(X_fit %*% beta_event)
+			mu_cens      = as.numeric(X_fit %*% beta_cens)
+
+			z1           = rnorm(n)
+			z_extra      = rnorm(n)
+			z2           = rho * z1 + sqrt(max(1 - rho^2, 0)) * z_extra
+
+			T_sim        = exp(mu_event + sigma_event * z1)
+			C_sim        = exp(mu_cens  + sigma_cens  * z2)
+
+			y_obs        = spec$y_obs  %||% spec$y
+			dead_obs     = spec$dead   %||% spec$event
+			C_use        = ifelse(dead_obs == 0L, y_obs, C_sim)
+
+			y_sim        = pmin(T_sim, C_use)
+			event_sim    = as.integer(T_sim <= C_use)
+
+			ws           = private$get_fit_warm_start_for_length("beta", n_params) %||% params_null
+			full         = tryCatch(
+				fast_survival_dep_cens_transform_cpp(
+					X = X_fit, y = y_sim, event = event_sim,
+					j_T = 0L, estimate_only = FALSE,
+					warm_start_params = ws,
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params)
+				),
+				error = function(e) NULL
+			)
+			if (is.null(full) || !isTRUE(full$converged)) return(NULL)
+			list(
+				full_fit = full,
+				fit_null = function(d, start = NULL){
+					ws2 = start %||% private$get_fit_warm_start_for_length("beta", n_params) %||% params_null
+					f2  = tryCatch(
+						fast_survival_dep_cens_transform_cpp(
+							X = X_fit, y = y_sim, event = event_sim,
+							j_T = 0L, estimate_only = FALSE,
+							warm_start_params = ws2,
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+							fixed_idx = j, fixed_values = d
+						),
+						error = function(e) NULL
+					)
+					if (is.null(f2) || !isTRUE(f2$converged)) return(NULL)
+					f2
+				},
+				neg_loglik = function(fit) as.numeric(fit$neg_loglik %||% fit$neg_ll)
+			)
+		},
+				build_design_matrix = function(){
 			X_cov = private$X
 			if (is.null(X_cov) || ncol(X_cov) == 0) {
 				X = cbind(`(Intercept)` = 1, treatment = private$w)

@@ -277,6 +277,50 @@ InferenceAllSimpleMeanDiff = R6::R6Class("InferenceAllSimpleMeanDiff",
 				}
 			)
 		},
+		# C++ fast path for studentized/symmetric-percentile-t BRT: computes (t0_b, se0_b) in
+		# one pass per replicate, bypassing the R worker loop entirely.
+		compute_brt_null_statistics_with_se = function(draws, delta, transform_arg, y0_full, zero_one_logit_clamp){
+			B = length(draws)
+			if (B == 0L) return(list(t0 = numeric(0), se0 = numeric(0)))
+			if (is.null(private[["custom_randomization_statistic_function"]]) &&
+					is.null(private[["compiled_cpp_stat_fn"]])) {
+				transform_code = private$rand_bootstrap_transform_code(transform_arg)
+				if (!is.null(transform_code)) {
+					mats = private$rand_bootstrap_draw_matrices(draws)
+					if (!is.null(mats)) {
+						result = tryCatch({
+							r = compute_rand_bootstrap_mean_diff_se_parallel_cpp(
+								as.numeric(y0_full), mats$i_mat, mats$w_mat,
+								as.numeric(delta), as.integer(transform_code),
+								as.numeric(zero_one_logit_clamp),
+								private$n_cpp_threads(B)
+							)
+							list(t0 = r[1L, ], se0 = r[2L, ])
+						}, error = function(e) NULL)
+						if (!is.null(result)) return(result)
+					}
+				}
+			}
+			if (isTRUE(private$use_reusable_bootstrap_worker()) &&
+					is.null(private[["custom_randomization_statistic_function"]]) &&
+					is.null(private[["compiled_cpp_stat_fn"]])) {
+				result = tryCatch(
+					private$compute_brt_null_statistics_with_reused_workers(draws, delta, transform_arg, y0_full, zero_one_logit_clamp),
+					error = function(e) NULL
+				)
+				if (!is.null(result)) return(result)
+			}
+			results_mat = matrix(NA_real_, nrow = B, ncol = 2L)
+			for (b in seq_len(B)) {
+				results_mat[b, ] = tryCatch(
+					suppressWarnings(private$run_rand_bootstrap_iteration_with_se(
+						draws[[b]], delta, transform_arg, y0_full, zero_one_logit_clamp
+					)),
+					error = function(e) c(NA_real_, NA_real_)
+				)
+			}
+			list(t0 = results_mat[, 1L], se0 = results_mat[, 2L])
+		},
 		get_likelihood_test_spec = function(){
 			NULL
 		}

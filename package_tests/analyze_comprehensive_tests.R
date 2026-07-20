@@ -305,6 +305,7 @@ X[beta_T == 1 &
 	"InferencePropZeroOneInflatedBetaRegr",
 	"InferencePropZeroOneInflatedBetaRegr",
 	"InferencePropKKQuantileRegrOneLik",
+	"InferencePropQuantileRegr",
 	"InferenceCountHurdlePoisson",
 	"InferenceCountHurdlePoisson",
 	"InferenceCountKKHurdlePoissonOneLik",

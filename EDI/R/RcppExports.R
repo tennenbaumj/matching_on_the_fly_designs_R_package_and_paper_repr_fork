@@ -2183,6 +2183,10 @@ compute_rand_bootstrap_mean_diff_parallel_cpp <- function(y0, i_mat, w_mat, delt
     .Call(`_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp`, y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores)
 }
 
+compute_rand_bootstrap_mean_diff_se_parallel_cpp <- function(y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores) {
+    .Call(`_EDI_compute_rand_bootstrap_mean_diff_se_parallel_cpp`, y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores)
+}
+
 compute_rand_bootstrap_ols_parallel_cpp <- function(y0, Xc, i_mat, w_mat, delta, num_cores) {
     .Call(`_EDI_compute_rand_bootstrap_ols_parallel_cpp`, y0, Xc, i_mat, w_mat, delta, num_cores)
 }

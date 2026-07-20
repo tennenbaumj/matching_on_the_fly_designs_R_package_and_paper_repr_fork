@@ -44,6 +44,8 @@
 #' inf = InferencePropKKQuantileRegrIVWC$new(seq_des)
 #' inf$compute_estimate()
 #' }
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 InferencePropKKQuantileRegrIVWC = R6::R6Class("InferencePropKKQuantileRegrIVWC",
 	lock_objects = FALSE,

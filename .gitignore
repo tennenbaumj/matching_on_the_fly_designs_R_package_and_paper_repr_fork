@@ -409,3 +409,6 @@ simulations/*response_values/*
 sgconfig.yml
 grammars/*
 rules/*
+package_tests/comprehensive_tests_*.log
+
+

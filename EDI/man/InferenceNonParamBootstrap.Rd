@@ -267,7 +267,20 @@ Computes a bootstrap-based two-sided p-value for the treatment effect.
 \code{delta} and counts the two-tail proportion (Hall 1992).
 \code{"symmetric"}: uses \eqn{|T^* - \bar{T}^*| \ge |t_{\rm obs} - \delta|}
 for a symmetric one-sample test; recommended by Hall & Wilson (1991) when the
-null distribution may be skewed.
+null distribution may be skewed. This pooled-tail test is offered only as a
+p-value here, not as a confidence-interval \code{type} in
+\code{compute_bootstrap_confidence_interval}: pooling both tails via
+\eqn{|\cdot|} improves testing power (Hall & Wilson's original use case), but
+inverting it unstudentized would add no value as an interval. The unstudentized
+pivot is not asymptotically pivotal, so the resulting interval would have the
+same first-order \eqn{O(n^\{-1/2\})} coverage error as \code{"percentile"}/
+\code{"basic"}, while forcing symmetric bounds around a possibly skewed
+bootstrap distribution --- strictly worse than \code{"percentile"}/\code{"basic"}
+for shape-adaptivity, and strictly worse than \code{"symmetric-percentile-t"} for
+accuracy, since studentizing (not the absolute-value pooling) is what buys the
+\eqn{O(n^\{-1\})} improvement. The CI-worthy symmetric variant is therefore
+\code{"symmetric-percentile-t"} (studentized pivot), not a plain \code{"symmetric"}
+CI type.
 \code{"studentized"} / \code{"bootstrap-t"}: pivots by the per-replicate
 standard error, giving O(n^\{-1\}) error versus O(n^\{-1/2\}) for the percentile
 method (Hall 1992; Davidson & MacKinnon 1999).
@@ -318,7 +331,17 @@ Computes a bootstrap-based confidence interval.
 \code{"percentile"}, \code{"basic"}, \code{"studentized"},
 \code{"bootstrap-t"}, \code{"symmetric-percentile-t"},
 \code{"bca"}, \code{"prepivoted"}, \code{"double-bootstrap"},
-\code{"calibrated"}, and \code{"smoothed"}.}
+\code{"calibrated"}, and \code{"smoothed"}.
+There is no plain \code{"symmetric"} CI type (contrast with the \code{"symmetric"}
+p-value type in \code{compute_bootstrap_two_sided_pval}): inverting the unstudentized
+Hall & Wilson pooled-tail statistic would add no value as an interval, since it is not
+asymptotically pivotal and so has the same first-order \eqn{O(n^\{-1/2\})} coverage
+error as \code{"percentile"}/\code{"basic"}, while forcing symmetric bounds around a
+possibly skewed bootstrap distribution --- strictly worse than \code{"percentile"}/
+\code{"basic"} for shape-adaptivity, and strictly worse than
+\code{"symmetric-percentile-t"} for accuracy, since studentizing (not the
+absolute-value pooling) is what buys the \eqn{O(n^\{-1\})} improvement.
+\code{"symmetric-percentile-t"} is the CI-worthy symmetric variant.}
 
 \item{\code{na.rm}}{Remove non-finite bootstrap replicates.
 Default TRUE. Non-finite replicates are always removed internally.}

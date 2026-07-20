@@ -284,6 +284,35 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 		#'   \code{"smoothed"} adds kernel noise \eqn{\varepsilon_b \sim N(0, \hat{\sigma}/\sqrt{n})}
 		#'   to each resampled draw before imposing the null shift, reducing discreteness in the
 		#'   null distribution. Only meaningful for continuous responses.
+		#'
+		#'   \strong{Theoretical justification.} Order-statistic/rank-based estimators (e.g. the
+		#'   Hodges-Lehmann pseudo-median) take only finitely many values, so their bootstrap/
+		#'   randomization null distribution is a step function; this both coarsens p-values and
+		#'   destabilizes the \code{uniroot}-based \code{delta} search in
+		#'   \code{\link{InferenceRandBootstrapCI}}'s \code{compute_rand_bootstrap_confidence_interval},
+		#'   which assumes an approximately continuous, monotone p-value curve. Restoring continuity
+		#'   by convolving the resampling distribution with a shrinking-bandwidth kernel is the
+		#'   classical "smoothed bootstrap" device: Silverman (1981, "Density ratios, empirical
+		#'   likelihood and cot death", \emph{Applied Statistics} 30(2):142-145) for kernel smoothing
+		#'   of a resampled empirical distribution; Silverman & Young (1987, "The bootstrap: To
+		#'   smooth or not to smooth?", \emph{Biometrika} 74(3):469-479) for applying that smoothing
+		#'   directly to the bootstrap resampling scheme; and Hall, DiCiccio & Romano (1989, "On
+		#'   smoothing and the bootstrap", \emph{Annals of Statistics} 17(2):692-704) for the
+		#'   bandwidth conditions under which smoothing improves, rather than degrades, coverage
+		#'   accuracy.
+		#'
+		#'   \strong{Implementation caveat (ad hoc, not a certified instance of the above).} The
+		#'   bandwidth used here, \eqn{\hat{\sigma}/\sqrt{n}} (the raw SE-of-the-mean scale of the
+		#'   response), is a pragmatic engineering choice, not one derived from or validated against
+		#'   the bandwidth-selection results in the sources above. Those references smooth the
+		#'   \emph{resampling distribution itself} with a bandwidth chosen to trade off bias against
+		#'   variance (often shrinking slower than \eqn{n^{-1/2}}, e.g. \eqn{n^{-1/5}}-type
+		#'   KDE rates); here, noise is instead added directly to each already-resampled response at
+		#'   a fixed \eqn{n^{-1/2}} rate. The bandwidth is not exposed as a parameter, has no
+		#'   zero-noise escape hatch (the only way to disable smoothing is to pick a different
+		#'   \code{type}), and its coverage behavior has not been validated by simulation in this
+		#'   package. Treat it as a discreteness patch that is qualitatively motivated by the
+		#'   literature above, not a certified implementation of it.
 		#' @return 	A two-sided p-value.
 		compute_rand_bootstrap_two_sided_pval = function(B = 501, delta = 0, transform_responses = "none", na.rm = TRUE, show_progress = TRUE, bootstrap_type = NULL, rand_bootstrap_draws = NULL, zero_one_logit_clamp = .Machine$double.eps, type = "percentile"){
 			if (should_run_asserts()) {
@@ -339,7 +368,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 						)
 						set.seed(private$seed)
 					}
-					private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = FALSE)
+					private$generate_rand_bootstrap_draws(B, bootstrap_type = bootstrap_type, materialize_w = TRUE)
 				}
 				brt_stats = private$compute_brt_null_statistics_with_se(
 					draws_stud, delta, transform_responses, y0_full_stud, zero_one_logit_clamp
@@ -735,12 +764,45 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			se0 = as.numeric(sub_priv$cached_values$s_beta_hat_T)[1L]
 			c(t0 = t0, se0 = se0)
 		},
-		# Runs all BRT draws at delta and returns list(t0, se0) via the iteration path.
-		# Unlike get_brt_distribution_prefix this always uses the slow sub-inference path
-		# since the C++ kernel and worker paths do not expose per-draw SE.
+		# Fast path: reused-worker variant of compute_brt_null_statistics_with_se.
+		# Calls compute_estimate(estimate_only=FALSE) inside the worker so both t0 and se0
+		# are available from cached_values without re-cloning inference/design per draw.
+		compute_brt_null_statistics_with_reused_workers = function(draws, delta, transform_arg, y0_full, zero_one_logit_clamp){
+			B = length(draws)
+			worker_state = private$create_bootstrap_worker_state()
+			results_mat = matrix(NA_real_, nrow = B, ncol = 2L)
+			worker_obj = worker_state[["worker"]]
+			for (b in seq_len(B)) {
+				draw = draws[[b]]
+				results_mat[b, ] = tryCatch({
+					private$load_bootstrap_sample_into_worker(worker_state, list(i_b = draw$i_b, m_vec_b = draw$m_vec_b))
+					private$load_rand_bootstrap_assignment_into_worker(worker_state, draw, delta, transform_arg, y0_full, zero_one_logit_clamp)
+					tryCatch(worker_obj$compute_estimate(estimate_only = FALSE), error = function(e) NULL)
+					if (is.function(worker_obj$is_nonestimable) && isTRUE(worker_obj$is_nonestimable("estimate"))) {
+						c(NA_real_, NA_real_)
+					} else {
+						wp = worker_obj$.__enclos_env__$private
+						c(as.numeric(wp$cached_values$beta_hat_T)[1L],
+						  as.numeric(wp$cached_values$s_beta_hat_T)[1L])
+					}
+				}, error = function(e) c(NA_real_, NA_real_))
+			}
+			list(t0 = results_mat[, 1L], se0 = results_mat[, 2L])
+		},
+		# Runs all BRT draws at delta and returns list(t0, se0).
+		# Uses a reused-worker fast path when available; falls back to bootstrap_subset_inference.
 		compute_brt_null_statistics_with_se = function(draws, delta, transform_arg, y0_full, zero_one_logit_clamp){
 			B = length(draws)
 			if (B == 0L) return(list(t0 = numeric(0), se0 = numeric(0)))
+			if (isTRUE(private$use_reusable_bootstrap_worker()) &&
+				is.null(private$custom_randomization_statistic_function) &&
+				is.null(private[["compiled_cpp_stat_fn"]])) {
+				result = tryCatch(
+					private$compute_brt_null_statistics_with_reused_workers(draws, delta, transform_arg, y0_full, zero_one_logit_clamp),
+					error = function(e) NULL
+				)
+				if (!is.null(result)) return(result)
+			}
 			results_mat = matrix(NA_real_, nrow = B, ncol = 2L)
 			for (b in seq_len(B)) {
 				results_mat[b, ] = tryCatch(

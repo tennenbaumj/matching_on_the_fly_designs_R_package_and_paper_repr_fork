@@ -235,17 +235,26 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 				}
 			)
 		},
-		# Copied from InferenceAsympLikStdModCache to avoid multiple inheritance issues 
+		# Copied from InferenceAsympLikStdModCache to avoid multiple inheritance issues
 		# while still using the shared infrastructure.
 		compute_likelihood_test_two_sided_pval = function(delta, testing_type){
 			spec = private$get_likelihood_test_spec()
-			if (is.null(spec)) return(NA_real_)
-			private$get_memoized_likelihood_test_pval(
+			if (is.null(spec)) {
+				if (!isTRUE(self$is_nonestimable())) {
+					private$cache_nonestimable_estimate("likelihood_test_spec_unavailable")
+				}
+				return(NA_real_)
+			}
+			p_value = private$get_memoized_likelihood_test_pval(
 				delta = delta,
 				testing_type = testing_type,
 				spec = spec,
 				warm_cache_key = paste0("likelihood_test:", testing_type)
 			)
+			if (!is.finite(p_value) && !isTRUE(self$is_nonestimable("estimate"))) {
+				private$cache_nonestimable_se(paste0(testing_type, "_test_unavailable"))
+			}
+			p_value
 		},
 		reduce_design_matrix_once = function(X, j_treat, cache_key){
 			cached = private$cached_values[[cache_key]]

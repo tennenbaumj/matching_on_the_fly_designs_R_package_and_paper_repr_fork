@@ -11,6 +11,8 @@
 #' correlation-based pruning. Extreme finite coefficients / standard errors are
 #' rejected and treated as non-estimable.
 #'
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 InferenceSurvivalKKStratCoxPHIVWC = R6::R6Class("InferenceSurvivalKKStratCoxPHIVWC",
 	lock_objects = FALSE,

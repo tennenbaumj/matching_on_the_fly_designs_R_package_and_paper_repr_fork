@@ -150,6 +150,7 @@ run_tests_for_response("proportion", list(
   InferenceAllSimpleMeanDiff,
   list(InferencePropBetaRegr, model_formula = ~ .),
   list(InferencePropFractionalLogit, model_formula = ~ .),
+  list(InferencePropQuantileRegr, model_formula = ~ .),
   list(InferencePropGCompMeanDiff, model_formula = ~ .),
   list(InferencePropKKGEE, model_formula = ~ .),
   list(InferencePropKKGLMM, model_formula = ~ .)

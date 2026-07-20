@@ -538,10 +538,10 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				upper_seed = upper_seed
 			)
 
-			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2])) else c(NA_real_, NA_real_)
+			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2]), na.last = TRUE) else c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			if (length(ci) < 2L || !all(is.finite(ci[1:2])) || ci[1L] > est || ci[2L] < est || any(abs(ci[1:2]) > private$likelihood_ci_max_abs)) {
-				fallback = sort(as.numeric(wald_ci[1:2]))
+				fallback = sort(as.numeric(wald_ci[1:2]), na.last = TRUE)
 				if (length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est && all(abs(fallback[1:2]) <= private$likelihood_ci_max_abs)) {
 					ci = fallback
 				} else {
@@ -604,10 +604,10 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 					numeric(0)
 				}
 			)
-			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2])) else c(NA_real_, NA_real_)
+			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2]), na.last = TRUE) else c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			if (length(ci) < 2L || !all(is.finite(ci[1:2])) || ci[1L] > est || ci[2L] < est || any(abs(ci[1:2]) > private$likelihood_ci_max_abs)) {
-				fallback = sort(as.numeric(wald_ci[1:2]))
+				fallback = sort(as.numeric(wald_ci[1:2]), na.last = TRUE)
 				if (length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est && all(abs(fallback[1:2]) <= private$likelihood_ci_max_abs)) {
 					ci = fallback
 				} else {
@@ -692,10 +692,10 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				j              = j
 			), error = function(e) numeric(0))
 
-			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2])) else c(NA_real_, NA_real_)
+			ci = if (length(ci_vals) == 2L) sort(as.numeric(ci_vals[1:2]), na.last = TRUE) else c(NA_real_, NA_real_)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			if (length(ci) < 2L || !all(is.finite(ci[1:2])) || ci[1L] > est || ci[2L] < est || any(abs(ci[1:2]) > private$likelihood_ci_max_abs)) {
-				fallback = sort(as.numeric(wald_ci[1:2]))
+				fallback = sort(as.numeric(wald_ci[1:2]), na.last = TRUE)
 				if (length(fallback) >= 2L && all(is.finite(fallback)) && fallback[1L] <= est && fallback[2L] >= est && all(abs(fallback[1:2]) <= private$likelihood_ci_max_abs)) {
 					ci = fallback
 				} else {

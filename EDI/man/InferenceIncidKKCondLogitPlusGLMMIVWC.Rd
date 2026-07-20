@@ -21,9 +21,11 @@ inf = InferenceIncidKKCondLogitPlusGLMMOneLik$new(seq_des)
 inf$compute_estimate()
 }
 }
+
+\strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 }
 \section{Super classes}{
-\code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{::InferenceAbstractKKCondLogitPlusGLMM} -> \code{InferenceIncidKKCondLogitPlusGLMMIVWC}
+\code{::Inference} -> \code{::InferenceRand} -> \code{::InferenceRandCI} -> \code{::InferenceNonParamBootstrap} -> \code{::InferenceRandBootstrap} -> \code{::InferenceRandBootstrapCI} -> \code{::InferenceBayesianBootstrap} -> \code{::InferenceJackknife} -> \code{::InferenceAsymp} -> \code{::InferenceMLEorKMSummaryTable} -> \code{::InferenceAsympLik} -> \code{::InferenceParamBootstrap} -> \code{::InferenceAbstractKKCondLogitPlusGLMM} -> \code{InferenceIncidKKCondLogitPlusGLMMIVWC}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -88,6 +90,9 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="get_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-get_testing_type'><code>::InferenceAsympLik$get_testing_type()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_information_preference"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_information_preference'><code>::InferenceAsympLik$set_information_preference()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="set_testing_type"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-set_testing_type'><code>::InferenceAsympLik$set_testing_type()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_confidence_interval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_confidence_interval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="compute_lik_ratio_bootstrap_two_sided_pval"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_two_sided_pval'><code>::InferenceParamBootstrap$compute_lik_ratio_bootstrap_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceParamBootstrap" data-id="get_last_param_bootstrap_diagnostics"><a href='../..//html/InferenceParamBootstrap.html#method-InferenceParamBootstrap-get_last_param_bootstrap_diagnostics'><code>::InferenceParamBootstrap$get_last_param_bootstrap_diagnostics()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAbstractKKCondLogitPlusGLMM" data-id="approximate_bootstrap_distribution_beta_hat_T"><a href='../..//html/InferenceAbstractKKCondLogitPlusGLMM.html#method-InferenceAbstractKKCondLogitPlusGLMM-approximate_bootstrap_distribution_beta_hat_T'><code>::InferenceAbstractKKCondLogitPlusGLMM$approximate_bootstrap_distribution_beta_hat_T()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAbstractKKCondLogitPlusGLMM" data-id="compute_asymp_confidence_interval"><a href='../..//html/InferenceAbstractKKCondLogitPlusGLMM.html#method-InferenceAbstractKKCondLogitPlusGLMM-compute_asymp_confidence_interval'><code>::InferenceAbstractKKCondLogitPlusGLMM$compute_asymp_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAbstractKKCondLogitPlusGLMM" data-id="compute_asymp_two_sided_pval"><a href='../..//html/InferenceAbstractKKCondLogitPlusGLMM.html#method-InferenceAbstractKKCondLogitPlusGLMM-compute_asymp_two_sided_pval'><code>::InferenceAbstractKKCondLogitPlusGLMM$compute_asymp_two_sided_pval()</code></a></span></li>

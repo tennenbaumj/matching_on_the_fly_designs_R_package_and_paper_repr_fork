@@ -7,7 +7,7 @@
 #' @export
 InferenceOrdinalStereotypeLogitRegr = R6::R6Class("InferenceOrdinalStereotypeLogitRegr",
 	lock_objects = FALSE,
-	inherit = InferenceAsympLikStdModCacheNoParamBootstrap,
+	inherit = InferenceAsympLikStdModCache,
 	public = list(
 		#' @description Initialize a stereotype logit inference object.
 		#' @param des_obj A completed \code{Design} object with an ordinal response.
@@ -209,7 +209,70 @@ InferenceOrdinalStereotypeLogitRegr = R6::R6Class("InferenceOrdinalStereotypeLog
 				neg_loglik = function(fit){ as.numeric(fit$neg_loglik) }
 			)
 		},
-		build_design_matrix = function(){
+		supports_lik_ratio_param_bootstrap = function() TRUE,
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			params_null = as.numeric(null_fit$b)
+			n_params    = length(params_null)
+			K           = as.integer(spec$K)
+			n_alpha     = K - 1L
+			n_gamma     = K - 2L
+			p           = n_params - n_alpha - n_gamma
+			X_fit       = spec$X
+			j           = spec$j
+			n           = nrow(X_fit)
+			if (p < 1L) return(NULL)
+
+			alphas = params_null[seq_len(n_alpha)]
+			betas  = params_null[(n_alpha + 1L):(n_alpha + p)]
+			gammas = params_null[(n_alpha + p + 1L):n_params]
+
+			eg   = exp(gammas)
+			seg  = sum(eg)
+			phi  = c(0, cumsum(eg) / (1 + seg))
+
+			eta  = as.numeric(X_fit %*% betas)
+			y_sim = integer(n)
+			for (i in seq_len(n)){
+				logits = c(0, alphas + phi[seq(2L, K)] * eta[i])
+				cum_p  = plogis(logits)
+				cat_p  = pmax(c(cum_p[1L], diff(cum_p), 1 - cum_p[n_alpha + 1L]), 0)
+				s = sum(cat_p)
+				y_sim[i] = if (is.finite(s) && s > 0) sample.int(K, 1L, prob = cat_p / s) else 1L
+			}
+			if (length(unique(y_sim)) < K) return(NULL)
+
+			ws   = private$get_fit_warm_start_for_length("params", n_params) %||% params_null
+			full = tryCatch(
+				fast_stereotype_logit_cpp(
+					X = X_fit, y = y_sim, K = K,
+					j_T = 0L, estimate_only = FALSE,
+					warm_start_params = ws,
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params)
+				),
+				error = function(e) NULL
+			)
+			if (is.null(full) || !isTRUE(full$converged)) return(NULL)
+			list(
+				full_fit = full,
+				fit_null = function(d, start = NULL){
+					ws2 = start %||% private$get_fit_warm_start_for_length("params", n_params) %||% params_null
+					f2  = tryCatch(
+						fast_stereotype_logit_cpp(
+							X = X_fit, y = y_sim, K = K,
+							j_T = 0L, estimate_only = FALSE,
+							warm_start_params = ws2,
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+							fixed_idx = j, fixed_values = d
+						),
+						error = function(e) NULL
+					)
+					if (is.null(f2) || !isTRUE(f2$converged)) return(NULL)
+					f2
+				},
+				neg_loglik = function(fit) as.numeric(fit$neg_loglik %||% fit$neg_ll)
+			)
+		},
+				build_design_matrix = function(){
 			X_cov = private$X
 			if (is.null(X_cov) || ncol(X_cov) == 0) {
 				X = matrix(private$w, ncol = 1L)
@@ -232,7 +295,7 @@ InferenceOrdinalStereotypeLogitRegr = R6::R6Class("InferenceOrdinalStereotypeLog
 #' @export
 InferenceOrdinalContRatioRegr = R6::R6Class("InferenceOrdinalContRatioRegr",
 	lock_objects = FALSE,
-	inherit = InferenceAsympLikStdModCacheNoParamBootstrap,
+	inherit = InferenceAsympLikStdModCache,
 	public = list(
 		#' @description Initialize a continuation ratio inference object.
 		#' @param des_obj A completed \code{Design} object with an ordinal response.
@@ -416,7 +479,69 @@ InferenceOrdinalContRatioRegr = R6::R6Class("InferenceOrdinalContRatioRegr",
 				neg_loglik = function(fit){ as.numeric(fit$neg_loglik) }
 			)
 		},
-		build_design_matrix = function(){
+		supports_lik_ratio_param_bootstrap = function() TRUE,
+		simulate_under_lik_null = function(spec, delta, null_fit){
+			params_null = as.numeric(null_fit$b)
+			n_params    = length(params_null)
+			K           = as.integer(spec$K)
+			n_alpha     = K - 1L
+			X_fit       = spec$X
+			j           = spec$j
+			n           = nrow(X_fit)
+			p           = n_params - n_alpha
+
+			alphas = params_null[seq_len(n_alpha)]
+			betas  = params_null[(n_alpha + 1L):n_params]
+			eta    = as.numeric(X_fit %*% betas)
+
+			y_sim = integer(n)
+			for (i in seq_len(n)){
+				k = 1L
+				assigned = FALSE
+				while (k <= n_alpha){
+					if (runif(1) < plogis(alphas[k] + eta[i])){
+						y_sim[i] = k
+						assigned  = TRUE
+						break
+					}
+					k = k + 1L
+				}
+				if (!assigned) y_sim[i] = K
+			}
+			if (length(unique(y_sim)) < K) return(NULL)
+
+			ws   = private$get_fit_warm_start_for_length("beta", n_params) %||% params_null
+			full = tryCatch(
+				fast_continuation_ratio_regression_cpp(
+					X = X_fit, y = y_sim, K = K,
+					j_T = 0L, estimate_only = FALSE,
+					warm_start_beta = ws,
+					warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params)
+				),
+				error = function(e) NULL
+			)
+			if (is.null(full) || !isTRUE(full$converged)) return(NULL)
+			list(
+				full_fit = full,
+				fit_null = function(d, start = NULL){
+					ws2 = start %||% private$get_fit_warm_start_for_length("beta", n_params) %||% params_null
+					f2  = tryCatch(
+						fast_continuation_ratio_regression_cpp(
+							X = X_fit, y = y_sim, K = K,
+							j_T = 0L, estimate_only = FALSE,
+							warm_start_beta = ws2,
+							warm_start_fisher_info = private$get_fit_warm_start_fisher(n_params),
+							fixed_idx = j, fixed_values = d
+						),
+						error = function(e) NULL
+					)
+					if (is.null(f2) || !isTRUE(f2$converged)) return(NULL)
+					f2
+				},
+				neg_loglik = function(fit) as.numeric(fit$neg_loglik %||% fit$neg_ll)
+			)
+		},
+				build_design_matrix = function(){
 			X_cov = private$X
 			if (is.null(X_cov) || ncol(X_cov) == 0) {
 				X = matrix(private$w, ncol = 1L)

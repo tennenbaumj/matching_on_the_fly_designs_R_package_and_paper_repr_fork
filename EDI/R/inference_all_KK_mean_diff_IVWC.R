@@ -6,6 +6,8 @@
 #' estimates are combined via inverse-variance weighting.
 #'
 #'
+#'
+#' \strong{Legacy class.} Not fully tested in \code{comprehensive_tests.R}.
 #' @export
 #' @examples
 #' \dontrun{
