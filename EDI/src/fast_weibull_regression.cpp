@@ -141,6 +141,7 @@ NumericVector compute_weibull_rand_bootstrap_parallel_cpp(
     const IntegerMatrix& i_mat,
     const IntegerMatrix& w_mat,
     double delta,
+    Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat,
     int num_cores)
 {
     const int n       = i_mat.nrow();
@@ -161,6 +162,14 @@ NumericVector compute_weibull_rand_bootstrap_parallel_cpp(
 
     std::vector<double> results(nsim, NA_REAL);
     double* res_ptr = results.data();
+
+    const bool has_noise = noise_mat.isNotNull();
+    NumericMatrix noise_m;
+    const double* noise_ptr = nullptr;
+    if (has_noise) {
+        noise_m = NumericMatrix(noise_mat);
+        noise_ptr = noise_m.begin();
+    }
 
 #ifdef _OPENMP
     if (num_cores > 1) omp_set_num_threads(num_cores);
@@ -184,7 +193,9 @@ NumericVector compute_weibull_rand_bootstrap_parallel_cpp(
                 X_b(i, 1) = static_cast<double>(wt);
                 for (int j = 0; j < p_cov; ++j)
                     X_b(i, j + 2) = xc_ptr[(size_t)j * n_full + r];
-                y_b(i)    = (wt && mult != 1.0) ? y0_ptr[r] * mult : y0_ptr[r];
+                double yv = y0_ptr[r];
+                if (has_noise) yv += noise_ptr[(size_t)b * n + i];
+                y_b(i)    = (wt && mult != 1.0) ? yv * mult : yv;
                 dead_b(i) = static_cast<double>(dead_ptr[r]);
                 n_t += wt;
                 n_c += (1 - wt);

@@ -384,7 +384,7 @@ InferenceSurvivalKKWeibullMarginal = R6::R6Class("InferenceSurvivalKKWeibullMarg
 			}
 			compute_weibull_rand_bootstrap_parallel_cpp(
 				as.numeric(y0_full), as.integer(private$dead), Xc, mats$i_mat, mats$w_mat,
-				as.numeric(delta), private$n_cpp_threads(ncol(mats$w_mat))
+				as.numeric(delta), mats$noise_mat, private$n_cpp_threads(ncol(mats$w_mat))
 			)
 		}
 	)))

@@ -1607,8 +1607,8 @@ get_weibull_regression_hessian_cpp <- function(X_sexp, y_sexp, dead_sexp, params
     .Call(`_EDI_get_weibull_regression_hessian_cpp`, X_sexp, y_sexp, dead_sexp, params_sexp)
 }
 
-compute_weibull_rand_bootstrap_parallel_cpp <- function(y0, dead, Xc, i_mat, w_mat, delta, num_cores) {
-    .Call(`_EDI_compute_weibull_rand_bootstrap_parallel_cpp`, y0, dead, Xc, i_mat, w_mat, delta, num_cores)
+compute_weibull_rand_bootstrap_parallel_cpp <- function(y0, dead, Xc, i_mat, w_mat, delta, noise_mat, num_cores) {
+    .Call(`_EDI_compute_weibull_rand_bootstrap_parallel_cpp`, y0, dead, Xc, i_mat, w_mat, delta, noise_mat, num_cores)
 }
 
 #' @title Fast Weibull AFT Regression (C++)
