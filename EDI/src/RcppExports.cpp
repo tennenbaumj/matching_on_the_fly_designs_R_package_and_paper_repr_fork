@@ -993,8 +993,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_coxph_rand_bootstrap_parallel_cpp
-NumericVector compute_coxph_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
-RcppExport SEXP _EDI_compute_coxph_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+NumericVector compute_coxph_rand_bootstrap_parallel_cpp(const NumericVector& y0, const IntegerVector& dead, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat, int num_cores);
+RcppExport SEXP _EDI_compute_coxph_rand_bootstrap_parallel_cpp(SEXP y0SEXP, SEXP deadSEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP noise_matSEXP, SEXP num_coresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1004,8 +1004,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
     Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
     Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type noise_mat(noise_matSEXP);
     Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
-    rcpp_result_gen = Rcpp::wrap(compute_coxph_rand_bootstrap_parallel_cpp(y0, dead, Xc, i_mat, w_mat, delta, num_cores));
+    rcpp_result_gen = Rcpp::wrap(compute_coxph_rand_bootstrap_parallel_cpp(y0, dead, Xc, i_mat, w_mat, delta, noise_mat, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5056,7 +5057,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_get_stratified_coxph_score_cpp", (DL_FUNC) &_EDI_get_stratified_coxph_score_cpp, 5},
     {"_EDI_get_stratified_coxph_hessian_cpp", (DL_FUNC) &_EDI_get_stratified_coxph_hessian_cpp, 5},
     {"_EDI_compute_coxph_rand_bootstrap_cpp", (DL_FUNC) &_EDI_compute_coxph_rand_bootstrap_cpp, 6},
-    {"_EDI_compute_coxph_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_coxph_rand_bootstrap_parallel_cpp, 7},
+    {"_EDI_compute_coxph_rand_bootstrap_parallel_cpp", (DL_FUNC) &_EDI_compute_coxph_rand_bootstrap_parallel_cpp, 8},
     {"_EDI_get_cpoisson_combined_score_cpp", (DL_FUNC) &_EDI_get_cpoisson_combined_score_cpp, 7},
     {"_EDI_get_cpoisson_combined_hessian_cpp", (DL_FUNC) &_EDI_get_cpoisson_combined_hessian_cpp, 7},
     {"_EDI_fast_cpoisson_combined_with_var_cpp", (DL_FUNC) &_EDI_fast_cpoisson_combined_with_var_cpp, 14},

@@ -447,8 +447,8 @@ compute_coxph_rand_bootstrap_cpp <- function(y0, dead, i_mat, w_mat, delta, num_
     .Call(`_EDI_compute_coxph_rand_bootstrap_cpp`, y0, dead, i_mat, w_mat, delta, num_cores)
 }
 
-compute_coxph_rand_bootstrap_parallel_cpp <- function(y0, dead, Xc, i_mat, w_mat, delta, num_cores) {
-    .Call(`_EDI_compute_coxph_rand_bootstrap_parallel_cpp`, y0, dead, Xc, i_mat, w_mat, delta, num_cores)
+compute_coxph_rand_bootstrap_parallel_cpp <- function(y0, dead, Xc, i_mat, w_mat, delta, noise_mat, num_cores) {
+    .Call(`_EDI_compute_coxph_rand_bootstrap_parallel_cpp`, y0, dead, Xc, i_mat, w_mat, delta, noise_mat, num_cores)
 }
 
 #' @title Compute Combined Conditional-Poisson Score
