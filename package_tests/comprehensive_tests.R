@@ -160,9 +160,12 @@ run_row_id = if ("run_row_id" %in% colnames(existing_results_dt) && nrow(existin
 }
 
 serialize_beta_T = function(value){
-	if (is.na(value)) return("NA")
-	if (is.numeric(value)) return(format(as.numeric(value), scientific = TRUE, digits = 17))
-	as.character(value)
+	# vectorized (not just scalar) so it can be used to bulk-build cache keys from a results data.table
+	ifelse(
+		is.na(value),
+		"NA",
+		ifelse(is.numeric(value), format(as.numeric(value), scientific = TRUE, digits = 17), as.character(value))
+	)
 }
 
 round_result_field = function(value){
@@ -229,73 +232,6 @@ mark_row_completed = function(rep_val, beta_val, dataset_val, response_val, desi
 	completed_rows_cache[[key]] <- TRUE
 }
 
-last_results_mtime = NULL
-
-reload_completed_rows = function() {
-	if (file.exists(results_file) && file.info(results_file)$size > 0) {
-		current_mtime = file.info(results_file)$mtime
-		if (!is.null(last_results_mtime) && current_mtime == last_results_mtime) {
-			return(invisible(NULL))
-		}
-		
-		# Reset the cache
-		completed_rows_cache <<- new.env(parent = emptyenv())
-		
-		# Define columns needed for building the key and filtering status
-		needed_cols = c("rep", "beta_T", "dataset", "response_type", "design", "inference_class", "function_run", "status")
-		
-		# Try to read the file, handling potential locks or partial writes with retries
-		max_retries = 10
-		retry_count = 0
-		dt = NULL
-		
-		while (retry_count < max_retries) {
-			dt = tryCatch({
-				# Check which columns actually exist first
-				header = names(data.table::fread(results_file, nrows = 0))
-				cols_to_read = intersect(needed_cols, header)
-				data.table::fread(results_file, select = cols_to_read)
-			}, error = function(e) {
-				NULL
-			})
-			
-			if (!is.null(dt)) break
-			
-			retry_count = retry_count + 1
-			if (retry_count < max_retries) {
-				Sys.sleep(0.5)
-			}
-		}
-		
-		if (is.null(dt)) {
-			# If still failing after retries, return early (cache remains empty)
-			return(invisible(NULL))
-		}
-		
-		last_results_mtime <<- current_mtime
-		
-		if (nrow(dt) > 0L) {
-			rows_to_cache = if ("status" %in% colnames(dt)) {
-				dt[status == "ok"]
-			} else {
-				dt
-			}
-			for (row_idx in seq_len(nrow(rows_to_cache))) {
-				row = rows_to_cache[row_idx]
-				mark_row_completed(
-					row$rep,
-					row$beta_T,
-					row$dataset,
-					row$response_type,
-					row$design,
-					row$inference_class,
-					row$function_run
-				)
-			}
-		}
-	}
-}
-
 is_row_completed = function(rep_val, beta_val, dataset_val, response_val, design_val, inference_val, function_run_val){
 	key = build_result_key(rep_val, beta_val, dataset_val, response_val, design_val, inference_val, function_run_val)
 	!is.null(completed_rows_cache[[key]])
@@ -307,17 +243,25 @@ if (nrow(existing_results_dt) > 0L) {
 	} else {
 		existing_results_dt
 	}
-	for (row_idx in seq_len(nrow(rows_to_cache))) {
-		row = rows_to_cache[row_idx]
-		mark_row_completed(
-			row$rep,
-			row$beta_T,
-			row$dataset,
-			row$response_type,
-			row$design,
-			row$inference_class,
-			row$function_run
-		)
+	if (nrow(rows_to_cache) > 0L) {
+		# Vectorized key construction (build_result_key is vectorized over all 7 args) instead of
+		# subsetting the data.table one row at a time, which dominates startup cost on large result files.
+		keys = if ("id" %in% colnames(rows_to_cache)) {
+			rows_to_cache$id
+		} else {
+			build_result_key(
+				rows_to_cache$rep,
+				rows_to_cache$beta_T,
+				rows_to_cache$dataset,
+				rows_to_cache$response_type,
+				rows_to_cache$design,
+				rows_to_cache$inference_class,
+				rows_to_cache$function_run
+			)
+		}
+		for (key in keys) {
+			completed_rows_cache[[key]] <- TRUE
+		}
 	}
 }
 results_dt = data.table(
@@ -328,6 +272,7 @@ results_dt = data.table(
 	design = character(),
 	inference_class = character(),
 	function_run = character(),
+	id = character(),
 	timestamp = character(),
 	duration_time_sec = numeric(),
 	result_1 = character(),
@@ -346,8 +291,9 @@ results_dt = data.table(
 	result = character(),
 	status = character()
 )
+RESULTS_WRITE_BATCH_SIZE = 50L
 write_results_if_needed = function(force = FALSE){
-	if ((force || nrow(results_dt) > 0L) && nrow(results_dt) > 0L){
+	if (nrow(results_dt) > 0L && (force || nrow(results_dt) >= RESULTS_WRITE_BATCH_SIZE)){
 		append_mode = file.exists(results_file) && file.info(results_file)$size > 0
 		data.table::fwrite(
 			results_dt,
@@ -460,6 +406,7 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 			design = design_type,
 			inference_class = inference_class,
 			function_run = function_run,
+			id = build_result_key(rep_curr, beta_T, dataset_name, response_type, design_type, inference_class, function_run),
 			timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
 			duration_time_sec = round_duration_field(duration_time_sec),
 			result_1 = result_1,
@@ -482,16 +429,31 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 	if (identical(status, "ok")) {
 		mark_row_completed(rep_curr, beta_T, dataset_name, response_type, design_type, inference_class, function_run)
 	}
-	write_results_if_needed(force = TRUE)
+	# Buffered: only hits disk once RESULTS_WRITE_BATCH_SIZE rows have accumulated. Forced flush points
+	# (end of each design_type iteration, end of script) bound how much is lost on a crash/interrupt.
+	write_results_if_needed(force = FALSE)
+}
+
+# Memoized on first use: prior-run "latest status per key" rows, derived from the on-disk snapshot
+# (existing_results_dt) already loaded once at startup rather than re-reading + re-grouping the
+# whole results file from disk on every call (this can be called many times per run, e.g. once per
+# censored-survival design/dataset/rep combination).
+.existing_error_keys_latest = NULL
+get_existing_error_keys_latest = function(){
+	if (is.null(.existing_error_keys_latest)) {
+		key_cols = c("rep", "beta_T", "dataset", "response_type", "design", "inference_class", "function_run")
+		.existing_error_keys_latest <<- if (nrow(existing_results_dt) > 0L && all(c(key_cols, "status") %in% names(existing_results_dt))) {
+			existing_results_dt[, .SD[.N], by = key_cols]
+		} else {
+			data.table::data.table()
+		}
+	}
+	.existing_error_keys_latest
 }
 
 record_existing_error_keys_as_skipped = function(inference_class, dataset_n_rows, dataset_n_cols, error_message){
-	if (!file.exists(results_file) || file.info(results_file)$size <= 0) return(invisible(NULL))
-	dt = tryCatch(data.table::fread(results_file), error = function(e) NULL)
-	if (is.null(dt) || nrow(dt) == 0L) return(invisible(NULL))
-	key_cols = c("rep", "beta_T", "dataset", "response_type", "design", "inference_class", "function_run")
-	if (!all(c(key_cols, "status") %in% names(dt))) return(invisible(NULL))
-	latest = dt[, .SD[.N], by = key_cols]
+	latest = get_existing_error_keys_latest()
+	if (nrow(latest) == 0L) return(invisible(NULL))
 	to_mark = latest[
 		status == "error" &
 			rep == as.integer(rep_curr) &
@@ -1831,17 +1793,11 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 			run_inference_checks_both_paths(InferenceOrdinalKKCLMMCloglog, "InferenceOrdinalKKCLMMCloglog", des_obj, response_type, design_type, dataset_name, n_X, p_X, model_formula = model_formula)
 			inference_banner("InferenceOrdinalKKCondAdjCatLogitRegr")
 			run_inference_checks(InferenceOrdinalKKCondAdjCatLogitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-			inference_banner("InferenceOrdinalKKCondAdjCatLogitRegr")
-			run_inference_checks(InferenceOrdinalKKCondAdjCatLogitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 			inference_banner("InferenceOrdinalPairedSignTest")
 			run_inference_checks(InferenceOrdinalPairedSignTest$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		}
 		inference_banner("InferenceOrdinalAdjCatLogitRegr")
 		run_inference_checks(InferenceOrdinalAdjCatLogitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		inference_banner("InferenceOrdinalAdjCatLogitRegr")
-		run_inference_checks(InferenceOrdinalAdjCatLogitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		inference_banner("InferenceOrdinalOrderedProbitRegr")
-		run_inference_checks(InferenceOrdinalOrderedProbitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalOrderedProbitRegr")
 		run_inference_checks(InferenceOrdinalOrderedProbitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalStereotypeLogitRegr")
@@ -1850,20 +1806,12 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 		run_inference_checks(InferenceOrdinalPropOddsRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalPartialProportionalOddsRegr")
 		run_inference_checks(InferenceOrdinalPartialProportionalOddsRegr$new(des_obj, verbose = FALSE, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		inference_banner("InferenceOrdinalPartialProportionalOddsRegr")
-		run_inference_checks(InferenceOrdinalPartialProportionalOddsRegr$new(des_obj, verbose = FALSE, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalCloglogRegr")
 		run_inference_checks(InferenceOrdinalCloglogRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		inference_banner("InferenceOrdinalCloglogRegr")
-		run_inference_checks(InferenceOrdinalCloglogRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-		inference_banner("InferenceOrdinalGCompMeanDiff")
-		run_inference_checks(InferenceOrdinalGCompMeanDiff$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalGCompMeanDiff")
 		run_inference_checks(InferenceOrdinalGCompMeanDiff$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalJonckheereTerpstraTest")
 		run_inference_checks(InferenceOrdinalJonckheereTerpstraTest$new(des_obj), response_type, design_type, dataset_name, n_X, p_X)
-		inference_banner("InferenceOrdinalCauchitRegr")
-		run_inference_checks(InferenceOrdinalCauchitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalCauchitRegr")
 		run_inference_checks(InferenceOrdinalCauchitRegr$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceOrdinalContRatioRegr")
@@ -1915,6 +1863,8 @@ for (dataset_name in names(datasets_and_response_models)){
 								message("  FATAL ERROR in run_tests_for_response(", response_type, ", ", design_type, ", ", dataset_name, "): ", e$message)
 							}
 						)
+						# Bound crash/interrupt loss to at most one design_type iteration's worth of buffered rows.
+						write_results_if_needed(force = TRUE)
 					}
 				}
 			}
