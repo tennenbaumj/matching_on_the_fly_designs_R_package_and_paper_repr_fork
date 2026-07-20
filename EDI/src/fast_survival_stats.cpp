@@ -347,6 +347,7 @@ NumericVector compute_survival_stat_diff_rand_bootstrap_parallel_cpp(
     const IntegerMatrix& w_mat,
     double delta,
     bool do_rmst,
+    Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat,
     int num_cores) {
 
   const int n = i_mat.nrow();
@@ -358,6 +359,14 @@ NumericVector compute_survival_stat_diff_rand_bootstrap_parallel_cpp(
   const int* w_ptr = w_mat.begin();
   double* res_ptr = results_vec.data();
   const double mult = std::exp(delta);
+
+  const bool has_noise = noise_mat.isNotNull();
+  NumericMatrix noise_m;
+  const double* noise_ptr = nullptr;
+  if (has_noise) {
+    noise_m = NumericMatrix(noise_mat);
+    noise_ptr = noise_m.begin();
+  }
 
 #ifdef _OPENMP
   omp_set_num_threads(num_cores);
@@ -378,13 +387,15 @@ NumericVector compute_survival_stat_diff_rand_bootstrap_parallel_cpp(
       int nt = 0, nc = 0;
       for (int i = 0; i < n; ++i) {
         const int row0 = i_col[i] - 1;  // i_mat is 1-based
+        double yv = y0_ptr[row0];
+        if (has_noise) yv += noise_ptr[(size_t)b * n + i];
         SurvEntry e;
         e.status = dead_ptr[row0];
         if (w_col[i] == 1) {
-          e.time = (delta != 0.0) ? y0_ptr[row0] * mult : y0_ptr[row0];
+          e.time = (delta != 0.0) ? yv * mult : yv;
           y_t[nt++] = e;
         } else {
-          e.time = y0_ptr[row0];
+          e.time = yv;
           y_c[nc++] = e;
         }
       }

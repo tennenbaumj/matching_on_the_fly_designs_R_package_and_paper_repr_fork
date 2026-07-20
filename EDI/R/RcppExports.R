@@ -1557,8 +1557,8 @@ get_restricted_mean_se_diff <- function(y_sexp, dead_sexp, w_sexp) {
 #' pure-C++ KM calculator — no R objects inside the loop, so OpenMP is safe.
 #' @param do_rmst TRUE for RMST-diff, FALSE for median (KM-diff).
 #' @keywords internal
-compute_survival_stat_diff_rand_bootstrap_parallel_cpp <- function(y0, dead, i_mat, w_mat, delta, do_rmst, num_cores) {
-    .Call(`_EDI_compute_survival_stat_diff_rand_bootstrap_parallel_cpp`, y0, dead, i_mat, w_mat, delta, do_rmst, num_cores)
+compute_survival_stat_diff_rand_bootstrap_parallel_cpp <- function(y0, dead, i_mat, w_mat, delta, do_rmst, noise_mat, num_cores) {
+    .Call(`_EDI_compute_survival_stat_diff_rand_bootstrap_parallel_cpp`, y0, dead, i_mat, w_mat, delta, do_rmst, noise_mat, num_cores)
 }
 
 compute_survival_stat_diff_rand_bootstrap_serial_cpp <- function(y0, dead, i_mat, w_mat, delta, requested_stat) {
