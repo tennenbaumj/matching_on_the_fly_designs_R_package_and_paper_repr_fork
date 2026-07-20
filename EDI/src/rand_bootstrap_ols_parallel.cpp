@@ -25,6 +25,7 @@ NumericVector compute_rand_bootstrap_ols_parallel_cpp(
 	const IntegerMatrix& i_mat,
 	const IntegerMatrix& w_mat,
 	double delta,
+	Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat,
 	int num_cores) {
 
 	const int nsim = w_mat.cols();
@@ -41,6 +42,14 @@ NumericVector compute_rand_bootstrap_ols_parallel_cpp(
 	const int* w_ptr = w_mat.begin();
 	double* res_ptr = results_vec.data();
 	const bool use_parallel = should_parallelize_replicates(nsim, n * p * p, num_cores);
+
+	const bool has_noise = noise_mat.isNotNull();
+	NumericMatrix noise_m;
+	const double* noise_ptr = nullptr;
+	if (has_noise) {
+		noise_m = NumericMatrix(noise_mat);
+		noise_ptr = noise_m.begin();
+	}
 
 #ifdef _OPENMP
 	if (use_parallel) omp_set_num_threads(num_cores);
@@ -62,7 +71,9 @@ NumericVector compute_rand_bootstrap_ols_parallel_cpp(
 			for (int j = 0; j < p_cov; ++j) {
 				M(i, 2 + j) = xc_ptr[(size_t)j * n_full + row0];
 			}
-			yb(i) = y0_ptr[row0] + (is_t ? delta : 0.0);
+			double yv = y0_ptr[row0];
+			if (has_noise) yv += noise_ptr[(size_t)b * n + i];
+			yb(i) = yv + (is_t ? delta : 0.0);
 			n_T += is_t;
 		}
 		if (n_T == 0 || n_T == n || n <= p) continue; // leaves NA_REAL

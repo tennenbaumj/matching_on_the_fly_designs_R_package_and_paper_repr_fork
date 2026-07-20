@@ -2187,8 +2187,8 @@ compute_rand_bootstrap_mean_diff_se_parallel_cpp <- function(y0, i_mat, w_mat, d
     .Call(`_EDI_compute_rand_bootstrap_mean_diff_se_parallel_cpp`, y0, i_mat, w_mat, delta, transform_code, zero_one_logit_clamp, num_cores)
 }
 
-compute_rand_bootstrap_ols_parallel_cpp <- function(y0, Xc, i_mat, w_mat, delta, num_cores) {
-    .Call(`_EDI_compute_rand_bootstrap_ols_parallel_cpp`, y0, Xc, i_mat, w_mat, delta, num_cores)
+compute_rand_bootstrap_ols_parallel_cpp <- function(y0, Xc, i_mat, w_mat, delta, noise_mat, num_cores) {
+    .Call(`_EDI_compute_rand_bootstrap_ols_parallel_cpp`, y0, Xc, i_mat, w_mat, delta, noise_mat, num_cores)
 }
 
 random_block_size_redraw_w_cpp <- function(strata_keys_sexp, block_sizes_sexp, prob_T_sexp) {

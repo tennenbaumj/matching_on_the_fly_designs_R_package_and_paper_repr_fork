@@ -148,7 +148,7 @@ InferenceContinOLS = R6::R6Class("InferenceContinOLS",
 			}
 			compute_rand_bootstrap_ols_parallel_cpp(
 				as.numeric(y0_full), Xc, mats$i_mat, mats$w_mat,
-				as.numeric(delta), private$n_cpp_threads(ncol(mats$w_mat))
+				as.numeric(delta), mats$noise_mat, private$n_cpp_threads(ncol(mats$w_mat))
 			)
 		},
 		# Affine decomposition of the BRT null draws for the closed-form CI. The statistic is

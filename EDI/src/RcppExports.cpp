@@ -4471,8 +4471,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // compute_rand_bootstrap_ols_parallel_cpp
-NumericVector compute_rand_bootstrap_ols_parallel_cpp(const NumericVector& y0, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, int num_cores);
-RcppExport SEXP _EDI_compute_rand_bootstrap_ols_parallel_cpp(SEXP y0SEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP num_coresSEXP) {
+NumericVector compute_rand_bootstrap_ols_parallel_cpp(const NumericVector& y0, const NumericMatrix& Xc, const IntegerMatrix& i_mat, const IntegerMatrix& w_mat, double delta, Rcpp::Nullable<Rcpp::NumericMatrix> noise_mat, int num_cores);
+RcppExport SEXP _EDI_compute_rand_bootstrap_ols_parallel_cpp(SEXP y0SEXP, SEXP XcSEXP, SEXP i_matSEXP, SEXP w_matSEXP, SEXP deltaSEXP, SEXP noise_matSEXP, SEXP num_coresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -4481,8 +4481,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const IntegerMatrix& >::type i_mat(i_matSEXP);
     Rcpp::traits::input_parameter< const IntegerMatrix& >::type w_mat(w_matSEXP);
     Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type noise_mat(noise_matSEXP);
     Rcpp::traits::input_parameter< int >::type num_cores(num_coresSEXP);
-    rcpp_result_gen = Rcpp::wrap(compute_rand_bootstrap_ols_parallel_cpp(y0, Xc, i_mat, w_mat, delta, num_cores));
+    rcpp_result_gen = Rcpp::wrap(compute_rand_bootstrap_ols_parallel_cpp(y0, Xc, i_mat, w_mat, delta, noise_mat, num_cores));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5275,7 +5276,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_EDI_qr_reduce_preserve_cols_cpp", (DL_FUNC) &_EDI_qr_reduce_preserve_cols_cpp, 2},
     {"_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp", (DL_FUNC) &_EDI_compute_rand_bootstrap_mean_diff_parallel_cpp, 8},
     {"_EDI_compute_rand_bootstrap_mean_diff_se_parallel_cpp", (DL_FUNC) &_EDI_compute_rand_bootstrap_mean_diff_se_parallel_cpp, 7},
-    {"_EDI_compute_rand_bootstrap_ols_parallel_cpp", (DL_FUNC) &_EDI_compute_rand_bootstrap_ols_parallel_cpp, 6},
+    {"_EDI_compute_rand_bootstrap_ols_parallel_cpp", (DL_FUNC) &_EDI_compute_rand_bootstrap_ols_parallel_cpp, 7},
     {"_EDI_random_block_size_redraw_w_cpp", (DL_FUNC) &_EDI_random_block_size_redraw_w_cpp, 3},
     {"_EDI_randomization_loop_cpp", (DL_FUNC) &_EDI_randomization_loop_cpp, 5},
     {"_EDI_complete_randomization_forced_balanced_cpp", (DL_FUNC) &_EDI_complete_randomization_forced_balanced_cpp, 3},
