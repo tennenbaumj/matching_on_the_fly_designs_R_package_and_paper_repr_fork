@@ -34,12 +34,12 @@ clamp_proportion_response = function(y){
 finagle_different_responses_from_continuous = function(y_cont){
 	y_scaled = scale(y_cont)
 	list(
-	continuous = y_scaled,
-	incidence =  stats::plogis(as.numeric(y_scaled)),
-	proportion = clamp_proportion_response((y_cont - min(y_cont) + 1e-6) / max(y_cont - min(y_cont) + 2e-6)),
-	count =      round(y_cont - min(y_cont)),
-	survival =   y_scaled - min(y_scaled) + 0.1,
-	ordinal =    as.integer(cut(y_cont, breaks = unique(quantile(y_cont, probs = seq(0, 1, length.out = 5))), include.lowest = TRUE))
+		continuous = y_scaled,
+		incidence =  stats::plogis(as.numeric(y_scaled)),
+		proportion = clamp_proportion_response((y_cont - min(y_cont) + 1e-6) / max(y_cont - min(y_cont) + 2e-6)),
+		count =      round(y_cont - min(y_cont)),
+		survival =   y_scaled - min(y_scaled) + 0.1,
+		ordinal =    as.integer(cut(y_cont, breaks = unique(quantile(y_cont, probs = seq(0, 1, length.out = 5))), include.lowest = TRUE))
 	)
 }
 

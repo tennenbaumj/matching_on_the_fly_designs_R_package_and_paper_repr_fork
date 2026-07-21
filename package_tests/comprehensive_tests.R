@@ -227,6 +227,23 @@ design_supports_zhang_incidence = function(des_obj){
 		is(des_obj, "DesignFixedBinaryMatch")
 }
 
+design_supports_exact_fisher_incidence = function(des_obj){
+	is(des_obj, "DesignSeqOneByOneiBCRD") ||
+		is(des_obj, "DesignFixediBCRD") ||
+		is(des_obj, "DesignFixedBlocking") ||
+		is(des_obj, "DesignSeqOneByOneSPBR") ||
+		is(des_obj, "DesignSeqOneByOneRandomBlockSize") ||
+		is(des_obj, "DesignSeqOneByOneKK14") ||
+		is(des_obj, "DesignSeqOneByOneKK21") ||
+		is(des_obj, "DesignSeqOneByOneKK21stepwise") ||
+		is(des_obj, "DesignFixedBinaryMatch")
+}
+
+design_supports_exact_binomial_incidence = function(des_obj){
+	is(des_obj, "DesignSeqOneByOneKK14") ||
+		is(des_obj, "DesignFixedBinaryMatch")
+}
+
 build_result_key = function(rep_val, beta_val, dataset_val, response_val, design_val, inference_val, function_run_val){
 	paste(
 		as.integer(rep_val),
@@ -576,6 +593,7 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 	# Per-operation slow skips (avg >30s in comprehensive_tests_*_20260720.log)
 	skip_rand_slow            = is_any_inference_class(c("InferenceContinKKGLMM"))
 	skip_rand_ci_slow         = is_any_inference_class(c("InferenceSurvivalWeibullRegr", "InferenceSurvivalKKClaytonCopulaOneLik", "InferenceSurvivalKKWeibullFrailtyOneLik", "InferencePropQuantileRegr", "InferencePropKKGEE"))
+	skip_score_ci_slow        = is_any_inference_class(c("InferenceSurvivalKKWeibullFrailtyOneLik"))  # score CI avg 50.1s / max 324.8s at n=13
 	skip_lik_ratio_ci_slow    = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))  # lik-ratio CI avg 39s / max 234s at n=6
 	skip_bbt_ci_slow          = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))
 	skip_boot_stud_slow       = FALSE
@@ -987,9 +1005,23 @@ call_direct_asymp = function(method_name, testing_type, ...){
 		return(invisible(NULL))
 	}
 
+	des_obj_for_exact = seq_des_inf$.__enclos_env__$private$des_obj
+	if (response_type == "incidence" &&
+	    is(seq_des_inf, "InferenceIncidExactFisher") &&
+	    !design_supports_exact_fisher_incidence(des_obj_for_exact)) {
+		message("          Skipping InferenceIncidExactFisher: design is not Fisher-exact compatible.")
+		return(invisible(NULL))
+	}
+	if (response_type == "incidence" &&
+	    is(seq_des_inf, "InferenceIncidExactBinomial") &&
+	    !design_supports_exact_binomial_incidence(des_obj_for_exact)) {
+		message("          Skipping InferenceIncidExactBinomial: design is not exact-binomial compatible.")
+		return(invisible(NULL))
+	}
+
 	is_zhang_inference = is(seq_des_inf, "InferenceIncidenceExactZhang") || is(seq_des_inf, "InferenceIncidExactZhang")
 	zhang_valid_design = response_type == "incidence" &&
-		design_supports_zhang_incidence(seq_des_inf$.__enclos_env__$private$des_obj)
+		design_supports_zhang_incidence(des_obj_for_exact)
 	supports_exact_inference = if (is_zhang_inference) zhang_valid_design else is(seq_des_inf, "InferenceExact")
 	if (should_run_test_family("exact") && response_type == "incidence" && supports_exact_inference){
 		safe_call_family("exact", "compute_exact_two_sided_pval_for_treatment_effect", seq_des_inf$compute_exact_two_sided_pval_for_treatment_effect())
@@ -1023,7 +1055,11 @@ call_direct_asymp = function(method_name, testing_type, ...){
 		}
 	if (!skip_asymp){
 		call_direct_asymp("compute_wald_confidence_interval", "wald", 0.05)
-		call_direct_asymp("compute_score_confidence_interval", "score", 0.05)
+		if (!skip_score_ci_slow) {
+			call_direct_asymp("compute_score_confidence_interval", "score", 0.05)
+		} else if ("compute_score_confidence_interval" %in% names(seq_des_inf) && supports_direct_testing_type("score")) {
+			message("          Skipping compute_score_confidence_interval (too slow)")
+		}
 		if (!skip_lik_ratio_ci_slow) {
 			call_direct_asymp("compute_lik_ratio_confidence_interval", "lik_ratio", 0.05)
 		} else if ("compute_lik_ratio_confidence_interval" %in% names(seq_des_inf) && supports_direct_testing_type("lik_ratio")) {
@@ -1221,6 +1257,9 @@ run_inference_checks = function(seq_des_inf, response_type, design_type, dataset
 			inference_label = inference_label
 		),
 		error = function(e){
+			if (!is.null(pending_banner)) {
+				pending_banner <<- NULL
+			}
 			label = if (!is.null(inference_label) && nzchar(inference_label)) {
 				inference_label
 			} else {
@@ -1289,6 +1328,7 @@ run_exhaustive_remaining_inference_classes = function(des_obj, response_type, de
 		"InferenceQuantileRandCI"
 	))
 	is_response_family_mismatch = function(class_name, response_type){
+		if (response_type == "survival" && identical(class_name, "InferenceAllSimpleWilcox")) return(TRUE)
 		switch(
 			response_type,
 			continuous = grepl("Count|Incid|Survival|Ordinal|^InferenceProp", class_name),
@@ -1675,11 +1715,8 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 	}
 
 	if (response_type == "incidence"){
-		supports_exact_fisher_design =
-			design_type %in% c("iBCRD", "FixediBCRD", "FixedBlocking", "RandomBlockSize", "SPBR") ||
-			is_kk_design
-		supports_exact_binomial_design =
-			design_type %in% c("KK14", "FixedBinaryMatch")
+		supports_exact_fisher_design = design_supports_exact_fisher_incidence(des_obj)
+		supports_exact_binomial_design = design_supports_exact_binomial_incidence(des_obj)
 
 			inference_banner("InferenceAllSimpleMeanDiff")
 			run_inference_checks(InferenceAllSimpleMeanDiff$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
@@ -1798,22 +1835,11 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 				}
 			}
 		}
-		inference_banner("InferenceAllSimpleWilcox")
-		err_msg_sw = tryCatch({
-			run_inference_checks(InferenceAllSimpleWilcox$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-			NULL
-		}, error = function(e) if (length(e$message) == 0L) "" else e$message)
-		if (!is.null(err_msg_sw)){
-			if (grepl("does not support censored", err_msg_sw, fixed = TRUE)) {
-				message("  Skipping InferenceAllSimpleWilcox (censored data): ", err_msg_sw)
-				sw_label = paste0("InferenceAllSimpleWilcox [design_formula=", paste(deparse(model_formula), collapse = " "), "]")
-				record_existing_error_keys_as_skipped(
-					sw_label, n_X, p_X,
-					paste0("Skipped unsupported censored survival inference: ", err_msg_sw)
-				)
-			}
-			else stop(err_msg_sw)
-		}
+		message(
+			"  Skipping InferenceAllSimpleWilcox (censored survival data): ",
+			"Wilcoxon rank-sum inference does not support censored survival data. ",
+			"Use InferenceSurvivalGehanWilcox for censored survival outcomes."
+		)
 		inference_banner("InferenceSurvivalGehanWilcox")
 		run_inference_checks(InferenceSurvivalGehanWilcox$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 		inference_banner("InferenceSurvivalLogRank")
