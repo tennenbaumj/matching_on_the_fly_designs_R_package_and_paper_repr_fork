@@ -90,43 +90,6 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 			}
 			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
 		},
-		compute_wald_two_sided_pval = function(delta = 0){
-			private$compute_zero_augmented_robust_wald_pval(delta)
-		},
-		compute_wald_confidence_interval = function(alpha = 0.05){
-			private$compute_zero_augmented_robust_wald_ci(alpha)
-		},
-		compute_score_two_sided_pval = function(delta = 0){
-			private$compute_zero_augmented_robust_wald_pval(delta)
-		},
-		compute_lik_ratio_two_sided_pval = function(delta = 0){
-			private$compute_zero_augmented_robust_wald_pval(delta)
-		},
-		compute_gradient_two_sided_pval = function(delta = 0){
-			private$compute_zero_augmented_robust_wald_pval(delta)
-		},
-		compute_score_confidence_interval = function(alpha = 0.05){
-			private$compute_zero_augmented_robust_wald_ci(alpha)
-		},
-		compute_lik_ratio_confidence_interval = function(alpha = 0.05){
-			private$compute_zero_augmented_robust_wald_ci(alpha)
-		},
-		compute_gradient_confidence_interval = function(alpha = 0.05){
-			private$compute_zero_augmented_robust_wald_ci(alpha)
-		},
-		compute_lik_ratio_bootstrap_two_sided_pval = function(delta = 0, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L){
-			if (private$zero_augmented_model_lrt_bootstrap_disabled()) {
-				private$cache_nonestimable_se("zero_augmented_poisson_parametric_lrt_bootstrap_disabled_due_raw_lrt_miscalibration")
-				return(NA_real_)
-			}
-			super$compute_lik_ratio_bootstrap_two_sided_pval(
-				delta = delta,
-				B = B,
-				show_progress = show_progress,
-				min_number_usable_samples = min_number_usable_samples,
-				max_attempts_per_replicate = max_attempts_per_replicate
-			)
-		},
 		#' @description Computes the treatment effect estimate for a weighted bootstrap sample.
 		#' @param subject_or_block_weights Bootstrap weights at the subject or block level.
 		#' @param estimate_only If TRUE, skip variance calculations.
@@ -327,36 +290,6 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 		get_degrees_of_freedom = function(){
 			private$shared(estimate_only = FALSE)
 			private$cached_values$df %||% NA_real_
-		},
-		compute_zero_augmented_robust_wald_pval = function(delta = 0){
-			if (should_run_asserts()) assertNumeric(delta, len = 1)
-			if (private$mark_count_likelihood_block_asymp_nonestimable()) return(NA_real_)
-			private$shared(estimate_only = FALSE)
-			se = private$cached_values$s_beta_hat_T
-			if (!is.finite(se) || se <= 0) {
-				private$cache_nonestimable_se("zero_augmented_poisson_robust_standard_error_unavailable")
-				return(NA_real_)
-			}
-			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
-		},
-		compute_zero_augmented_robust_wald_ci = function(alpha = 0.05){
-			if (should_run_asserts()) {
-				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
-			}
-			if (private$mark_count_likelihood_block_asymp_nonestimable()) {
-				return(private$count_likelihood_missing_ci(alpha))
-			}
-			private$shared(estimate_only = FALSE)
-			se = private$cached_values$s_beta_hat_T
-			if (!is.finite(se) || se <= 0) {
-				private$cache_nonestimable_se("zero_augmented_poisson_robust_standard_error_unavailable")
-				return(private$count_likelihood_missing_ci(alpha))
-			}
-			private$compute_z_or_t_ci_from_s_and_df(alpha)
-		},
-		zero_augmented_model_lrt_bootstrap_disabled = function(){
-			identical(private$za_description(), "Zero-Inflated Poisson") ||
-				identical(private$za_description(), "Hurdle Poisson")
 		},
 		safe_zero_augmented_vcov_se = function(fit, j_treat = 2L){
 			v = tryCatch({
@@ -1077,15 +1010,6 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 		},
 		supports_lik_ratio_param_bootstrap_confidence_interval = function(){
 			FALSE
-		},
-		# Zero-Inflated Poisson and Hurdle Poisson have a known raw-LR miscalibration
-		# (see zero_augmented_model_lrt_bootstrap_disabled(), which already disables
-		# compute_lik_ratio_bootstrap_two_sided_pval() for them). Any Bartlett
-		# correction is built on top of that same raw LR statistic, so it inherits
-		# the miscalibration and must stay disabled here too -- unlike
-		# Zero-Inflated Negative Binomial, whose raw LR is not disabled.
-		supports_bartlett_likelihood_ratio_approx = function(){
-			isTRUE(private$supports_lik_ratio_param_bootstrap()) && !isTRUE(private$zero_augmented_model_lrt_bootstrap_disabled())
 		},
 		simulate_under_lik_null = function(spec, delta, null_fit){
 			is_zinb   = identical(private$za_description(), "Zero-Inflated Negative Binomial")

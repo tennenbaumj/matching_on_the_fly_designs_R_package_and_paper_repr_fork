@@ -246,26 +246,19 @@ finite outer bracket. Default \code{8L}.}
 }
 \subsection{Returns}{
 Named two-element numeric vector with the confidence-interval bounds.
-Approximate (Monte-Carlo) Bartlett support automatically follows
-parametric-bootstrap LR support: any family that already implements
-simulate_under_lik_null() gets the shared Monte-Carlo factor below for
-free. Families that need to withhold Bartlett support for a reason that
-doesn't affect parametric-bootstrap LR itself (e.g. a known raw-LR
-miscalibration) should override this method directly.
-Generic Monte-Carlo Bartlett correction factor, shared by every
-InferenceParamBootstrap family that already implements
-simulate_under_lik_null() for parametric-bootstrap LR calibration.
+Shared replicate-running core for anything built on B simulated null
+datasets via simulate_under_lik_null() (currently:
+compute_lik_ratio_bootstrap_two_sided_pval() and, via
+InferenceMixinBartlettApprox, get_bartlett_factor_approx()). Handles
+seeding, multi-core parallelism, the reusable-worker-state optimization,
+and deterministic-mode thread budgeting uniformly, so every caller gets
+the same performance characteristics for free. Returns a list with
+$results (one per-replicate result object per B, each carrying at least
+$lr), $used_worker_path, and $used_deterministic_mode.
 
-Simulates B datasets under H0: (tested parameter) = delta using the same
-simulate_under_lik_null()/refit machinery as
-compute_lik_ratio_bootstrap_two_sided_pval(), and sets
-  c(delta) = mean(simulated LR statistics)
-which is a Monte-Carlo estimate of E[LR | H0], the quantity a classical
-analytic Bartlett correction targets exactly (E[LR]/df = 1 under a
-chi-square(df) reference). This is deliberately model-agnostic: any
-family wanting a faster closed-form factor instead can override
-get_bartlett_factor_exact()/supports_bartlett_likelihood_ratio_exact()
-(a subclass override of this method wins too, if preferred).
+Callers are responsible for setting private$active_resampling_operation
+themselves (not done here, to avoid a nested caller clobbering an
+already-active outer flag via a premature on.exit reset).
 Simulate a bootstrap dataset under the fitted null likelihood and return
 a minimal spec list for refitting.
 

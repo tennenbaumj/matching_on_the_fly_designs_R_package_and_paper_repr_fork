@@ -20,8 +20,6 @@ Abstract class for randomization-based inference.
 \itemize{
 \item \href{#method-InferenceRand-set_custom_randomization_statistic_function}{\code{InferenceRand$set_custom_randomization_statistic_function()}}
 \item \href{#method-InferenceRand-set_custom_randomization_statistic_cpp}{\code{InferenceRand$set_custom_randomization_statistic_cpp()}}
-\item \href{#method-InferenceRand-approximate_randomization_distribution_beta_hat_T}{\code{InferenceRand$approximate_randomization_distribution_beta_hat_T()}}
-\item \href{#method-InferenceRand-compute_rand_two_sided_pval}{\code{InferenceRand$compute_rand_two_sided_pval()}}
 \item \href{#method-InferenceRand-clone}{\code{InferenceRand$clone()}}
 }
 }
@@ -55,131 +53,21 @@ Abstract class for randomization-based inference.
 \if{html}{\out{<a id="method-InferenceRand-set_custom_randomization_statistic_function"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceRand-set_custom_randomization_statistic_function}{}}}
 \subsection{Method \code{set_custom_randomization_statistic_function()}}{
-Set Custom Randomization Statistic Computation
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceRand$set_custom_randomization_statistic_function(
   custom_randomization_statistic_function
 )}\if{html}{\out{</div>}}
 }
 
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{custom_randomization_statistic_function}}{A function that returns a scalar value.}
-}
-\if{html}{\out{</div>}}
-}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceRand-set_custom_randomization_statistic_cpp"></a>}}
 \if{latex}{\out{\hypertarget{method-InferenceRand-set_custom_randomization_statistic_cpp}{}}}
 \subsection{Method \code{set_custom_randomization_statistic_cpp()}}{
-Set Custom Randomization Statistic as a C++ Function
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceRand$set_custom_randomization_statistic_cpp(fn)}\if{html}{\out{</div>}}
 }
 
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{fn}}{Either a C++ source code string or a pre-compiled Rcpp function returning a
-scalar \code{double}. Must accept either \code{(NumericVector y, IntegerVector w)} or
-\code{(NumericVector y, IntegerVector w, IntegerVector dead)} as arguments.
-Passing a source string (recommended) enables safe use with parallel workers; passing
-a pre-compiled function works only in the main process (XPtrs become NULL when
-serialized to worker nodes). Pass \code{NULL} to clear.
-Cannot be combined with \code{set_custom_randomization_statistic_function}.}
-}
-\if{html}{\out{</div>}}
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-InferenceRand-approximate_randomization_distribution_beta_hat_T"></a>}}
-\if{latex}{\out{\hypertarget{method-InferenceRand-approximate_randomization_distribution_beta_hat_T}{}}}
-\subsection{Method \code{approximate_randomization_distribution_beta_hat_T()}}{
-Computes the randomization distribution of the treatment effect estimate under the sharp null.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{InferenceRand$approximate_randomization_distribution_beta_hat_T(
-  r = 501,
-  delta = 0,
-  transform_responses = "none",
-  show_progress = TRUE,
-  permutations = NULL,
-  debug = FALSE,
-  zero_one_logit_clamp = .Machine$double.eps
-)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{r}}{Number of randomization vectors. Default 501.}
-
-\item{\code{delta}}{The null difference. Default 0.}
-
-\item{\code{transform_responses}}{Type of transformation. Default "none".}
-
-\item{\code{show_progress}}{Show progress bar. Default TRUE.}
-
-\item{\code{permutations}}{Pre-computed permutations. Default NULL.}
-
-\item{\code{debug}}{If \code{TRUE}, return a list with the distribution values and
-per-iteration diagnostics including error messages, warning messages, counts of each,
-and summary proportions for iterations with errors, warnings, and illegal (non-finite)
-values. Runs serially. Default \code{FALSE}.}
-
-\item{\code{zero_one_logit_clamp}}{The clamping amount for exact 0 and 1 values when logging}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-When \code{debug = FALSE} (default), a numeric vector of length \code{r}. When
-  \code{debug = TRUE}, a list with: \code{values}, \code{errors} (list of character
-  vectors, one per iteration), \code{warnings} (list of character vectors, one per
-  iteration), \code{num_errors}, \code{num_warnings},
-  \code{prop_iterations_with_errors}, \code{prop_iterations_with_warnings}, and
-  \code{prop_illegal_values}.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-InferenceRand-compute_rand_two_sided_pval"></a>}}
-\if{latex}{\out{\hypertarget{method-InferenceRand-compute_rand_two_sided_pval}{}}}
-\subsection{Method \code{compute_rand_two_sided_pval()}}{
-Computes a randomization-based p-value.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{InferenceRand$compute_rand_two_sided_pval(
-  r = 501,
-  delta = 0,
-  transform_responses = "none",
-  na.rm = TRUE,
-  show_progress = TRUE,
-  permutations = NULL,
-  zero_one_logit_clamp = .Machine$double.eps
-)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{r}}{Number of randomization vectors.}
-
-\item{\code{delta}}{Null difference.}
-
-\item{\code{transform_responses}}{Transformation.}
-
-\item{\code{na.rm}}{Remove NAs.}
-
-\item{\code{show_progress}}{Show progress.}
-
-\item{\code{permutations}}{Pre-computed permutations.}
-
-\item{\code{zero_one_logit_clamp}}{The clamping amount for exact 0 and 1 values when logging}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-Randomization p-value.
-}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-InferenceRand-clone"></a>}}

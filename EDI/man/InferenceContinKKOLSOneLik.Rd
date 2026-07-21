@@ -225,6 +225,23 @@ Returns the log-likelihood, gradient, and Hessian at the current estimate.
 
 \subsection{Returns}{
 A list with \code{loglik}, \code{gradient}, and \code{hessian}.
+Exact (not merely higher-order-accurate) Bartlett factor for Gaussian OLS.
+
+get_likelihood_test_spec()$neg_loglik() holds sigma2 fixed at the full
+model's unbiased estimate (RSS_full / (n-p)) rather than re-profiling it
+under each null-restricted fit. Under that convention the package's own
+LR statistic, LR(delta) = (RSS_null(delta) - RSS_full) / sigma2_hat, is
+algebraically identical to the classical partial F(1, n-p) statistic for
+testing this single coefficient -- an exact finite-sample pivot under
+the classical homoskedastic Gaussian-errors assumption (not the same
+assumption as this class's HC2-robust Wald path, so this need not match
+the Wald CI numerically; it exactly reproduces base R's lm() classical
+t-test/F-test instead -- verified directly against lm() during
+development, see test-bartlett-lr-ols-exact.R).
+
+Rather than approximating a correction, this returns the exact factor
+c(delta) such that LR(delta)/c(delta), referred to chi-square(1), gives
+precisely the same p-value as the true F(1, n-p) tail probability.
 }
 }
 \if{html}{\out{<hr>}}

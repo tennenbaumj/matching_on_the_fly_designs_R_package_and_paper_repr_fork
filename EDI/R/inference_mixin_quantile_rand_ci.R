@@ -9,6 +9,7 @@
 #' The capability flag \code{private$quantile_rand_ci} is set to \code{TRUE}.
 #'
 #' @keywords internal
+#' @noRd
 InferenceMixinQuantileRandCI = list(
 	public = list(
 		#' @description Computes a randomization-based confidence interval via Zhang's combined test.

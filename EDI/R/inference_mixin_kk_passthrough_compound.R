@@ -10,6 +10,7 @@
 #' The capability flag \code{private$kk_passthrough_compound} is set to \code{TRUE}.
 #'
 #' @keywords internal
+#' @noRd
 InferenceMixinKKPassThroughCompound = list(
 	public = list(),
 	private = list(

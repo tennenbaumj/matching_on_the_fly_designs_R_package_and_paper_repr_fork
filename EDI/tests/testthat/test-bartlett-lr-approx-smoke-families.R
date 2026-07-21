@@ -7,8 +7,12 @@ library(EDI)
 # same simulate_under_lik_null()/refit machinery already validated for
 # compute_lik_ratio_bootstrap_two_sided_pval(). This file smoke-tests that
 # delegation across a representative cross-section of families (mirroring
-# test-parametric-bootstrap-lr-smoke-families.R), plus the one known carve-out
-# (Zero-Inflated Poisson / Hurdle Poisson, whose raw LR is itself miscalibrated).
+# test-parametric-bootstrap-lr-smoke-families.R). Zero-Inflated Poisson and
+# Hurdle Poisson used to be hard-carved-out here over a "raw LR miscalibration"
+# concern; an 900-replicate empirical Type-I-error stress test (normal, small-n,
+# high-zero-inflation, and many-covariate null scenarios) found no evidence of
+# miscalibration -- rejection rates were at-or-below the nominal level in every
+# scenario, never inflated -- so the carve-out was removed.
 
 assert_bartlett_approx_smoke <- function(inf, B = 15L, alpha = 0.25, seed = 31001L){
 	priv <- inf$.__enclos_env__$private
@@ -173,7 +177,7 @@ test_that("Bartlett approx smoke: InferenceOrdinalPropOddsRegr", {
 	assert_bartlett_approx_smoke(inf, B = 9L, seed = 51005L)
 })
 
-test_that("Bartlett approx smoke: InferenceCountZeroInflatedNegBin (the ZA family that is NOT carved out)", {
+test_that("Bartlett approx smoke: InferenceCountZeroInflatedNegBin", {
 	inf <- InferenceCountZeroInflatedNegBin$new(
 		make_bartlett_smoke_zinb_design(),
 		model_formula = ~ x1,
@@ -183,24 +187,11 @@ test_that("Bartlett approx smoke: InferenceCountZeroInflatedNegBin (the ZA famil
 	assert_bartlett_approx_smoke(inf, B = 21L, seed = 51006L)
 })
 
-test_that("Bartlett approx is carved out for Zero-Inflated Poisson and Hurdle Poisson (raw LR miscalibration)", {
+test_that("Bartlett approx smoke: InferenceCountZeroInflatedPoisson and InferenceCountHurdlePoisson", {
 	des <- make_bartlett_smoke_zero_augmented_poisson_design()
 
 	for (class_gen in list(InferenceCountZeroInflatedPoisson, InferenceCountHurdlePoisson)) {
 		inf <- class_gen$new(des, model_formula = ~ x1, use_rcpp = TRUE, verbose = FALSE)
-		priv <- inf$.__enclos_env__$private
-
-		# Structurally still on the parametric-bootstrap branch...
-		expect_true(isTRUE(priv$supports_lik_ratio_param_bootstrap()))
-		# ...but Bartlett (built on the same miscalibrated raw LR) must stay off.
-		expect_false(isTRUE(priv$supports_bartlett_likelihood_ratio_approx()))
-		expect_false("lik_ratio_bartlett_approx" %in% inf$get_supported_testing_types())
-
-		inf$set_seed(51007L)
-		pval <- inf$compute_lik_ratio_bartlett_approx_two_sided_pval(delta = 0, B = 9L)
-		ci <- inf$compute_lik_ratio_bartlett_approx_confidence_interval(alpha = 0.25, B = 9L)
-
-		expect_true(is.na(pval))
-		expect_true(all(is.na(ci)))
+		assert_bartlett_approx_smoke(inf, B = 21L, seed = 51007L)
 	}
 })

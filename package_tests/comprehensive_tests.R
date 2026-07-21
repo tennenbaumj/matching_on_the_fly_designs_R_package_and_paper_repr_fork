@@ -595,6 +595,8 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 	skip_rand_ci_slow         = is_any_inference_class(c("InferenceSurvivalWeibullRegr", "InferenceSurvivalKKClaytonCopulaOneLik", "InferenceSurvivalKKWeibullFrailtyOneLik", "InferencePropQuantileRegr", "InferencePropKKGEE"))
 	skip_score_ci_slow        = is_any_inference_class(c("InferenceSurvivalKKWeibullFrailtyOneLik"))  # score CI avg 50.1s / max 324.8s at n=13
 	skip_lik_ratio_ci_slow    = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))  # lik-ratio CI avg 39s / max 234s at n=6
+	skip_bbt_pval_slow        = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))  # Bayesian bootstrap pval avg 32.4s / max 68.4s at n=32
+	skip_bbt_pval_symmetric_slow = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))  # Bayesian bootstrap symmetric pval avg 30.6s / max 54.9s at n=18
 	skip_bbt_ci_slow          = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))
 	skip_boot_stud_slow       = FALSE
 	skip_boot_ci_slow         = FALSE
@@ -1157,8 +1159,16 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	}
 	# Bayesian bootstrap p-val — default first, extra types reuse distribution cache
 	if (should_run_test_family("bayesian_bootstrap") && !skip_slow && !skip_bayesian_bootstrap){
-		safe_call("compute_bayesian_bootstrap_two_sided_pval", seq_des_inf$compute_bayesian_bootstrap_two_sided_pval(B = r, na.rm = TRUE, show_progress = FALSE))
+		if (!skip_bbt_pval_slow) {
+			safe_call("compute_bayesian_bootstrap_two_sided_pval", seq_des_inf$compute_bayesian_bootstrap_two_sided_pval(B = r, na.rm = TRUE, show_progress = FALSE))
+		} else {
+			message("          Skipping compute_bayesian_bootstrap_two_sided_pval (too slow)")
+		}
 		for (bayes_pval_type in c("symmetric", "wald", "bca", "studentized")) {
+			if (bayes_pval_type == "symmetric" && skip_bbt_pval_symmetric_slow) {
+				message("          Skipping compute_bayesian_bootstrap_two_sided_pval_symmetric (too slow)")
+				next
+			}
 			safe_call(paste0("compute_bayesian_bootstrap_two_sided_pval_", bayes_pval_type),
 					  seq_des_inf$compute_bayesian_bootstrap_two_sided_pval(B = r, type = bayes_pval_type, na.rm = TRUE, show_progress = FALSE))
 		}

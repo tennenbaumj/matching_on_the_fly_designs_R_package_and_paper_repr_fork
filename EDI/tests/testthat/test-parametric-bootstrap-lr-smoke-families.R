@@ -118,23 +118,12 @@ assert_param_bootstrap_lr_smoke <- function(inf, B = 9L, min_success = 3L, seed 
 	expect_gt(diag$success_fraction, 0)
 }
 
-test_that("raw LR parametric bootstrap is disabled for zero-augmented Poisson models", {
+test_that("raw LR parametric bootstrap works for zero-augmented Poisson models (ZIP, Hurdle Poisson)", {
 	des <- make_param_boot_zero_augmented_poisson_design()
 
 	for (class_gen in list(InferenceCountZeroInflatedPoisson, InferenceCountHurdlePoisson)) {
 		inf <- class_gen$new(des, model_formula = ~ x1 + x2, use_rcpp = TRUE, verbose = FALSE)
-		p_boot <- inf$compute_lik_ratio_bootstrap_two_sided_pval(
-			delta = 0,
-			B = 9L,
-			show_progress = FALSE
-		)
-
-		expect_true(is.na(p_boot))
-		expect_true(inf$is_nonestimable("se"))
-		expect_equal(
-			inf$get_nonestimable_reason(),
-			"zero_augmented_poisson_parametric_lrt_bootstrap_disabled_due_raw_lrt_miscalibration"
-		)
+		assert_param_bootstrap_lr_smoke(inf, B = 21L, min_success = 5L, seed = 9101L)
 	}
 })
 

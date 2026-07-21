@@ -21,7 +21,7 @@ audit_classes = list(
 
   # ── CONTINUOUS KK ────────────────────────────────────────────────────────────
   list(name="InferenceContinKKGLMM",               section="Continuous", resp="cont",  kk=TRUE,  types="full",          skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=TRUE,  skip_bbt=TRUE,  jack=TRUE,  skip_jack_slow=TRUE, skip_rand=TRUE,  rand_resp="csp", skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="cp",  pboot=TRUE,  notes="InferenceParamBootstrap; all resampling too slow; jackknife estimate avg 54s / max 102s (skip_jack_slow)"),
-  list(name="InferenceContinKKOLSOneLik",          section="Continuous", resp="cont",  kk=TRUE,  types="full",          skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="cp",  pboot=TRUE,  notes="KKPassThroughCompound → ParamBootstrap; explicit pboot=TRUE"),
+  list(name="InferenceContinKKOLSOneLik",          section="Continuous", resp="cont",  kk=TRUE,  types="full",          skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="cp",  pboot=TRUE,  bartlett_exact=TRUE, notes="KKPassThroughCompound → ParamBootstrap; explicit pboot=TRUE; exact Bartlett implemented (holds sigma2 fixed, LR reduces exactly to the classical F(1,n-p) statistic; verified against lm())"),
   list(name="InferenceContinKKRobustRegrOneLik",   section="Continuous", resp="cont",  kk=TRUE,  types="wald",          skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="cp",  pboot=NA,    notes="KKPassThroughCompoundNoParamBootstrap; wald only"),
   list(name="InferenceContinKKQuantileRegrOneLik", section="Continuous", resp="cont",  kk=TRUE,  types="wald",          skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="cp",  pboot=NA,    notes="AbstractQuantileRandCI → KKPassThroughCompoundNoParamBootstrap"),
 
@@ -33,7 +33,7 @@ audit_classes = list(
 
   # ── INCIDENCE KK ─────────────────────────────────────────────────────────────
   list(name="InferenceIncidKKCondLogitOneLik",          section="Incidence", resp="incid", kk=TRUE,  types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=TRUE,  notes="InferenceParamBootstrap directly; explicit TRUE"),
-  list(name="InferenceIncidKKCondLogitPlusGLMMOneLik",  section="Incidence", resp="incid", kk=TRUE,  types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, skip_bbt_ci=TRUE, notes="AbstractKKCondLogitPlusGLMM → InferenceParamBootstrap; supports_lik_ratio_param_bootstrap=FALSE (no simulate_under_lik_null); rand delta=0.5 pval avg 205s slow"),
+  list(name="InferenceIncidKKCondLogitPlusGLMMOneLik",  section="Incidence", resp="incid", kk=TRUE,  types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, skip_bbt_ci=TRUE, slow_methods=c("compute_bayesian_bootstrap_two_sided_pval", "compute_bayesian_bootstrap_two_sided_pval_symmetric"), notes="AbstractKKCondLogitPlusGLMM → InferenceParamBootstrap; supports_lik_ratio_param_bootstrap=FALSE (no simulate_under_lik_null); rand delta=0.5 pval avg 205s; Bayesian bootstrap pval avg 32.4s / max 68.4s at n=32 slow; symmetric Bayesian bootstrap pval avg 30.6s / max 54.9s at n=18 slow"),
   list(name="InferenceIncidKKGEE",                     section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="InferenceAsymp"),
   list(name="InferenceIncidKKNewcombeRiskDiff",         section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="KKPassThroughCompoundNoParamBootstrap"),
   list(name="InferenceIncidKKGCompRiskDiff",            section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, notes="AbstractKKMarginalIncid → ParamBootstrap; supports_lik_ratio_param_bootstrap()=FALSE (no simulate_under_lik_null)"),
@@ -75,9 +75,9 @@ audit_classes = list(
   list(name="InferenceCountRobustPoisson",          section="Count",      resp="count", kk=FALSE, types="wald",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=NA, notes="CountCompositeLikelihood; explicit FALSE"),
   list(name="InferenceCountQuasiPoisson",           section="Count",      resp="count", kk=FALSE, types="wald",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=NA, notes="CountCompositeLikelihood; explicit FALSE"),
   list(name="InferenceCountNegBin",                 section="Count",      resp="count", kk=FALSE, types="full",skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE, notes="InferenceCountLikelihood → InferenceParamBootstrap; simulate_under_lik_null: rnbinom draw"),
-  list(name="InferenceCountZeroInflatedPoisson",    section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  unsupported_methods=c("compute_lik_ratio_bartlett_approx_two_sided_pval","compute_lik_ratio_bartlett_approx_confidence_interval"), notes="ZAAbstract; use_rcpp; 'Zero-Inflated Poisson' in pboot list; in skip_ci_rand; Bartlett approx explicitly carved out (raw LR miscalibration; see zero_augmented_model_lrt_bootstrap_disabled())"),
+  list(name="InferenceCountZeroInflatedPoisson",    section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  notes="ZAAbstract; use_rcpp; 'Zero-Inflated Poisson' in pboot list; in skip_ci_rand; raw-LR bootstrap + Bartlett approx carve-out removed after 900-replicate calibration stress test found no miscalibration"),
   list(name="InferenceCountZeroInflatedNegBin",     section="Count",      resp="count", kk=FALSE, types="full",  skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  notes="ZAAbstract; use_rcpp; 'Zero-Inflated Negative Binomial' in pboot list"),
-  list(name="InferenceCountHurdlePoisson",          section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  unsupported_methods=c("compute_lik_ratio_bartlett_approx_two_sided_pval","compute_lik_ratio_bartlett_approx_confidence_interval"), notes="ZAAbstract; 'Hurdle Poisson' in pboot list; in skip_ci_rand; Bartlett approx explicitly carved out (raw LR miscalibration; see zero_augmented_model_lrt_bootstrap_disabled())"),
+  list(name="InferenceCountHurdlePoisson",          section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  notes="ZAAbstract; 'Hurdle Poisson' in pboot list; in skip_ci_rand; raw-LR bootstrap + Bartlett approx carve-out removed after 900-replicate calibration stress test found no miscalibration"),
   list(name="InferenceCountHurdleNegBin",           section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=TRUE,  skip_bbt=TRUE,  jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE, notes="InferenceCountLikelihood → InferenceParamBootstrap; simulate_under_lik_null implemented; in skip_ci_rand"),
 
   # ── SURVIVAL ─────────────────────────────────────────────────────────────────
@@ -236,13 +236,24 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
     if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "not_implemented"))
     method_cell(r, method_id, "maybe")
   }
-  # "LR-Bart-ex": exact-factor Bartlett correction, nested next to "LR-Bart-app".
-  # Not implemented for any class yet -- always NI.
+  # "LR-Bart-ex": exact-factor (closed-form analytic) Bartlett correction, nested
+  # next to "LR-Bart-app". Implemented so far only for InferenceContinKKOLSOneLik
+  # (bartlett_exact=TRUE): holding sigma2 fixed makes the package's own LR statistic
+  # algebraically identical to the classical partial F(1,n-p) statistic, an exact
+  # finite-sample pivot (verified against base R's lm()), not a Cordeiro-style
+  # tensor derivation. Every other family remains NI -- see
+  # package_metadata/likrat_correction_bartlett.md's practical-derivation-risk table.
   cell_likrat_bart_ex_p = function(r) {
-    method_cell(r, "compute_lik_ratio_bartlett_exact_two_sided_pval", "not_implemented")
+    method_id = "compute_lik_ratio_bartlett_exact_two_sided_pval"
+    if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
+    if (!isTRUE(r$bartlett_exact)) return(method_cell(r, method_id, "not_implemented"))
+    method_cell(r, method_id, "maybe")
   }
   cell_likrat_bart_ex_c = function(r) {
-    method_cell(r, "compute_lik_ratio_bartlett_exact_confidence_interval", "not_implemented")
+    method_id = "compute_lik_ratio_bartlett_exact_confidence_interval"
+    if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
+    if (!isTRUE(r$bartlett_exact)) return(method_cell(r, method_id, "not_implemented"))
+    method_cell(r, method_id, "maybe")
   }
 
   # "other": class-specific asymptotic pval methods with non-generic names, not

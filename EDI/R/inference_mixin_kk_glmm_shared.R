@@ -11,6 +11,7 @@
 #' Rcpp path or \code{private$shared_glmm_tmb()} as the glmmTMB fallback.
 #'
 #' @keywords internal
+#' @noRd
 InferenceMixinKKGLMMShared = list(
 	public = list(
 		compute_estimate = function(estimate_only = FALSE){

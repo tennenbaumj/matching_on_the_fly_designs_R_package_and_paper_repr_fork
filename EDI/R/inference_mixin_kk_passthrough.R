@@ -9,6 +9,7 @@
 #' Capability flag: \code{private$kk_passthrough == TRUE}.
 #'
 #' @keywords internal
+#' @noRd
 InferenceMixinKKPassThrough = list(
 	public = list(
 		#' @description Creates the bootstrap distribution of the estimate for the treatment effect

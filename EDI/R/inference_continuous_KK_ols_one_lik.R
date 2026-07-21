@@ -144,6 +144,52 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 		},
 		supports_likelihood_tests = function() TRUE,
 		supports_lik_ratio_param_bootstrap = function() TRUE,
+		supports_bartlett_likelihood_ratio_exact = function() TRUE,
+		#' Exact (not merely higher-order-accurate) Bartlett factor for Gaussian OLS.
+		#'
+		#' get_likelihood_test_spec()$neg_loglik() holds sigma2 fixed at the full
+		#' model's unbiased estimate (RSS_full / (n-p)) rather than re-profiling it
+		#' under each null-restricted fit. Under that convention the package's own
+		#' LR statistic, LR(delta) = (RSS_null(delta) - RSS_full) / sigma2_hat, is
+		#' algebraically identical to the classical partial F(1, n-p) statistic for
+		#' testing this single coefficient -- an exact finite-sample pivot under
+		#' the classical homoskedastic Gaussian-errors assumption (not the same
+		#' assumption as this class's HC2-robust Wald path, so this need not match
+		#' the Wald CI numerically; it exactly reproduces base R's lm() classical
+		#' t-test/F-test instead -- verified directly against lm() during
+		#' development, see test-bartlett-lr-ols-exact.R).
+		#'
+		#' Rather than approximating a correction, this returns the exact factor
+		#' c(delta) such that LR(delta)/c(delta), referred to chi-square(1), gives
+		#' precisely the same p-value as the true F(1, n-p) tail probability.
+		get_bartlett_factor_exact = function(spec, delta, full_fit, null_fit){
+			X = spec$X
+			n = nrow(X)
+			p = ncol(X)
+			df_resid = n - p
+			if (!is.finite(df_resid) || df_resid <= 0) return(NULL)
+
+			sig2 = full_fit$sigma2_hat
+			if (!is.finite(sig2) || sig2 <= 0) return(NULL)
+
+			rss_full = sum((spec$y - X %*% as.numeric(full_fit$b))^2)
+			rss_null = sum((spec$y - X %*% as.numeric(null_fit$b))^2)
+			if (!is.finite(rss_full) || !is.finite(rss_null) || rss_null < rss_full) return(NULL)
+
+			LR = (rss_null - rss_full) / sig2
+			if (!is.finite(LR) || LR < 0) return(NULL)
+			if (LR < sqrt(.Machine$double.eps)) return(1)
+
+			p_exact = stats::pf(LR, df1 = 1, df2 = df_resid, lower.tail = FALSE)
+			if (!is.finite(p_exact) || p_exact <= 0 || p_exact >= 1) return(NULL)
+
+			chisq_equiv = stats::qchisq(p_exact, df = 1, lower.tail = FALSE)
+			if (!is.finite(chisq_equiv) || chisq_equiv <= 0) return(NULL)
+
+			factor = LR / chisq_equiv
+			if (!is.finite(factor) || factor <= 0) return(NULL)
+			factor
+		},
 		simulate_under_lik_null = function(spec, delta, null_fit){
 			b_null   = as.numeric(null_fit$b)
 			sig2     = spec$full_fit$sigma2_hat

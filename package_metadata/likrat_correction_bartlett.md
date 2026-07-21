@@ -131,6 +131,97 @@ For difficult families, a bootstrap-calibrated LR test is more realistic than a
 true analytic Bartlett correction, but that would no longer be a clean generic
 “Bartlett factor” implementation.
 
+## Status Update: Approx Is Implemented, Exact Is Implemented For One Family
+
+This report originally predates any implementation work. Since it was written:
+
+- **Approx (Monte-Carlo) Bartlett is fully implemented** and auto-enabled for
+  essentially every `InferenceParamBootstrap`-derived family (`lik_ratio_bartlett_approx`
+  testing type; `supports_bartlett_likelihood_ratio_approx()` delegates to
+  `supports_lik_ratio_param_bootstrap()` by default, no per-family math needed — it
+  reuses the existing `simulate_under_lik_null()` refit machinery and Monte-Carlo
+  estimates `c(delta) = mean(simulated LR statistics)`). The only carve-out is
+  Zero-Inflated-Poisson / Hurdle-Poisson, whose raw LR statistic is independently known
+  to be miscalibrated. See `test-bartlett-lr-logit.R`,
+  `test-bartlett-lr-approx-smoke-families.R`.
+- **Exact (closed-form analytic) Bartlett is implemented for exactly one family so
+  far: `InferenceContinKKOLSOneLik`** (Gaussian OLS). This was *not* a Cordeiro-style
+  tensor derivation — because that class's `neg_loglik()` holds `sigma2` fixed at the
+  full model's unbiased estimate rather than re-profiling it under each null fit, the
+  package's own LR statistic is algebraically identical to the classical partial
+  `F(1, n-p)` statistic. The "exact factor" is the value that makes
+  `LR(delta)/factor(delta)`, referred to chi-square(1), reproduce the true `F(1,n-p)`
+  tail probability exactly — verified directly against base R's `lm()` classical
+  t-test/F-test (not merely "plausible," bit-for-bit matched to high tolerance across
+  multiple seeds and non-null `delta` values). See `test-bartlett-lr-ols-exact.R`.
+  Note this deliberately does **not** match this class's Wald CI numerically — Wald
+  uses an HC2 heteroskedasticity-robust sandwich SE, while the exact LR/F pivot requires
+  the classical homoskedastic-errors assumption; they answer different robustness
+  questions and are expected to differ.
+- **Exact is still blocked for every GLM family** (including the "Easy" tier below) —
+  see the practical-derivation-risk table immediately below, which reflects the actual
+  attempt-and-search history (Cordeiro 1983 paywalled, ar5iv/OCR extraction unreliable,
+  CRAN search found `mdscore`/`rqlm` which turned out to implement different
+  corrections — see `score_correction_cordeiro_ferrari.md` — not Bartlett-LR itself).
+
+### Practical Derivation Risk (exact path only, current as of this implementation round)
+
+This table answers a different question than the "Audit Table" further down: not
+"does closed-form Bartlett theory apply in principle" (the **Theoretical Tier** column,
+identical to the original Easy/Borderline/Difficult audit), but "can I *actually*
+safely reproduce and ship the exact coefficients *today*, given the sources I could
+verify."
+
+| Response Type | Path | Theoretical Tier | Practical Derivation Risk Today |
+|---|---|---|---|
+| Incidence | `InferenceIncidLogRegr` | Easy | Blocked — attempted; tensor coefficients unverifiable from sources I could access |
+| Incidence | `InferenceIncidProbitRegr` | Easy | Blocked — same issue, non-canonical link adds another derivative layer |
+| Incidence | `InferenceIncidModifiedPoisson` | Easy | Blocked |
+| Incidence | `InferenceIncidKKModifiedPoisson` | Easy | Blocked |
+| Incidence | `InferenceIncidLogBinomial` | Easy | Blocked |
+| Incidence | `InferenceIncidBinomialIdentityRiskDiff` | Easy | Blocked |
+| Incidence | `InferenceIncidKKClogitOneLik` | Borderline | Blocked (compounds with bespoke combined-likelihood risk) |
+| Incidence | `InferenceIncidKKGLMM` | Difficult | Not a realistic target regardless of source access |
+| Incidence | `InferenceIncidKKClogitPlusGLMMOneLik` | Difficult | Not a realistic target |
+| Count | `InferenceCountPoisson` | Easy | Blocked |
+| Count | `InferenceCountRobustPoisson` | Easy | Blocked |
+| Count | `InferenceCountQuasiPoisson` | Easy | Blocked |
+| Count | `InferenceCountNegBin` | Borderline | Blocked (dispersion parameter adds another layer) |
+| Count | `InferenceCountZeroInflatedPoisson` | Difficult | Not a realistic target (also carved out of approx — raw LR miscalibrated) |
+| Count | `InferenceCountHurdlePoisson` | Difficult | Not a realistic target (same carve-out) |
+| Count | `InferenceCountZeroInflatedNegBin` | Difficult | Not a realistic target |
+| Count | `InferenceCountHurdleNegBin` | Difficult | Not a realistic target |
+| Count | `InferenceCountKKGLMM` | Difficult | Not a realistic target |
+| Count | `InferenceCountKKHurdlePoissonOneLik` | Difficult | Not a realistic target |
+| Count | `InferenceCountKKCPoissonOneLik` | Difficult | Not a realistic target |
+| Continuous | `InferenceContinKKOLSOneLik` | Easy | **✅ Implemented** — exact finite-sample result (F/t-test identity), verified against `lm()`, not a tensor derivation at all |
+| Continuous | `InferenceContinKKGLMM` | Borderline | Blocked |
+| Ordinal | `InferenceOrdinalPropOddsRegr` | Borderline | Blocked (threshold parameters) |
+| Ordinal | `InferenceOrdinalOrderedProbitRegr` | Borderline | Blocked |
+| Ordinal | `InferenceOrdinalCauchitRegr` | Borderline | Blocked |
+| Ordinal | `InferenceOrdinalCloglogRegr` | Borderline | Blocked |
+| Ordinal | `InferenceOrdinalKKGLMM` | Difficult | Not a realistic target |
+| Proportion | `InferencePropBetaRegr` | Borderline | Blocked, though promising — CRAN's `betareg`-adjacent literature (Cordeiro & Ferrari beta-regression Bartlett corrections, e.g. arXiv 1501.07551) is unpaywalled; worth checking first if this family becomes a priority |
+| Proportion | `InferencePropZeroOneInflatedBetaRegr` | Difficult | Not a realistic target |
+| Proportion | `InferencePropKKGLMM` | Difficult | Not a realistic target |
+| Survival | `InferenceSurvivalCoxPHRegr` | Borderline | Blocked (partial likelihood) |
+| Survival | `InferenceSurvivalStratCoxPHRegr` | Borderline | Blocked |
+| Survival | `InferenceSurvivalKKLWACoxOneLik` | Borderline | Blocked |
+| Survival | `InferenceSurvivalKKStratCoxOneLik` | Borderline | Blocked |
+| Survival | `InferenceSurvivalWeibullRegr` | Borderline | Blocked |
+| Survival | `InferenceSurvivalDepCensTransformRegr` | Difficult | Not a realistic target |
+| Survival | `InferenceSurvivalKKWeibullFrailtyOneLik` | Difficult | Not a realistic target |
+| Survival | `InferenceSurvivalKKClaytonCopulaOneLik` | Difficult | Not a realistic target |
+
+**Key takeaway**: "Blocked" applies to nearly every GLM path regardless of theoretical
+tier — the theoretical tier says whether Cordeiro-style theory *exists*, not whether it
+can be safely reproduced without either a non-paywalled source or an existing verified
+implementation to check against. `InferenceContinKKOLSOneLik` was the one exception,
+and *not* because Gaussian is "the easiest GLM" in the tensor-algebra sense — it's
+because holding `sigma2` fixed turns the problem into a textbook F/t-test identity with
+no tensor algebra involved at all, a structurally different (and easier) situation than
+every other row in this table.
+
 ## Audit Table
 
 ### Incidence
@@ -167,7 +258,7 @@ true analytic Bartlett correction, but that would no longer be a clean generic
 
 | Concrete likelihood-based inference path | Engine / fitter | Audit result | Why |
 |---|---|---|---|
-| `InferenceContinKKOLSOneLik` | `fast_ols_with_var_cpp` | **Easy** | Gaussian likelihood is the cleanest case. |
+| `InferenceContinKKOLSOneLik` | `fast_ols_with_var_cpp` | **Easy — ✅ implemented** | Gaussian likelihood is the cleanest case; turned out to be an exact F/t-test identity (see Status Update above), not a Cordeiro tensor derivation. |
 | `InferenceContinKKGLMM` | `fast_gaussian_lmm_cpp` | **Borderline** | Smooth and Gaussian, but variance components make the LR correction more bespoke than OLS. |
 
 ### Ordinal

@@ -117,83 +117,17 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 			}
 			null_fit = eval_obs$null_fit
 
-			actual_cores = private$effective_parallel_cores("param_bootstrap", self$num_cores)
-			if (!is.null(private$seed)) {
-				had_seed = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-				if (had_seed) old_seed = get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-				on.exit(
-					if (had_seed) assign(".Random.seed", old_seed, envir = .GlobalEnv) else rm(".Random.seed", envir = .GlobalEnv),
-					add = TRUE
-				)
-				set.seed(private$seed)
-			}
-			replicate_seeds = sample.int(.Machine$integer.max, as.integer(B), replace = TRUE)
-
-			use_worker_path = isTRUE(private$use_reusable_param_bootstrap_worker())
-			deterministic_mode = isTRUE(private$use_deterministic_param_bootstrap())
-			run_one_lr = function(b){
-				if (isTRUE(deterministic_mode)) {
-					private$with_param_bootstrap_thread_budget(1L, {
-						private$compute_param_bootstrap_lr_deterministic(
-							spec = spec,
-							delta = delta,
-							null_fit = null_fit,
-							seed = replicate_seeds[[b]],
-							max_attempts_per_replicate = max_attempts_per_replicate
-						)
-					})
-				} else {
-					private$compute_param_bootstrap_lr_impl(
-						spec = spec,
-						delta = delta,
-						null_fit = null_fit,
-						seed = replicate_seeds[[b]],
-						max_attempts_per_replicate = max_attempts_per_replicate
-					)
-				}
-			}
-
-			run_worker_chunk = function(idxs){
-				worker_state = private$create_param_bootstrap_worker_state(spec, delta, null_fit)
-				if (is.null(worker_state)) {
-					return(lapply(idxs, run_one_lr))
-				}
-				lapply(idxs, function(idx){
-					private$compute_param_bootstrap_worker_lrt(
-						worker_state = worker_state,
-						delta = delta,
-						seed = replicate_seeds[[idx]],
-						max_attempts_per_replicate = max_attempts_per_replicate
-					)
-				})
-			}
-
-			results = if (isTRUE(deterministic_mode) && actual_cores <= 1L) {
-				lapply(seq_len(B), run_one_lr)
-			} else if (isTRUE(deterministic_mode) && actual_cores > 1L) {
-				unlist(private$par_lapply(
-					as.list(seq_len(B)),
-					function(idx) list(run_one_lr(as.integer(idx)[1L])),
-					n_cores = actual_cores,
-					budget = 1L,
-					show_progress = show_progress
-				), recursive = FALSE, use.names = FALSE)
-			} else if (use_worker_path && actual_cores <= 1L) {
-				run_worker_chunk(seq_len(B))
-			} else if (!use_worker_path && actual_cores <= 1L) {
-				lapply(seq_len(B), run_one_lr)
-			} else {
-				chunk_n = max(1L, min(as.integer(actual_cores), as.integer(B)))
-				chunk_id = ceiling(seq_len(B) / ceiling(B / chunk_n))
-				chunks = split(seq_len(B), chunk_id)
-				unlist(private$par_lapply(
-					chunks,
-					if (use_worker_path) run_worker_chunk else function(idxs) lapply(idxs, run_one_lr),
-					n_cores = actual_cores,
-					budget = 1L,
-					show_progress = show_progress
-				), recursive = FALSE, use.names = FALSE)
-			}
+			run = private$run_param_bootstrap_replicates(
+				spec = spec,
+				delta = delta,
+				null_fit = null_fit,
+				B = as.integer(B),
+				max_attempts_per_replicate = max_attempts_per_replicate,
+				show_progress = show_progress
+			)
+			results = run$results
+			use_worker_path = run$used_worker_path
+			deterministic_mode = run$used_deterministic_mode
 
 			lr_boots = vapply(results, function(res) as.numeric(res$lr %||% NA_real_)[1L], numeric(1))
 			extreme_lr = is.finite(lr_boots) & private$param_bootstrap_lr_extreme(lr_boots)
@@ -404,13 +338,141 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 			ci
 		}
 	),
-	private = list(
+	private = c(InferenceMixinBartlettApprox$private, list(
 		param_bootstrap_extreme_lr_threshold = 1e6,
 		param_bootstrap_lr_extreme = function(lr, max_abs = private$param_bootstrap_extreme_lr_threshold){
 			lr = as.numeric(lr)
 			max_abs = as.numeric(max_abs)[1L]
 			if (!is.finite(max_abs) || max_abs <= 0) max_abs = 1e6
 			is.finite(lr) & abs(lr) > max_abs
+		},
+		#' Shared replicate-running core for anything built on B simulated null
+		#' datasets via simulate_under_lik_null() (currently:
+		#' compute_lik_ratio_bootstrap_two_sided_pval() and, via
+		#' InferenceMixinBartlettApprox, get_bartlett_factor_approx()). Handles
+		#' seeding, multi-core parallelism, the reusable-worker-state optimization,
+		#' and deterministic-mode thread budgeting uniformly, so every caller gets
+		#' the same performance characteristics for free. Returns a list with
+		#' $results (one per-replicate result object per B, each carrying at least
+		#' $lr), $used_worker_path, and $used_deterministic_mode.
+		#'
+		#' Callers are responsible for setting private$active_resampling_operation
+		#' themselves (not done here, to avoid a nested caller clobbering an
+		#' already-active outer flag via a premature on.exit reset).
+		run_param_bootstrap_replicates = function(spec, delta, null_fit, B, max_attempts_per_replicate, show_progress = FALSE, allow_worker_reuse = TRUE){
+			B = as.integer(B)
+			actual_cores = private$effective_parallel_cores("param_bootstrap", self$num_cores)
+			if (!is.null(private$seed)) {
+				had_seed = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+				if (had_seed) old_seed = get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+				on.exit(
+					if (had_seed) assign(".Random.seed", old_seed, envir = .GlobalEnv) else rm(".Random.seed", envir = .GlobalEnv),
+					add = TRUE
+				)
+				set.seed(private$seed)
+			}
+			replicate_seeds = sample.int(.Machine$integer.max, B, replace = TRUE)
+
+			# The reusable-worker path amortizes a one-time R6-duplication cost over
+			# many replicates at a *single* delta. Callers that re-run this many times
+			# across many different delta values (e.g. Bartlett-approx CI root-finding)
+			# pay that duplication cost fresh at every delta anyway, and its per-replicate
+			# cost has also been observed empirically to be slower than the plain path
+			# for at least one family (extra cache-clearing/reconstruction work per draw)
+			# -- so such callers should pass allow_worker_reuse = FALSE.
+			use_worker_path = isTRUE(allow_worker_reuse) && isTRUE(private$use_reusable_param_bootstrap_worker())
+			deterministic_mode = isTRUE(private$use_deterministic_param_bootstrap())
+			# Built once (if at all) and reused across all B replicates via closure --
+			# including across par_lapply forks below, which inherit it for free via
+			# copy-on-write, so the one-time self$duplicate() cost is paid at most
+			# once per call to this function, never once per replicate. Respects
+			# allow_worker_reuse for the same reason the non-deterministic worker
+			# path does (see comment above): callers like Bartlett-approx that pay
+			# this setup cost fresh at many different delta values, and for whom
+			# per-replicate worker overhead was empirically not worth it, should
+			# still be able to opt out.
+			deterministic_worker_state = if (isTRUE(deterministic_mode) && isTRUE(allow_worker_reuse)) {
+				tryCatch(
+					private$create_param_bootstrap_worker_state(spec, delta, null_fit),
+					error = function(e) NULL
+				)
+			} else {
+				NULL
+			}
+			run_one_lr = function(b){
+				if (isTRUE(deterministic_mode)) {
+					private$with_param_bootstrap_thread_budget(1L, {
+						if (!is.null(deterministic_worker_state)) {
+							private$compute_param_bootstrap_worker_lrt(
+								worker_state = deterministic_worker_state,
+								delta = delta,
+								seed = replicate_seeds[[b]],
+								max_attempts_per_replicate = max_attempts_per_replicate
+							)
+						} else {
+							private$compute_param_bootstrap_lr_impl(
+								spec = spec,
+								delta = delta,
+								null_fit = null_fit,
+								seed = replicate_seeds[[b]],
+								max_attempts_per_replicate = max_attempts_per_replicate
+							)
+						}
+					})
+				} else {
+					private$compute_param_bootstrap_lr_impl(
+						spec = spec,
+						delta = delta,
+						null_fit = null_fit,
+						seed = replicate_seeds[[b]],
+						max_attempts_per_replicate = max_attempts_per_replicate
+					)
+				}
+			}
+
+			run_worker_chunk = function(idxs){
+				worker_state = private$create_param_bootstrap_worker_state(spec, delta, null_fit)
+				if (is.null(worker_state)) {
+					return(lapply(idxs, run_one_lr))
+				}
+				lapply(idxs, function(idx){
+					private$compute_param_bootstrap_worker_lrt(
+						worker_state = worker_state,
+						delta = delta,
+						seed = replicate_seeds[[idx]],
+						max_attempts_per_replicate = max_attempts_per_replicate
+					)
+				})
+			}
+
+			results = if (isTRUE(deterministic_mode) && actual_cores <= 1L) {
+				lapply(seq_len(B), run_one_lr)
+			} else if (isTRUE(deterministic_mode) && actual_cores > 1L) {
+				unlist(private$par_lapply(
+					as.list(seq_len(B)),
+					function(idx) list(run_one_lr(as.integer(idx)[1L])),
+					n_cores = actual_cores,
+					budget = 1L,
+					show_progress = show_progress
+				), recursive = FALSE, use.names = FALSE)
+			} else if (use_worker_path && actual_cores <= 1L) {
+				run_worker_chunk(seq_len(B))
+			} else if (!use_worker_path && actual_cores <= 1L) {
+				lapply(seq_len(B), run_one_lr)
+			} else {
+				chunk_n = max(1L, min(as.integer(actual_cores), as.integer(B)))
+				chunk_id = ceiling(seq_len(B) / ceiling(B / chunk_n))
+				chunks = split(seq_len(B), chunk_id)
+				unlist(private$par_lapply(
+					chunks,
+					if (use_worker_path) run_worker_chunk else function(idxs) lapply(idxs, run_one_lr),
+					n_cores = actual_cores,
+					budget = 1L,
+					show_progress = show_progress
+				), recursive = FALSE, use.names = FALSE)
+			}
+
+			list(results = results, used_worker_path = use_worker_path, used_deterministic_mode = deterministic_mode)
 		},
 		simulate_param_boot_bernoulli_y = function(mu){
 			mu = as.numeric(mu)
@@ -591,45 +653,6 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 				}
 				last_result
 			})
-		},
-		compute_param_bootstrap_lr_deterministic = function(spec, delta, null_fit, seed = NULL, max_attempts_per_replicate = 1L){
-			worker_state = private$create_param_bootstrap_worker_state(spec, delta, null_fit)
-			if (!is.null(worker_state)) {
-				return(private$compute_param_bootstrap_worker_lrt(
-					worker_state = worker_state,
-					delta = delta,
-					seed = seed,
-					max_attempts_per_replicate = max_attempts_per_replicate
-				))
-			}
-			worker = self$duplicate(verbose = FALSE, make_fork_cluster = FALSE)
-			worker$num_cores = 1L
-			worker_priv = worker$.__enclos_env__$private
-			worker_priv$cached_values = list()
-			worker_priv$clear_likelihood_null_warm_cache()
-			worker_priv$clear_fit_warm_start()
-			worker_spec = worker_priv$get_likelihood_test_spec()
-			if (is.null(worker_spec)) {
-				return(private$param_boot_failure_result("simulated_data_failure"))
-			}
-			worker_eval = worker_priv$get_memoized_likelihood_test_eval(
-				delta = delta,
-				testing_type = "lik_ratio",
-				spec = worker_spec,
-				include_full_negloglik = TRUE,
-				include_null_negloglik = TRUE
-			)
-			if (isTRUE(worker_eval$invalid) || is.null(worker_eval$null_fit)) {
-				return(private$param_boot_failure_result("null_refit_failure"))
-			}
-			worker_priv$compute_param_bootstrap_lr_impl(
-				spec = worker_spec,
-				delta = delta,
-				null_fit = worker_eval$null_fit,
-				seed = seed,
-				max_attempts_per_replicate = max_attempts_per_replicate,
-				worker_priv = worker_priv
-			)
 		},
 		load_param_bootstrap_draw_into_worker = function(worker_state, sim_data){
 			if (is.null(worker_state) || is.null(worker_state$worker_priv) || is.null(worker_state$state_env)) {
@@ -818,75 +841,6 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 		supports_lik_ratio_param_bootstrap_confidence_interval = function(){
 			isTRUE(private$supports_lik_ratio_param_bootstrap())
 		},
-		#' Approximate (Monte-Carlo) Bartlett support automatically follows
-		#' parametric-bootstrap LR support: any family that already implements
-		#' simulate_under_lik_null() gets the shared Monte-Carlo factor below for
-		#' free. Families that need to withhold Bartlett support for a reason that
-		#' doesn't affect parametric-bootstrap LR itself (e.g. a known raw-LR
-		#' miscalibration) should override this method directly.
-		supports_bartlett_likelihood_ratio_approx = function(){
-			isTRUE(private$supports_lik_ratio_param_bootstrap())
-		},
-		bartlett_factor_mc_min_usable_fraction = 0.2,
-		bartlett_factor_mc_max_attempts_per_replicate = 2L,
-		#' Generic Monte-Carlo Bartlett correction factor, shared by every
-		#' InferenceParamBootstrap family that already implements
-		#' simulate_under_lik_null() for parametric-bootstrap LR calibration.
-		#'
-		#' Simulates B datasets under H0: (tested parameter) = delta using the same
-		#' simulate_under_lik_null()/refit machinery as
-		#' compute_lik_ratio_bootstrap_two_sided_pval(), and sets
-		#'   c(delta) = mean(simulated LR statistics)
-		#' which is a Monte-Carlo estimate of E[LR | H0], the quantity a classical
-		#' analytic Bartlett correction targets exactly (E[LR]/df = 1 under a
-		#' chi-square(df) reference). This is deliberately model-agnostic: any
-		#' family wanting a faster closed-form factor instead can override
-		#' get_bartlett_factor_exact()/supports_bartlett_likelihood_ratio_exact()
-		#' (a subclass override of this method wins too, if preferred).
-		get_bartlett_factor_approx = function(spec, delta, full_fit, null_fit, B = 99){
-			if (!isTRUE(private$supports_lik_ratio_param_bootstrap())) return(NULL)
-			if (is.null(null_fit)) return(NULL)
-
-			B = as.integer(B)
-			# Scales with B rather than a fixed count, so small-B calls (e.g. quick
-			# smoke tests) aren't structurally impossible to satisfy.
-			min_usable = max(2L, as.integer(ceiling(private$bartlett_factor_mc_min_usable_fraction * B)))
-			max_attempts = as.integer(private$bartlett_factor_mc_max_attempts_per_replicate)
-
-			if (!is.null(private$seed)) {
-				had_seed = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-				if (had_seed) old_seed = get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-				on.exit(
-					if (had_seed) assign(".Random.seed", old_seed, envir = .GlobalEnv) else rm(".Random.seed", envir = .GlobalEnv),
-					add = TRUE
-				)
-				set.seed(private$seed)
-			}
-			replicate_seeds = sample.int(.Machine$integer.max, B, replace = TRUE)
-
-			lr_boots = vapply(seq_len(B), function(b){
-				res = tryCatch(
-					private$compute_param_bootstrap_lr_impl(
-						spec = spec,
-						delta = delta,
-						null_fit = null_fit,
-						seed = replicate_seeds[[b]],
-						max_attempts_per_replicate = max_attempts
-					),
-					error = function(e) NULL
-				)
-				as.numeric(res$lr %||% NA_real_)[1L]
-			}, numeric(1))
-
-			extreme = is.finite(lr_boots) & private$param_bootstrap_lr_extreme(lr_boots)
-			lr_boots[extreme] = NA_real_
-			finite_lr = lr_boots[is.finite(lr_boots)]
-			if (length(finite_lr) < min_usable) return(NULL)
-
-			factor = mean(finite_lr)
-			if (!is.finite(factor) || factor <= 0) return(NULL)
-			factor
-		},
 		#' Simulate a bootstrap dataset under the fitted null likelihood and return
 		#' a minimal spec list for refitting.
 		#'
@@ -898,5 +852,5 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 		simulate_under_lik_null = function(spec, delta, null_fit){
 			NULL
 		}
-	)
+	))
 )

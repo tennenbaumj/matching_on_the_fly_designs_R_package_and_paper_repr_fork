@@ -234,7 +234,9 @@ List fast_zinb_cpp(SEXP X, SEXP Xzi, SEXP y,
     }
 
     Eigen::MatrixXd hess = obj.hessian(fit.params);
-    Rcpp::List out = make_uniform_likelihood_fit_result(fit.params, fit.value, fit.converged, -likelihood_score(obj, fit.params), hess, false);
+    // likelihood_score(obj, params) already negates the raw grad the L-BFGS objective fills
+    // (gradient of neg_loglik) to return the true (+loglik) score -- do not negate again here.
+    Rcpp::List out = make_uniform_likelihood_fit_result(fit.params, fit.value, fit.converged, likelihood_score(obj, fit.params), hess, false);
     out["coefficients"] = List::create(
         Named("cond") = fit.params.head(p_cond),
         Named("zi") = fit.params.segment(p_cond, p_zi)

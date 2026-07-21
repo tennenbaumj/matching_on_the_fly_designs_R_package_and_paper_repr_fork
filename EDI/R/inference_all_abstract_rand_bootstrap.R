@@ -709,7 +709,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 		# batch size is >= B (which would be no batching at all).
 		compute_two_sided_brt_pval_with_sequential_mc = function(t, B, delta, transform_arg, y0_full, draws, zero_one_logit_clamp){
 			mc_ctrl = private$brt_mc_control
-			if (is.null(mc_ctrl) || !isTRUE(mc_ctrl$mc_enable) || !is.finite(mc_ctrl$mc_stop_threshold)) return(NULL)
+			if (!private$sequential_mc_control_enabled(mc_ctrl)) return(NULL)
 			if (length(draws) == 0L || is.null(draws[[1L]]$w_b)) return(NULL)
 			B_int = as.integer(B)
 			batch_size = min(B_int, as.integer(mc_ctrl$mc_batch_size))
@@ -735,8 +735,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				if (target >= B_int || !is.finite(p_hat)) return(p_hat)
 				n_valid = sum(is.finite(t0s))
 				if (n_valid >= min_draws_mc) {
-					band = private$compute_two_sided_randomization_pval_band(t0s, t, conf_level)
-					if (is.finite(band[1]) && is.finite(band[2]) && (band[2] < threshold || band[1] > threshold)) return(p_hat)
+					if (private$sequential_mc_band_excludes_threshold(t0s, t, threshold, conf_level)) return(p_hat)
 				}
 			}
 		},

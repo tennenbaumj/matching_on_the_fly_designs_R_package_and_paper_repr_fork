@@ -14,6 +14,7 @@
 #' rejected and treated as non-estimable.
 #'
 #' @keywords internal
+#' @noRd
 InferenceMixinKKGEEShared = list(
 	public = list(
 		compute_estimate = function(estimate_only = FALSE){
