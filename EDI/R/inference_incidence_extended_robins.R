@@ -3,6 +3,9 @@
 #' Unadjusted blocked-design incidence inference using the simple mean-difference
 #' point estimate with a block-stratified standard error.
 #'
+#' Legacy inference class. This class is retained for backwards compatibility
+#' and is not comprehensively tested by the package comprehensive-test harness.
+#'
 #' @examples
 #' \dontrun{
 #' \donttest{

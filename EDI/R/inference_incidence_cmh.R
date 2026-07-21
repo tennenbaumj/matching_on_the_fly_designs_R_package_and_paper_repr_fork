@@ -3,6 +3,9 @@
 #' Unadjusted blocked-design incidence inference using the simple mean-difference
 #' point estimate with a randomization-based standard error.
 #'
+#' Legacy inference class. This class is retained for backwards compatibility
+#' and is not comprehensively tested by the package comprehensive-test harness.
+#'
 #' @details
 #' Treatment assignments are encoded as \eqn{w_i \in \{-1, +1\}}.  For a balanced
 #' design the treatment-effect estimator is \eqn{\hat\tau = (2/n)\,\mathbf{y}'\mathbf{w}},

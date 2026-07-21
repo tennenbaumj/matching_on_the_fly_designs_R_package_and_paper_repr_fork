@@ -334,9 +334,6 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				private$assert_design_supports_resampling("Bootstrap randomization inference")
 				assertNumeric(delta); assertCount(B, positive = TRUE); assertLogical(na.rm)
 				assertChoice(tolower(type), c("percentile", "studentized", "symmetric-percentile-t", "smoothed"))
-				if (private$des_obj_priv_int$response_type == "incidence" && is.null(private$custom_randomization_statistic_function) && is.null(private[["compiled_cpp_stat_fn"]])) {
-					stop("Bootstrap randomization tests are not supported for incidence.")
-				}
 			}
 			if (identical(transform_responses, "none")) {
 				transform_responses = switch(
