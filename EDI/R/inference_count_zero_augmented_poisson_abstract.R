@@ -1078,6 +1078,15 @@ InferenceCountZeroAugmentedPoissonAbstract = R6::R6Class("InferenceCountZeroAugm
 		supports_lik_ratio_param_bootstrap_confidence_interval = function(){
 			FALSE
 		},
+		# Zero-Inflated Poisson and Hurdle Poisson have a known raw-LR miscalibration
+		# (see zero_augmented_model_lrt_bootstrap_disabled(), which already disables
+		# compute_lik_ratio_bootstrap_two_sided_pval() for them). Any Bartlett
+		# correction is built on top of that same raw LR statistic, so it inherits
+		# the miscalibration and must stay disabled here too -- unlike
+		# Zero-Inflated Negative Binomial, whose raw LR is not disabled.
+		supports_bartlett_likelihood_ratio_approx = function(){
+			isTRUE(private$supports_lik_ratio_param_bootstrap()) && !isTRUE(private$zero_augmented_model_lrt_bootstrap_disabled())
+		},
 		simulate_under_lik_null = function(spec, delta, null_fit){
 			is_zinb   = identical(private$za_description(), "Zero-Inflated Negative Binomial")
 			is_hurdle = identical(private$za_description(), "Hurdle Poisson")

@@ -12,6 +12,9 @@ CMH Blocked Incidence Inference
 Unadjusted blocked-design incidence inference using the simple mean-difference
 point estimate with a randomization-based standard error.
 
+Legacy inference class. This class is retained for backwards compatibility
+and is not comprehensively tested by the package comprehensive-test harness.
+
 
 Treatment assignments are encoded as \eqn{w_i \in \{-1, +1\}}.  For a balanced
 design the treatment-effect estimator is \eqn{\hat\tau = (2/n)\,\mathbf{y}'\mathbf{w}},
@@ -100,6 +103,12 @@ inf$compute_estimate()
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_approx_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_approx_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_approx_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_approx_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_approx_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_approx_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_exact_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_exact_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_exact_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_exact_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_exact_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_exact_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>

@@ -103,7 +103,7 @@ inference_asymp_lik_std_mod_cache_private = list(
 				fit
 			}
 		},
-		compute_likelihood_test_two_sided_pval = function(delta, testing_type){
+		compute_likelihood_test_two_sided_pval = function(delta, testing_type, bartlett_B = NULL){
 			spec = private$get_likelihood_test_spec()
 			if (is.null(spec)) {
 				stop(class(self)[1], " does not expose a likelihood-test specification.", call. = FALSE)
@@ -112,7 +112,8 @@ inference_asymp_lik_std_mod_cache_private = list(
 				delta = delta,
 				testing_type = testing_type,
 				spec = spec,
-				warm_cache_key = paste0("likelihood_test:", testing_type)
+				warm_cache_key = paste0("likelihood_test:", testing_type),
+				bartlett_B = bartlett_B
 			)
 			if (!is.finite(p_value) && !isTRUE(self$is_nonestimable("estimate"))) {
 				private$cache_nonestimable_se(paste0(testing_type, "_test_unavailable"))

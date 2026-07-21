@@ -105,7 +105,7 @@ canonicalize_test_family_filter = function(value){
 		value
 	)
 }
-ALL_TEST_FAMILY_FILTERS = c("estimate", "exact", "asymp", "wald", "score", "lik_ratio", "gradient", "bootstrap", "bayesian_bootstrap", "parametric_bootstrap", "jackknife", "rand", "rand_custom", "rand_bootstrap")
+ALL_TEST_FAMILY_FILTERS = c("estimate", "exact", "asymp", "wald", "score", "lik_ratio", "gradient", "bootstrap", "bayesian_bootstrap", "parametric_bootstrap", "bartlett", "jackknife", "rand", "rand_custom", "rand_bootstrap")
 TEST_FAMILY_FILTER = if (length(args) >= 9 && args[9] != "NA") canonicalize_test_family_filter(args[9]) else NA_character_
 if (!is.na(TEST_FAMILY_FILTER) && !(TEST_FAMILY_FILTER %in% ALL_TEST_FAMILY_FILTERS)) {
 	stop(
@@ -626,6 +626,15 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 			ci_support_fn = seq_des_inf$.__enclos_env__$private$supports_lik_ratio_param_bootstrap_confidence_interval
 			if (is.function(ci_support_fn)) ci_support_fn() else TRUE
 		}, error = function(e) TRUE))
+	# Bartlett-corrected LR ("best available": exact factor if a family implements
+	# one, otherwise the generic InferenceParamBootstrap Monte-Carlo factor). The
+	# approx factor reuses the same simulate_under_lik_null()/refit machinery as
+	# parametric-bootstrap LR, so it carries the same cost profile and exclusions.
+	supports_bartlett =
+		!is_any_inference_class(c("InferenceCountKKGLMM")) &&
+		(isTRUE(tryCatch(seq_des_inf$.__enclos_env__$private$supports_bartlett_likelihood_ratio_exact(), error = function(e) FALSE)) ||
+		 isTRUE(tryCatch(seq_des_inf$.__enclos_env__$private$supports_bartlett_likelihood_ratio_approx(), error = function(e) FALSE)))
+	supports_bartlett_ci = run_parametric_bootstrap_ci && supports_bartlett
 	skip_rand      = is(seq_des_inf, "InferenceIncidenceExactZhang") || is(seq_des_inf, "InferenceIncidExactZhangAbstract") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalPairedSignTest") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalCloglogRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr")
 	skip_mle_pval  = FALSE
 	skip_rand_pval = is(seq_des_inf, "InferenceContinMultGLS") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceSurvivalKKClaytonCopulaOneLik")
@@ -1165,6 +1174,12 @@ call_direct_asymp = function(method_name, testing_type, ...){
 				max_root_iterations = param_boot_ci_max_root_iterations
 			)
 		)
+	}
+	if (should_run_test_family("bartlett") && !skip_slow && supports_bartlett){
+		safe_call("compute_lik_ratio_bartlett_two_sided_pval", seq_des_inf$compute_lik_ratio_bartlett_two_sided_pval(B = r))
+	}
+	if (should_run_test_family("bartlett") && !skip_slow && supports_bartlett_ci && !skip_pboot_ci_slow){
+		safe_call("compute_lik_ratio_bartlett_confidence_interval", seq_des_inf$compute_lik_ratio_bartlett_confidence_interval(B = r))
 	}
 	if (should_run_test_family("jackknife") && !skip_slow && supports_jackknife && !skip_jack_slow){
 		if (response_type != "count") {

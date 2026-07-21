@@ -237,7 +237,7 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 		},
 		# Copied from InferenceAsympLikStdModCache to avoid multiple inheritance issues
 		# while still using the shared infrastructure.
-		compute_likelihood_test_two_sided_pval = function(delta, testing_type){
+		compute_likelihood_test_two_sided_pval = function(delta, testing_type, bartlett_B = NULL){
 			spec = private$get_likelihood_test_spec()
 			if (is.null(spec)) {
 				if (!isTRUE(self$is_nonestimable())) {
@@ -249,7 +249,8 @@ InferenceContinKKOLSOneLik = R6::R6Class("InferenceContinKKOLSOneLik",
 				delta = delta,
 				testing_type = testing_type,
 				spec = spec,
-				warm_cache_key = paste0("likelihood_test:", testing_type)
+				warm_cache_key = paste0("likelihood_test:", testing_type),
+				bartlett_B = bartlett_B
 			)
 			if (!is.finite(p_value) && !isTRUE(self$is_nonestimable("estimate"))) {
 				private$cache_nonestimable_se(paste0(testing_type, "_test_unavailable"))

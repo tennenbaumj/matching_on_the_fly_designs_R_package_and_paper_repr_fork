@@ -96,6 +96,12 @@ that are intentionally unsupported are kept off this branch entirely.
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_asymp_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_asymp_two_sided_pval'><code>::InferenceAsympLik$compute_asymp_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_two_sided_pval'><code>::InferenceAsympLik$compute_gradient_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_approx_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_approx_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_approx_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_approx_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_approx_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_approx_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_exact_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_exact_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_exact_confidence_interval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_exact_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_exact_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_exact_two_sided_pval()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_bartlett_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_bartlett_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_bartlett_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_confidence_interval'><code>::InferenceAsympLik$compute_lik_ratio_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_lik_ratio_two_sided_pval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_lik_ratio_two_sided_pval'><code>::InferenceAsympLik$compute_lik_ratio_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_score_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_score_confidence_interval'><code>::InferenceAsympLik$compute_score_confidence_interval()</code></a></span></li>
@@ -240,6 +246,26 @@ finite outer bracket. Default \code{8L}.}
 }
 \subsection{Returns}{
 Named two-element numeric vector with the confidence-interval bounds.
+Approximate (Monte-Carlo) Bartlett support automatically follows
+parametric-bootstrap LR support: any family that already implements
+simulate_under_lik_null() gets the shared Monte-Carlo factor below for
+free. Families that need to withhold Bartlett support for a reason that
+doesn't affect parametric-bootstrap LR itself (e.g. a known raw-LR
+miscalibration) should override this method directly.
+Generic Monte-Carlo Bartlett correction factor, shared by every
+InferenceParamBootstrap family that already implements
+simulate_under_lik_null() for parametric-bootstrap LR calibration.
+
+Simulates B datasets under H0: (tested parameter) = delta using the same
+simulate_under_lik_null()/refit machinery as
+compute_lik_ratio_bootstrap_two_sided_pval(), and sets
+  c(delta) = mean(simulated LR statistics)
+which is a Monte-Carlo estimate of E[LR | H0], the quantity a classical
+analytic Bartlett correction targets exactly (E[LR]/df = 1 under a
+chi-square(df) reference). This is deliberately model-agnostic: any
+family wanting a faster closed-form factor instead can override
+get_bartlett_factor_exact()/supports_bartlett_likelihood_ratio_exact()
+(a subclass override of this method wins too, if preferred).
 Simulate a bootstrap dataset under the fitted null likelihood and return
 a minimal spec list for refitting.
 

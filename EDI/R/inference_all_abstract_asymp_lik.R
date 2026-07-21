@@ -29,7 +29,9 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				wald = private$compute_wald_confidence_interval_impl(alpha),
 				score = private$compute_score_confidence_interval_impl(alpha),
 				gradient = private$compute_gradient_confidence_interval_impl(alpha),
-				lik_ratio = private$compute_lik_ratio_confidence_interval_impl(alpha)
+				lik_ratio = private$compute_lik_ratio_confidence_interval_impl(alpha),
+				lik_ratio_bartlett_approx = private$compute_lik_ratio_bartlett_approx_confidence_interval_impl(alpha),
+				lik_ratio_bartlett_exact = private$compute_lik_ratio_bartlett_exact_confidence_interval_impl(alpha)
 			)
 		},
 		#' @description Computes an asymptotic two-sided p-value using the configured test.
@@ -46,17 +48,19 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				wald = private$compute_wald_two_sided_pval_impl(delta),
 				score = private$compute_score_two_sided_pval_impl(delta),
 				gradient = private$compute_gradient_two_sided_pval_impl(delta),
-				lik_ratio = private$compute_lik_ratio_two_sided_pval_impl(delta)
+				lik_ratio = private$compute_lik_ratio_two_sided_pval_impl(delta),
+				lik_ratio_bartlett_approx = private$compute_lik_ratio_bartlett_approx_two_sided_pval_impl(delta),
+				lik_ratio_bartlett_exact = private$compute_lik_ratio_bartlett_exact_two_sided_pval_impl(delta)
 			)
 		},
 		#' @description Sets the asymptotic testing method used by p-values and CIs.
 		#'
-		#' @param testing_type One of \code{"wald"}, \code{"score"}, \code{"gradient"}, or \code{"lik_ratio"}.
+		#' @param testing_type One of \code{"wald"}, \code{"score"}, \code{"gradient"}, \code{"lik_ratio"}, \code{"lik_ratio_bartlett_approx"}, or \code{"lik_ratio_bartlett_exact"}.
 		#'
 		#' @return The inference object, invisibly.
-		set_testing_type = function(testing_type = c("wald", "score", "gradient", "lik_ratio")){
+		set_testing_type = function(testing_type = c("wald", "score", "gradient", "lik_ratio", "lik_ratio_bartlett_approx", "lik_ratio_bartlett_exact")){
 			testing_type = private$normalize_testing_type(testing_type)
-			supported = private$get_supported_testing_types_impl()
+			supported = private$get_supported_testing_types_with_bartlett()
 			if (!testing_type %in% supported) {
 				stop(
 					class(self)[1], " does not support testing_type = \"", testing_type,
@@ -101,7 +105,7 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 		},
 		#' @description Gets the asymptotic testing methods supported by this inference object.
 		get_supported_testing_types = function(){
-			private$get_supported_testing_types_impl()
+			private$get_supported_testing_types_with_bartlett()
 		},
 		#' @description Gets the score-test information matrix preferences supported by this inference object.
 		get_supported_information_preferences = function(){
@@ -134,6 +138,126 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
 			}
 			private$compute_lik_ratio_confidence_interval_impl(alpha)
+		},
+
+		#' @description Computes the approximate (Monte-Carlo) Bartlett-corrected likelihood-ratio
+		#' two-sided p-value regardless of configured testing type. Returns \code{NA_real_}
+		#' for subclasses that do not implement an approximate Bartlett correction factor.
+		#'
+		#' The approximate Bartlett factor is estimated by Monte Carlo (e.g. the generic
+		#' \code{InferenceParamBootstrap} factor): \code{B} datasets are simulated under
+		#' the null-restricted fit at \code{delta} and refit to approximate
+		#' \code{E[LR | H0]}, the quantity a classical analytic Bartlett correction
+		#' targets exactly. The Monte-Carlo draws are seeded from this object's own
+		#' \code{seed} (see \code{set_seed()}), so repeated calls at the same
+		#' \code{delta} with the same \code{B} are reproducible; there is no separate
+		#' seed argument here.
+		#'
+		#' See \code{compute_lik_ratio_bartlett_exact_two_sided_pval()} for the
+		#' closed-form analytic counterpart (no simulation, no \code{B}).
+		#'
+		#' @param delta Null treatment effect. Default 0.
+		#' @param B Number of Monte-Carlo replicates used to estimate the Bartlett
+		#'   factor. Default 99.
+		compute_lik_ratio_bartlett_approx_two_sided_pval = function(delta = 0, B = 99){
+			private$compute_lik_ratio_bartlett_approx_two_sided_pval_impl(delta, B = B)
+		},
+
+		#' @description Computes the approximate (Monte-Carlo) Bartlett-corrected likelihood-ratio
+		#' confidence interval regardless of configured testing type. Returns
+		#' \code{c(NA_real_, NA_real_)} for subclasses that do not implement an
+		#' approximate Bartlett correction factor.
+		#'
+		#' See \code{compute_lik_ratio_bartlett_approx_two_sided_pval()} for what
+		#' \code{B} controls and how the Monte-Carlo seed is inherited from this
+		#' object's own \code{seed}. Each p-value evaluation during the
+		#' confidence-interval search re-simulates \code{B} replicates, so this can
+		#' be substantially more expensive than the p-value alone.
+		#'
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of Monte-Carlo replicates used to estimate the Bartlett
+		#'   factor. Default 99.
+		compute_lik_ratio_bartlett_approx_confidence_interval = function(alpha = 0.05, B = 99){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			private$compute_lik_ratio_bartlett_approx_confidence_interval_impl(alpha, B = B)
+		},
+
+		#' @description Computes the exact (closed-form analytic) Bartlett-corrected
+		#' likelihood-ratio two-sided p-value regardless of configured testing type.
+		#' Returns \code{NA_real_} for subclasses that do not implement an exact,
+		#' bespoke analytic Bartlett correction factor (no family does yet; see
+		#' \code{get_bartlett_factor_exact()}).
+		#'
+		#' Unlike \code{compute_lik_ratio_bartlett_approx_two_sided_pval()}, this path
+		#' involves no simulation and no Monte-Carlo replicate count.
+		#'
+		#' @param delta Null treatment effect. Default 0.
+		compute_lik_ratio_bartlett_exact_two_sided_pval = function(delta = 0){
+			private$compute_lik_ratio_bartlett_exact_two_sided_pval_impl(delta)
+		},
+
+		#' @description Computes the exact (closed-form analytic) Bartlett-corrected
+		#' likelihood-ratio confidence interval regardless of configured testing type.
+		#' Returns \code{c(NA_real_, NA_real_)} for subclasses that do not implement an
+		#' exact, bespoke analytic Bartlett correction factor.
+		#'
+		#' @param alpha Significance level. Default 0.05.
+		compute_lik_ratio_bartlett_exact_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			private$compute_lik_ratio_bartlett_exact_confidence_interval_impl(alpha)
+		},
+
+		#' @description Computes "the best available" Bartlett-corrected likelihood-ratio
+		#' two-sided p-value regardless of configured testing type: uses the exact
+		#' (closed-form analytic) factor if this class implements one, otherwise
+		#' falls back to the approximate (Monte-Carlo) factor. Errors if the class
+		#' supports neither (see \code{supports_bartlett_likelihood_ratio_exact()}/
+		#' \code{supports_bartlett_likelihood_ratio_approx()}).
+		#'
+		#' This is a convenience entry point for callers who want a Bartlett-corrected
+		#' p-value without caring which mechanism produced it. \strong{Because exact and
+		#' approximate factors are computed differently} (deterministic closed form vs.
+		#' seeded Monte-Carlo simulation), \strong{the same call can silently start
+		#' returning different numeric results on a future package version} once a
+		#' family gains an exact implementation where previously only the
+		#' approximate path existed. Callers who need results stable across package
+		#' versions (e.g. for reproducibility or regression tests) should call
+		#' \code{compute_lik_ratio_bartlett_approx_two_sided_pval()} or
+		#' \code{compute_lik_ratio_bartlett_exact_two_sided_pval()} directly instead.
+		#'
+		#' @param delta Null treatment effect. Default 0.
+		#' @param B Number of Monte-Carlo replicates, used only when the exact factor
+		#'   is unavailable and the approximate factor is used instead. If explicitly
+		#'   supplied but the exact factor is used (so \code{B} has no effect), a
+		#'   warning is issued; \code{B} left at its default is silently ignored in
+		#'   that case. Default 99.
+		compute_lik_ratio_bartlett_two_sided_pval = function(delta = 0, B = 99){
+			private$compute_lik_ratio_bartlett_two_sided_pval_impl(delta, B = B, B_missing = missing(B))
+		},
+
+		#' @description Computes "the best available" Bartlett-corrected likelihood-ratio
+		#' confidence interval regardless of configured testing type: uses the exact
+		#' (closed-form analytic) factor if this class implements one, otherwise
+		#' falls back to the approximate (Monte-Carlo) factor. Errors if the class
+		#' supports neither.
+		#'
+		#' See \code{compute_lik_ratio_bartlett_two_sided_pval()} for the exact-over-approx
+		#' selection rule, the \code{B}-ignored warning behavior, and why callers who
+		#' need version-to-version reproducibility should prefer the explicit
+		#' \code{_approx}/\code{_exact} methods instead.
+		#'
+		#' @param alpha Significance level. Default 0.05.
+		#' @param B Number of Monte-Carlo replicates, used only when the exact factor
+		#'   is unavailable and the approximate factor is used instead. Default 99.
+		compute_lik_ratio_bartlett_confidence_interval = function(alpha = 0.05, B = 99){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			private$compute_lik_ratio_bartlett_confidence_interval_impl(alpha, B = B, B_missing = missing(B))
 		},
 
 		#' @description Computes the gradient two-sided p-value regardless of configured testing type.
@@ -300,6 +424,53 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 		compute_lik_ratio_confidence_interval_impl = function(alpha){
 			private$invert_lik_ratio_ci_newton(alpha)
 		},
+		compute_lik_ratio_bartlett_approx_two_sided_pval_impl = function(delta, B = 99){
+			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "lik_ratio_bartlett_approx", bartlett_B = B)
+		},
+		compute_lik_ratio_bartlett_approx_confidence_interval_impl = function(alpha, B = 99){
+			private$invert_test_pval_confidence_interval(alpha, testing_type = "lik_ratio_bartlett_approx", bartlett_B = B)
+		},
+		compute_lik_ratio_bartlett_exact_two_sided_pval_impl = function(delta){
+			private$compute_likelihood_test_two_sided_pval(delta = delta, testing_type = "lik_ratio_bartlett_exact")
+		},
+		compute_lik_ratio_bartlett_exact_confidence_interval_impl = function(alpha){
+			private$invert_test_pval_confidence_interval(alpha, testing_type = "lik_ratio_bartlett_exact")
+		},
+		warn_bartlett_B_ignored_by_exact = function(){
+			warning(
+				class(self)[1], " has an exact Bartlett correction factor for this class; ",
+				"B is ignored (no simulation is performed).",
+				call. = FALSE
+			)
+		},
+		stop_bartlett_unsupported = function(){
+			stop(
+				class(self)[1], " does not support Bartlett-corrected likelihood-ratio inference ",
+				"(neither an exact nor an approximate factor is implemented). ",
+				"See supports_bartlett_likelihood_ratio_exact() / supports_bartlett_likelihood_ratio_approx().",
+				call. = FALSE
+			)
+		},
+		compute_lik_ratio_bartlett_two_sided_pval_impl = function(delta, B = 99, B_missing = TRUE){
+			if (isTRUE(private$supports_bartlett_likelihood_ratio_exact())) {
+				if (!B_missing) private$warn_bartlett_B_ignored_by_exact()
+				return(private$compute_lik_ratio_bartlett_exact_two_sided_pval_impl(delta))
+			}
+			if (isTRUE(private$supports_bartlett_likelihood_ratio_approx())) {
+				return(private$compute_lik_ratio_bartlett_approx_two_sided_pval_impl(delta, B = B))
+			}
+			private$stop_bartlett_unsupported()
+		},
+		compute_lik_ratio_bartlett_confidence_interval_impl = function(alpha, B = 99, B_missing = TRUE){
+			if (isTRUE(private$supports_bartlett_likelihood_ratio_exact())) {
+				if (!B_missing) private$warn_bartlett_B_ignored_by_exact()
+				return(private$compute_lik_ratio_bartlett_exact_confidence_interval_impl(alpha))
+			}
+			if (isTRUE(private$supports_bartlett_likelihood_ratio_approx())) {
+				return(private$compute_lik_ratio_bartlett_approx_confidence_interval_impl(alpha, B = B))
+			}
+			private$stop_bartlett_unsupported()
+		},
 
 
 		get_likelihood_test_spec = function(){
@@ -417,7 +588,7 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			entry
 		},
 
-		get_memoized_likelihood_test_pval = function(delta, testing_type, spec = NULL, warm_cache_key = NULL){
+		get_memoized_likelihood_test_pval = function(delta, testing_type, spec = NULL, warm_cache_key = NULL, bartlett_B = NULL){
 			if (is.null(spec)) {
 				spec = private$get_likelihood_test_spec()
 			}
@@ -425,10 +596,11 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				stop(class(self)[1], " does not expose a likelihood-test specification.", call. = FALSE)
 			}
 
+			bartlett_types = c("lik_ratio_bartlett_approx", "lik_ratio_bartlett_exact")
 			need_score = testing_type %in% c("score", "gradient")
 			need_information = identical(testing_type, "score")
-			need_full_negloglik = identical(testing_type, "lik_ratio")
-			need_null_negloglik = identical(testing_type, "lik_ratio")
+			need_full_negloglik = testing_type %in% c("lik_ratio", bartlett_types)
+			need_null_negloglik = testing_type %in% c("lik_ratio", bartlett_types)
 			entry = private$get_memoized_likelihood_test_eval(
 				delta = delta,
 				testing_type = testing_type,
@@ -440,7 +612,16 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				include_null_negloglik = need_null_negloglik
 			)
 			if (isTRUE(entry$invalid) || !is.finite(entry$j)) return(NA_real_)
-			if (!is.null(entry$p_value) && is.finite(entry$p_value)) return(entry$p_value)
+
+			# The approximate Bartlett factor is Monte-Carlo estimated with B replicates,
+			# so a cached p-value is only reusable if it was computed with the same B.
+			is_bartlett_approx = identical(testing_type, "lik_ratio_bartlett_approx")
+			bartlett_B_resolved = if (is_bartlett_approx) as.integer(bartlett_B %||% 99L) else NA_integer_
+			if (!is.null(entry$p_value) && is.finite(entry$p_value)) {
+				if (!is_bartlett_approx || identical(entry$bartlett_B, bartlett_B_resolved)) {
+					return(entry$p_value)
+				}
+			}
 
 			j = entry$j
 			p_value = NA_real_
@@ -460,16 +641,47 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				if (!is.finite(f_nll) || !is.finite(n_nll)) return(NA_real_)
 				res = likelihood_ratio_test_from_negloglik_cpp(f_nll, n_nll, df = 1L)
 				p_value = as.numeric(res$p_value %||% res)
+			} else if (testing_type == "lik_ratio_bartlett_approx") {
+				if (!isTRUE(private$supports_bartlett_likelihood_ratio_approx())) return(NA_real_)
+				f_nll = entry$full_negloglik
+				n_nll = entry$null_negloglik
+				if (is.null(f_nll) || !length(f_nll) || is.null(n_nll) || !length(n_nll)) return(NA_real_)
+				if (!is.finite(f_nll) || !is.finite(n_nll)) return(NA_real_)
+				factor = tryCatch(
+					private$get_bartlett_factor_approx(spec = spec, delta = delta, full_fit = spec$full_fit, null_fit = entry$null_fit, B = bartlett_B_resolved),
+					error = function(e) NULL
+				)
+				if (is.null(factor) || length(factor) != 1L || !is.finite(factor) || factor <= 0) return(NA_real_)
+				res = likelihood_ratio_test_from_negloglik_cpp(f_nll, n_nll, df = 1L)
+				statistic = as.numeric(res$statistic %||% NA_real_)
+				if (!is.finite(statistic)) return(NA_real_)
+				p_value = as.numeric(stats::pchisq(statistic / factor, df = 1, lower.tail = FALSE))
+			} else if (testing_type == "lik_ratio_bartlett_exact") {
+				if (!isTRUE(private$supports_bartlett_likelihood_ratio_exact())) return(NA_real_)
+				f_nll = entry$full_negloglik
+				n_nll = entry$null_negloglik
+				if (is.null(f_nll) || !length(f_nll) || is.null(n_nll) || !length(n_nll)) return(NA_real_)
+				if (!is.finite(f_nll) || !is.finite(n_nll)) return(NA_real_)
+				factor = tryCatch(
+					private$get_bartlett_factor_exact(spec = spec, delta = delta, full_fit = spec$full_fit, null_fit = entry$null_fit),
+					error = function(e) NULL
+				)
+				if (is.null(factor) || length(factor) != 1L || !is.finite(factor) || factor <= 0) return(NA_real_)
+				res = likelihood_ratio_test_from_negloglik_cpp(f_nll, n_nll, df = 1L)
+				statistic = as.numeric(res$statistic %||% NA_real_)
+				if (!is.finite(statistic)) return(NA_real_)
+				p_value = as.numeric(stats::pchisq(statistic / factor, df = 1, lower.tail = FALSE))
 			} else {
 				stop("Unsupported testing_type: ", testing_type, call. = FALSE)
 			}
 
 			entry$p_value = p_value
+			if (is_bartlett_approx) entry$bartlett_B = bartlett_B_resolved
 			private$set_likelihood_test_eval_entry(testing_type, delta, entry)
 			p_value
 		},
 
-		compute_likelihood_test_two_sided_pval = function(delta, testing_type){
+		compute_likelihood_test_two_sided_pval = function(delta, testing_type, bartlett_B = NULL){
 			spec = private$get_likelihood_test_spec()
 			if (is.null(spec)) {
 				if (!isTRUE(self$is_nonestimable())) {
@@ -481,7 +693,8 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				delta = delta,
 				testing_type = testing_type,
 				spec = spec,
-				warm_cache_key = paste0("likelihood_test:", testing_type)
+				warm_cache_key = paste0("likelihood_test:", testing_type),
+				bartlett_B = bartlett_B
 			)
 			if (!is.finite(p_value) && !isTRUE(self$is_nonestimable("estimate"))) {
 				private$cache_nonestimable_se(paste0(testing_type, "_test_unavailable"))
@@ -489,7 +702,7 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			p_value
 		},
 
-		invert_test_pval_confidence_interval = function(alpha, testing_type = private$testing_type){
+		invert_test_pval_confidence_interval = function(alpha, testing_type = private$testing_type, bartlett_B = NULL){
 			est = self$compute_estimate()
 			if (!is.finite(est)) return(c(NA_real_, NA_real_))
 
@@ -502,7 +715,8 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 
 			testing_type = private$normalize_testing_type(testing_type)
 			spec = private$get_likelihood_test_spec()
-			pval_fn = if (!is.null(spec) && testing_type %in% c("score", "gradient", "lik_ratio")) {
+			bartlett_types = c("lik_ratio_bartlett_approx", "lik_ratio_bartlett_exact")
+			pval_fn = if (!is.null(spec) && testing_type %in% c("score", "gradient", "lik_ratio", bartlett_types)) {
 				function(delta) {
 					private$get_memoized_likelihood_test_pval(
 						delta = delta,
@@ -512,7 +726,8 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 							"likelihood_test:score"
 						} else {
 							paste0(testing_type, "_ci")
-						}
+						},
+						bartlett_B = bartlett_B
 					)
 				}
 			} else {
@@ -744,12 +959,61 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 			FALSE
 		},
 
+		#' Whether this class exposes an approximate (Monte-Carlo) Bartlett-corrected
+		#' likelihood-ratio test/CI via get_bartlett_factor_approx(). Default FALSE;
+		#' InferenceParamBootstrap overrides this to delegate to
+		#' supports_lik_ratio_param_bootstrap().
+		supports_bartlett_likelihood_ratio_approx = function(){
+			FALSE
+		},
+
+		#' Monte-Carlo estimate of the Bartlett correction factor c(delta), such that
+		#' LR_B(delta) = LR(delta) / c(delta) is referred to chi-square(1). B controls
+		#' the number of null-simulated replicates (ignored by classes that don't
+		#' simulate). Default NULL (unimplemented).
+		get_bartlett_factor_approx = function(spec, delta, full_fit, null_fit, B = 99){
+			NULL
+		},
+
+		#' Whether this class exposes an exact (closed-form analytic) Bartlett-corrected
+		#' likelihood-ratio test/CI via get_bartlett_factor_exact(). Default FALSE;
+		#' no family implements this yet -- individual families opt in once their
+		#' bespoke analytic factor is derived.
+		supports_bartlett_likelihood_ratio_exact = function(){
+			FALSE
+		},
+
+		#' Closed-form analytic Bartlett correction factor c(delta) (e.g. a
+		#' Cordeiro-style GLM correction). No simulation, no replicate count.
+		#' Default NULL (unimplemented).
+		get_bartlett_factor_exact = function(spec, delta, full_fit, null_fit){
+			NULL
+		},
+
 		get_supported_testing_types_impl = function(){
 			if (isTRUE(private$supports_likelihood_tests())) {
 				c("wald", "score", "gradient", "lik_ratio")
 			} else {
 				"wald"
 			}
+		},
+
+		#' Wraps get_supported_testing_types_impl() to conditionally append the
+		#' Bartlett testing types. Kept as a separate wrapper (rather than folded
+		#' into get_supported_testing_types_impl() itself) because many concrete
+		#' and abstract subclasses across the codebase override
+		#' get_supported_testing_types_impl() directly with a hard-coded vector;
+		#' appending here means those overrides don't each need to be touched to
+		#' pick up Bartlett support.
+		get_supported_testing_types_with_bartlett = function(){
+			types = private$get_supported_testing_types_impl()
+			if (isTRUE(private$supports_bartlett_likelihood_ratio_approx())) {
+				types = c(types, "lik_ratio_bartlett_approx")
+			}
+			if (isTRUE(private$supports_bartlett_likelihood_ratio_exact())) {
+				types = c(types, "lik_ratio_bartlett_exact")
+			}
+			unique(types)
 		},
 
 		get_supported_information_preferences_impl = function(){
@@ -778,7 +1042,15 @@ InferenceAsympLik = R6::R6Class("InferenceAsympLik",
 				lrt = "lik_ratio",
 				lik_ratio = "lik_ratio",
 				likelihood_ratio = "lik_ratio",
-				stop("testing_type must be one of: wald, score, gradient, lik_ratio", call. = FALSE)
+				lik_ratio_bartlett_approx = "lik_ratio_bartlett_approx",
+				lr_bartlett_approx = "lik_ratio_bartlett_approx",
+				lrb_approx = "lik_ratio_bartlett_approx",
+				bartlett_approx = "lik_ratio_bartlett_approx",
+				lik_ratio_bartlett_exact = "lik_ratio_bartlett_exact",
+				lr_bartlett_exact = "lik_ratio_bartlett_exact",
+				lrb_exact = "lik_ratio_bartlett_exact",
+				bartlett_exact = "lik_ratio_bartlett_exact",
+				stop("testing_type must be one of: wald, score, gradient, lik_ratio, lik_ratio_bartlett_approx, lik_ratio_bartlett_exact", call. = FALSE)
 			)
 		},
 		normalize_information_preference = function(information_preference){

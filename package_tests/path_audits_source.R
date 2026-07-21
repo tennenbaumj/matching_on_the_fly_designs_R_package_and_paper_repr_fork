@@ -45,7 +45,7 @@ audit_classes = list(
   list(name="InferenceIncidExactBinomial",             section="Incidence", resp="incid", kk=FALSE, types="wald",   skip_asymp=TRUE,  skip_ci=TRUE,  skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    exact_p=TRUE, exact_c=TRUE, notes="InferenceExact; KK14/FixedBinaryMatch"),
   list(name="InferenceIncidenceExactZhang",            section="Incidence", resp="incid", kk=FALSE, types="wald",   skip_asymp=TRUE,  skip_ci=TRUE,  skip_boot=TRUE,  skip_bbt=TRUE,  jack=TRUE,  skip_rand=TRUE,  rand_resp="",  skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    exact_p=TRUE, exact_c=TRUE, notes="InferenceExact"),
   list(name="InferenceIncidWald",                     section="Incidence", resp="incid", kk=FALSE, types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA, notes="inherits AllSimpleMeanDiff (ParamBootstrap); explicit FALSE"),
-  list(name="InferenceIncidLogRegr",                  section="Incidence", resp="incid", kk=FALSE, types="full",   skip_asymp=FALSE, skip_ci=FALSE,  skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=TRUE,  notes="AsympLikStdModCache"),
+  list(name="InferenceIncidLogRegr",                  section="Incidence", resp="incid", kk=FALSE, types="full",   skip_asymp=FALSE, skip_ci=FALSE,  skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=TRUE,  notes="AsympLikStdModCache; approximate Bartlett-corrected LR (pval+CI) implemented via generic InferenceParamBootstrap Monte-Carlo factor"),
   list(name="InferenceIncidProbitRegr",               section="Incidence", resp="incid", kk=FALSE, types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=TRUE,  notes="AsympLikStdModCache"),
   list(name="InferenceIncidMiettinenNurminenRiskDiff",section="Incidence", resp="incid", kk=FALSE, types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="InferenceAsymp"),
   list(name="InferenceIncidNewcombeRiskDiff",         section="Incidence", resp="incid", kk=FALSE, types="none",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="InferenceAsymp; get_supported_testing_types_impl=character(0); no direct tests"),
@@ -75,9 +75,9 @@ audit_classes = list(
   list(name="InferenceCountRobustPoisson",          section="Count",      resp="count", kk=FALSE, types="wald",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=NA, notes="CountCompositeLikelihood; explicit FALSE"),
   list(name="InferenceCountQuasiPoisson",           section="Count",      resp="count", kk=FALSE, types="wald",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=NA, notes="CountCompositeLikelihood; explicit FALSE"),
   list(name="InferenceCountNegBin",                 section="Count",      resp="count", kk=FALSE, types="full",skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE, notes="InferenceCountLikelihood → InferenceParamBootstrap; simulate_under_lik_null: rnbinom draw"),
-  list(name="InferenceCountZeroInflatedPoisson",    section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  notes="ZAAbstract; use_rcpp; 'Zero-Inflated Poisson' in pboot list; in skip_ci_rand"),
+  list(name="InferenceCountZeroInflatedPoisson",    section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  unsupported_methods=c("compute_lik_ratio_bartlett_approx_two_sided_pval","compute_lik_ratio_bartlett_approx_confidence_interval"), notes="ZAAbstract; use_rcpp; 'Zero-Inflated Poisson' in pboot list; in skip_ci_rand; Bartlett approx explicitly carved out (raw LR miscalibration; see zero_augmented_model_lrt_bootstrap_disabled())"),
   list(name="InferenceCountZeroInflatedNegBin",     section="Count",      resp="count", kk=FALSE, types="full",  skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  notes="ZAAbstract; use_rcpp; 'Zero-Inflated Negative Binomial' in pboot list"),
-  list(name="InferenceCountHurdlePoisson",          section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  notes="ZAAbstract; 'Hurdle Poisson' in pboot list; in skip_ci_rand"),
+  list(name="InferenceCountHurdlePoisson",          section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE,  unsupported_methods=c("compute_lik_ratio_bartlett_approx_two_sided_pval","compute_lik_ratio_bartlett_approx_confidence_interval"), notes="ZAAbstract; 'Hurdle Poisson' in pboot list; in skip_ci_rand; Bartlett approx explicitly carved out (raw LR miscalibration; see zero_augmented_model_lrt_bootstrap_disabled())"),
   list(name="InferenceCountHurdleNegBin",           section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=TRUE,  skip_bbt=TRUE,  jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE, notes="InferenceCountLikelihood → InferenceParamBootstrap; simulate_under_lik_null implemented; in skip_ci_rand"),
 
   # ── SURVIVAL ─────────────────────────────────────────────────────────────────
@@ -119,18 +119,21 @@ audit_classes = list(
 
 # ── HTML renderer ─────────────────────────────────────────────────────────────
 html_from_audit = function(classes, outfile = "path_audits.html") {
-  GREEN = "#81c784"; LIGHT_GREEN = "#dff3df"; RED = "#ffcdd2"; YELLOW = "#fff9c4"
+  GREEN = "#81c784"; LIGHT_GREEN = "#dff3df"; DARK_GREY = "#333333"; YELLOW = "#fff9c4"; GREY = "#e0e0e0"
   `%||%` = function(x, y) if (is.null(x)) y else x
-  cell = function(color, s, title = NULL) {
+  cell = function(color, s, title = NULL, text_color = NULL) {
     title_attr = if (is.null(title)) "" else sprintf(' title="%s"', title)
-    sprintf('<td style="background:%s;text-align:center"%s>%s</td>', color, title_attr, s)
+    style = sprintf("background:%s;text-align:center", color)
+    if (!is.null(text_color)) style = paste0(style, ";color:", text_color)
+    sprintf('<td style="%s"%s>%s</td>', style, title_attr, s)
   }
   status_cell = function(status) {
     switch(status,
       always_numeric = cell(GREEN,       "✓",    "Always returns numeric in the comprehensive-test contract"),
       maybe          = cell(LIGHT_GREEN, "✓",    "Attempted, but may return explicit non-estimable output"),
       slow           = cell(YELLOW,      "SLOW", "Skipped in comprehensive tests"),
-      unsupported    = cell(RED,         "N/A",  "Not supported by this model"),
+      unsupported    = cell(DARK_GREY,   "NTS",  "Not theoretically supported by this model", text_color = "#fff"),
+      not_implemented= cell(GREY,        "NI",   "Not implemented yet"),
       stop("Unknown audit cell status: ", status)
     )
   }
@@ -138,6 +141,7 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   maybe = function() status_cell("maybe")
   bad   = function() status_cell("slow")
   na    = function() status_cell("unsupported")
+  ni    = function() status_cell("not_implemented")
 
   row_methods = function(r, field) {
     as.character(r[[field]] %||% character())
@@ -211,6 +215,36 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
     default = if (stable_model_based_numeric(r, ttype)) "always_numeric" else "maybe"
     method_cell(r, method_id, default)
   }
+  # Approximate Bartlett-corrected likrat ("LR-Bart-app", nested next to "LR" under
+  # Model-Based): base-class plumbing lives in InferenceAsympLik
+  # (compute_lik_ratio_bartlett_approx_two_sided_pval / _confidence_interval); InferenceParamBootstrap
+  # overrides supports_bartlett_likelihood_ratio_approx() to isTRUE(supports_lik_ratio_param_bootstrap())
+  # -- i.e. Monte-Carlo Bartlett support automatically follows parametric-bootstrap LR support
+  # (the same "pboot" field already tracked per row), reusing the simulate_under_lik_null()
+  # machinery for free. Classes without any likelihood/partial-likelihood LR test at all (same
+  # type_ok("lr") gate used by the "LR" column itself) are structurally NTS here, same as "LR".
+  # Among the remainder, rows follow pboot exactly: pboot=TRUE -> maybe, pboot=FALSE/NA -> NI.
+  cell_likrat_bart_p = function(r) {
+    method_id = "compute_lik_ratio_bartlett_approx_two_sided_pval"
+    if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
+    if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "not_implemented"))
+    method_cell(r, method_id, "maybe")
+  }
+  cell_likrat_bart_c = function(r) {
+    method_id = "compute_lik_ratio_bartlett_approx_confidence_interval"
+    if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
+    if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "not_implemented"))
+    method_cell(r, method_id, "maybe")
+  }
+  # "LR-Bart-ex": exact-factor Bartlett correction, nested next to "LR-Bart-app".
+  # Not implemented for any class yet -- always NI.
+  cell_likrat_bart_ex_p = function(r) {
+    method_cell(r, "compute_lik_ratio_bartlett_exact_two_sided_pval", "not_implemented")
+  }
+  cell_likrat_bart_ex_c = function(r) {
+    method_cell(r, "compute_lik_ratio_bartlett_exact_confidence_interval", "not_implemented")
+  }
+
   # "other": class-specific asymptotic pval methods with non-generic names, not
   # reachable through the wald/score/lr/grad dispatch above. No CI counterpart exists.
   is_log_rank_other = function(r) {
@@ -262,13 +296,16 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   }
 
   # ── Parametric bootstrap ────────────────────────────────────────────────────
+  # pboot=FALSE means the class inherits InferenceParamBootstrap but
+  # supports_lik_ratio_param_bootstrap()=FALSE because simulate_under_lik_null()
+  # was never implemented for it -- structurally not implemented (NI), not slow.
   cell_pb_p = function(r, method_id) {
     if (is.na(r$pboot)) return(method_cell(r, method_id, "unsupported"))
-    if (isTRUE(r$pboot)) method_cell(r, method_id, "maybe") else method_cell(r, method_id, "slow")
+    if (isTRUE(r$pboot)) method_cell(r, method_id, "maybe") else method_cell(r, method_id, "not_implemented")
   }
   cell_pb_c = function(r, method_id) {
     if (is.na(r$pboot)) return(method_cell(r, method_id, "unsupported"))
-    if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "slow"))
+    if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "not_implemented"))
     if (isTRUE(r$skip_pboot_ci)) return(method_cell(r, method_id, "slow"))
     if (isTRUE(r$skip_ci)) return(method_cell(r, method_id, "slow"))
     method_cell(r, method_id, "maybe")
@@ -346,21 +383,22 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   }
 
   # ── Four frozen header rows ──────────────────────────────────────────────────
-  # Data cols: 10 (model-based, incl. 1 model "est" + 1 log-rank "other")
+  # Data cols: 14 (model-based, incl. 1 model "est", 1 log-rank "other", and the
+  #            2-col "LR-Bart-app" + 2-col "LR-Bart-ex" plumbing-only pairs next to "LR")
   #            + 2 (exact-other) + 5 (exact-rand) + 18 (npboot, incl. 10 for the 6 bayes flavors)
-  #            + 2 (pboot) + 3 (jack, incl. 1 jackknife "est") + 9 (brt) = 49
-  NCOL = 50  # 1 (class) + 49 (data)
+  #            + 2 (pboot) + 3 (jack, incl. 1 jackknife "est") + 9 (brt) = 53
+  NCOL = 54  # 1 (class) + 53 (data)
   hdr = paste0(
-    # Row 0: meta-categories — Asymptotic (42) | Exact (7)
+    # Row 0: meta-categories — Asymptotic (46) | Exact (7)
     '<tr class="hdr0">',
       '<th rowspan="4" style="text-align:left">Inference Type</th>',
-      '<th colspan="42">Asymptotic</th>',
+      '<th colspan="46">Asymptotic</th>',
       '<th colspan="7">Exact</th>',
     '</tr>',
     # Row 1: categories
     '<tr class="hdr1">',
-      # Under Asymptotic (42)
-      '<th colspan="10">Model-Based</th>',
+      # Under Asymptotic (44)
+      '<th colspan="14">Model-Based</th>',
       '<th colspan="18">Nonparam Boot</th>',
       '<th colspan="2">Param Boot</th>',
       '<th colspan="3">Jackknife</th>',
@@ -371,11 +409,14 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
     '</tr>',
     # Row 2: test types
     '<tr class="hdr2">',
-      # Model-Based: model "est" (colspan=1), then 4 types × colspan=2, plus "other" (pval-only, colspan=1)
+      # Model-Based: model "est" (colspan=1), then 4 types × colspan=2, plus "LR-Bart-app"
+      # and "LR-Bart-ex" (colspan=2 each, plumbing only, always NI) and "other" (pval-only, colspan=1)
       '<th colspan="1">est</th>',
       '<th colspan="2">wald</th>',
       '<th colspan="2">score</th>',
-      '<th colspan="2">likrat</th>',
+      '<th colspan="2">LR</th>',
+      '<th colspan="2">LR-Bart-app</th>',
+      '<th colspan="2">LR-Bart-ex</th>',
       '<th colspan="2">grad</th>',
       '<th colspan="1">other</th>',
       # Nonparam Boot: pctile(2) symm(1) basic(1) bca(2) stud(2) [classical, 8]
@@ -392,7 +433,7 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
       '<th colspan="2">bayes-bca</th>',
       '<th colspan="2">bayes-stud</th>',
       # Param Boot
-      '<th colspan="2">likrat</th>',
+      '<th colspan="2">LR</th>',
       # Jackknife (no named sub-type)
       '<th colspan="3"></th>',
       # Boot-Rand: 4 types
@@ -408,12 +449,14 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
     '</tr>',
     # Row 3: pval / ci leaves
     '<tr class="hdr3">',
-      # Model-Based (10)
+      # Model-Based (14)
       '<th>est</th>',
-      '<th>pval</th><th>ci</th>',
-      '<th>pval</th><th>ci</th>',
-      '<th>pval</th><th>ci</th>',
-      '<th>pval</th><th>ci</th>',
+      '<th>pval</th><th>ci</th>',   # wald
+      '<th>pval</th><th>ci</th>',   # score
+      '<th>pval</th><th>ci</th>',   # likrat
+      '<th>pval</th><th>ci</th>',   # LR-Bart-app (plumbing only, always NI)
+      '<th>pval</th><th>ci</th>',   # LR-Bart-ex (plumbing only, always NI)
+      '<th>pval</th><th>ci</th>',   # grad
       '<th>pval</th>',              # other (log-rank, pval only)
       # Nonparam Boot (18)
       '<th>pval</th><th>ci</th>',   # pctile
@@ -454,11 +497,13 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
       nm = sub("^Inference", "", r$name)
       body = paste0(body, "<tr>",
         sprintf('<td style="font-family:monospace;padding:2px 8px;white-space:nowrap">%s</td>', nm),
-        # Model-Based (10): model "est" first, then wald/score/lr/grad pval+ci, then "other"
+        # Model-Based (14): model "est" first, then wald/score/lr/LR-Bart-app/LR-Bart-ex/grad pval+ci, then "other"
         cell_estimate(r),
         cell_ap(r,"wald"),  cell_ac(r,"wald"),
         cell_ap(r,"score"), cell_ac(r,"score"),
         cell_ap(r,"lr"),    cell_ac(r,"lr"),
+        cell_likrat_bart_p(r), cell_likrat_bart_c(r),
+        cell_likrat_bart_ex_p(r), cell_likrat_bart_ex_c(r),
         cell_ap(r,"grad"),  cell_ac(r,"grad"),
         cell_am_other_p(r),
         # Nonparam Boot (18)
@@ -497,7 +542,8 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
     <span style="background:#81c784;padding:2px 6px">✓ always numeric</span>
     <span style="background:#dff3df;padding:2px 6px">✓ attempted, may be non-estimable</span>
     <span style="background:#fff9c4;padding:2px 6px">SLOW too slow to test (skipped)</span>
-    <span style="background:#ffcdd2;padding:2px 6px">N/A not supported by model</span>
+    <span style="background:#333333;color:#fff;padding:2px 6px">NTS not theoretically supported</span>
+    <span style="background:#e0e0e0;padding:2px 6px">NI not implemented yet</span>
   </div>'
 
   html = paste0('<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -530,7 +576,7 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   <h2>EDI Comprehensive Tests Coverage Audit</h2>
   <p style="color:#555">Generated 2026-07-21. Dark green means the method should return numeric output under the comprehensive-test contract.
   Light green means the method is attempted, but may produce explicit non-estimable output for finite-sample numerical or data-degeneracy reasons.
-  rand/rci/brt columns: N/A for response types where randomization is not applicable (incidence/ordinal: rand=N/A; count: rci/brt_ci=N/A).</p>
+  rand/rci/brt columns: NTS for response types where randomization is not theoretically supported (incidence/ordinal: rand=NTS; count: rci/brt_ci=NTS).</p>
   ', legend, '<div class="table-wrap"><table>', hdr, body, '</table></div></body></html>')
   writeLines(html, outfile)
   invisible(outfile)

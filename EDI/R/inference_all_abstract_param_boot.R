@@ -818,6 +818,75 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 		supports_lik_ratio_param_bootstrap_confidence_interval = function(){
 			isTRUE(private$supports_lik_ratio_param_bootstrap())
 		},
+		#' Approximate (Monte-Carlo) Bartlett support automatically follows
+		#' parametric-bootstrap LR support: any family that already implements
+		#' simulate_under_lik_null() gets the shared Monte-Carlo factor below for
+		#' free. Families that need to withhold Bartlett support for a reason that
+		#' doesn't affect parametric-bootstrap LR itself (e.g. a known raw-LR
+		#' miscalibration) should override this method directly.
+		supports_bartlett_likelihood_ratio_approx = function(){
+			isTRUE(private$supports_lik_ratio_param_bootstrap())
+		},
+		bartlett_factor_mc_min_usable_fraction = 0.2,
+		bartlett_factor_mc_max_attempts_per_replicate = 2L,
+		#' Generic Monte-Carlo Bartlett correction factor, shared by every
+		#' InferenceParamBootstrap family that already implements
+		#' simulate_under_lik_null() for parametric-bootstrap LR calibration.
+		#'
+		#' Simulates B datasets under H0: (tested parameter) = delta using the same
+		#' simulate_under_lik_null()/refit machinery as
+		#' compute_lik_ratio_bootstrap_two_sided_pval(), and sets
+		#'   c(delta) = mean(simulated LR statistics)
+		#' which is a Monte-Carlo estimate of E[LR | H0], the quantity a classical
+		#' analytic Bartlett correction targets exactly (E[LR]/df = 1 under a
+		#' chi-square(df) reference). This is deliberately model-agnostic: any
+		#' family wanting a faster closed-form factor instead can override
+		#' get_bartlett_factor_exact()/supports_bartlett_likelihood_ratio_exact()
+		#' (a subclass override of this method wins too, if preferred).
+		get_bartlett_factor_approx = function(spec, delta, full_fit, null_fit, B = 99){
+			if (!isTRUE(private$supports_lik_ratio_param_bootstrap())) return(NULL)
+			if (is.null(null_fit)) return(NULL)
+
+			B = as.integer(B)
+			# Scales with B rather than a fixed count, so small-B calls (e.g. quick
+			# smoke tests) aren't structurally impossible to satisfy.
+			min_usable = max(2L, as.integer(ceiling(private$bartlett_factor_mc_min_usable_fraction * B)))
+			max_attempts = as.integer(private$bartlett_factor_mc_max_attempts_per_replicate)
+
+			if (!is.null(private$seed)) {
+				had_seed = exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+				if (had_seed) old_seed = get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+				on.exit(
+					if (had_seed) assign(".Random.seed", old_seed, envir = .GlobalEnv) else rm(".Random.seed", envir = .GlobalEnv),
+					add = TRUE
+				)
+				set.seed(private$seed)
+			}
+			replicate_seeds = sample.int(.Machine$integer.max, B, replace = TRUE)
+
+			lr_boots = vapply(seq_len(B), function(b){
+				res = tryCatch(
+					private$compute_param_bootstrap_lr_impl(
+						spec = spec,
+						delta = delta,
+						null_fit = null_fit,
+						seed = replicate_seeds[[b]],
+						max_attempts_per_replicate = max_attempts
+					),
+					error = function(e) NULL
+				)
+				as.numeric(res$lr %||% NA_real_)[1L]
+			}, numeric(1))
+
+			extreme = is.finite(lr_boots) & private$param_bootstrap_lr_extreme(lr_boots)
+			lr_boots[extreme] = NA_real_
+			finite_lr = lr_boots[is.finite(lr_boots)]
+			if (length(finite_lr) < min_usable) return(NULL)
+
+			factor = mean(finite_lr)
+			if (!is.finite(factor) || factor <= 0) return(NULL)
+			factor
+		},
 		#' Simulate a bootstrap dataset under the fitted null likelihood and return
 		#' a minimal spec list for refitting.
 		#'
