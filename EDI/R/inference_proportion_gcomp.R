@@ -165,6 +165,24 @@ InferencePropGCompAbstract = R6::R6Class("InferencePropGCompAbstract",
 				NA_real_
 			})
 		},
+		#' @description Computes a Wald two-sided p-value for the treatment effect.
+		#' @param delta The null mean difference. Defaults to 0.
+		compute_wald_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta, len = 1)
+			}
+			private$shared(estimate_only = FALSE)
+			private$compute_effect_pvalue(delta)
+		},
+		#' @description Computes a Wald confidence interval for the treatment effect.
+		#' @param alpha The significance level. Default 0.05.
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			private$shared(estimate_only = FALSE)
+			private$compute_effect_confidence_interval(alpha)
+		},
 		#' @description Computes a bootstrap two-sided p-value for the treatment effect.
 		#' @param delta The null mean difference. Defaults to 0.
 		#' @param B Number of bootstrap samples.
@@ -390,18 +408,10 @@ InferencePropGCompAbstract = R6::R6Class("InferencePropGCompAbstract",
 		),
 		build_design_matrix = function() stop(class(self)[1], " must implement build_design_matrix()."),
 		build_named_design_matrix = function(){
-			X_full = private$build_design_matrix()
-			if (is.null(dim(X_full))){
-				X_full = matrix(X_full, ncol = 2L)
-			}
-			if (is.null(colnames(X_full))) {
-				colnames(X_full) = c(
-					"(Intercept)",
-					"treatment",
-					if (ncol(X_full) > 2L) private$get_covariate_names() else NULL
-				)
-			}
-			X_full
+			gcomp_normalize_treatment_design_matrix(
+				private$build_design_matrix(),
+				covariate_names = private$get_covariate_names
+			)
 		},
 		get_covariate_names = function(){
 			X = private$get_X()
@@ -424,15 +434,6 @@ InferencePropGCompAbstract = R6::R6Class("InferencePropGCompAbstract",
 		effects_are_usable = function(effects, estimate_only = FALSE){
 			if (estimate_only) return(is.finite(effects$md))
 			is.finite(effects$md) && is.finite(effects$se_md) && effects$se_md > 0
-		},
-		select_covariate_to_drop = function(X_curr, coef_hat){
-			covariate_cols = seq.int(3L, ncol(X_curr))
-			if (length(covariate_cols) == 0L) return(NA_integer_)
-			coef_mags = abs(coef_hat[covariate_cols])
-			if (length(coef_mags) == 0L || all(!is.finite(coef_mags))){
-				return(tail(covariate_cols, 1L))
-			}
-			covariate_cols[which.max(replace(coef_mags, !is.finite(coef_mags), -Inf))]
 		},
 		fit_fractional_logit_with_sandwich = function(X_full, estimate_only = FALSE){
 			attempt = if (private$harden) {
@@ -769,7 +770,7 @@ InferencePropGCompAbstract = R6::R6Class("InferencePropGCompAbstract",
 						return(list(X = X_fit, j_treat = j_treat, coefficients = coef_hat, estimate_only = TRUE))
 					}
 					if (ncol(X_curr) <= 2L) return(NULL)
-					drop_col = private$select_covariate_to_drop(X_curr, coef_hat)
+				drop_col = gcomp_select_covariate_to_drop(X_curr, coef_hat)
 					if (!is.finite(drop_col)) return(NULL)
 					X_curr = X_curr[, -drop_col, drop = FALSE]
 				}
@@ -814,7 +815,7 @@ InferencePropGCompAbstract = R6::R6Class("InferencePropGCompAbstract",
 						return(list(X = X_fit, j_treat = j_treat, coefficients = coef_hat))
 					}
 					if (ncol(X_curr) <= 2L) return(NULL)
-					drop_col = private$select_covariate_to_drop(X_curr, coef_hat)
+				drop_col = gcomp_select_covariate_to_drop(X_curr, coef_hat)
 					if (!is.finite(drop_col)) return(NULL)
 					X_curr = X_curr[, -drop_col, drop = FALSE]
 				}

@@ -299,6 +299,13 @@ InferenceAbstractKKOrdinalCLMM = R6::R6Class("InferenceAbstractKKOrdinalCLMM",
 			if (estimate_only) return(invisible(NULL))
 			ssq = fit$ssq_b_T
 			private$cached_values$s_beta_hat_T = if (!is.null(ssq) && is.finite(ssq) && ssq > 0) sqrt(ssq) else NA_real_
+			if (!is.finite(private$cached_values$s_beta_hat_T) ||
+			    private$cached_values$s_beta_hat_T <= 0 ||
+			    private$cached_values$s_beta_hat_T > private$max_abs_reasonable_coef) {
+				private$cache_nonestimable_se("kk_clmm_standard_error_unavailable")
+				return(invisible(NULL))
+			}
+			private$clear_nonestimable_state()
 		},
 		shared_clmm = function(estimate_only = FALSE){
 			if (estimate_only && !is.null(private$cached_values$beta_hat_T)) return(invisible(NULL))
@@ -334,13 +341,26 @@ InferenceAbstractKKOrdinalCLMM = R6::R6Class("InferenceAbstractKKOrdinalCLMM",
 				private$best_X_colnames = setdiff(colnames(attempt$X_fit), c("(Intercept)", "treatment"))
 			}
 			if (is.null(mod) || is.null(summ)){
-				private$cached_values$beta_hat_T   = NA_real_
-			if (estimate_only) return(invisible(NULL))
+				private$cache_nonestimable_estimate("kk_clmm_fit_unavailable")
+				if (estimate_only) return(invisible(NULL))
 				private$cached_values$s_beta_hat_T = NA_real_
 				return(invisible(NULL))
 			}
 			private$cached_values$beta_hat_T = as.numeric(stats::coef(mod)["w"])
 			private$cached_values$s_beta_hat_T = if (is.finite(se) && se > 0) se else NA_real_
+			if (!is.finite(private$cached_values$beta_hat_T) ||
+			    abs(private$cached_values$beta_hat_T) > private$max_abs_reasonable_coef) {
+				private$cache_nonestimable_estimate("kk_clmm_nonestimable")
+				return(invisible(NULL))
+			}
+			if (!estimate_only &&
+			    (!is.finite(private$cached_values$s_beta_hat_T) ||
+			     private$cached_values$s_beta_hat_T <= 0 ||
+			     private$cached_values$s_beta_hat_T > private$max_abs_reasonable_coef)) {
+				private$cache_nonestimable_se("kk_clmm_standard_error_unavailable")
+				return(invisible(NULL))
+			}
+			private$clear_nonestimable_state()
 		},
 		assert_finite_se = function(){
 			if (!is.finite(private$cached_values$s_beta_hat_T))

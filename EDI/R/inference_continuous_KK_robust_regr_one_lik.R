@@ -108,6 +108,31 @@ InferenceContinKKRobustRegrOneLik = R6::R6Class("InferenceContinKKRobustRegrOneL
 			}
 			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
 		},
+		#' @description Computes the Wald confidence interval.
+		#' @param alpha The confidence level in the computed confidence interval is 1 -
+		#'   \code{alpha}. The default is 0.05.
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			private$fit_combined()
+			if (should_run_asserts()) {
+				private$assert_finite_se()
+			}
+			private$compute_z_or_t_ci_from_s_and_df(alpha)
+		},
+		#' @description Computes the Wald two-sided p-value.
+		#' @param delta The null difference to test against. Default 0.
+		compute_wald_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			private$fit_combined()
+			if (should_run_asserts()) {
+				private$assert_finite_se()
+			}
+			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+		},
 		#' @description Duplicate
 		#' @param verbose A flag indicating whether messages should be displayed.
 		#' @param make_fork_cluster Whether the duplicate should be allowed to create a fork cluster.
@@ -167,6 +192,14 @@ InferenceContinKKRobustRegrOneLik = R6::R6Class("InferenceContinKKRobustRegrOneL
 			if (!is.finite(private$cached_values$s_beta_hat_T)){
 				return(invisible(NULL))
 			}
+		},
+		get_standard_error = function(){
+			private$fit_combined(estimate_only = FALSE)
+			private$cached_values$s_beta_hat_T %||% NA_real_
+		},
+		get_degrees_of_freedom = function(){
+			private$fit_combined(estimate_only = FALSE)
+			private$cached_values$df %||% NA_real_
 		},
 		# estimate_only = TRUE forces "M" (fast, no LQS phase) and skips summary().
 		fit_rlm = function(X, y, j_treat, estimate_only = FALSE){

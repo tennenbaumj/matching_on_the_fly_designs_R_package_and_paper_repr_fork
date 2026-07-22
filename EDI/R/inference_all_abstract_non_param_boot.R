@@ -170,8 +170,9 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			}
 			# Check cache (skipped in debug mode to always get fresh diagnostic results)
 			cache_key = as.character(B)
-			if (!isTRUE(debug) && !is.null(private$cached_values$boot_distr_cache[[cache_key]])) {
-				return(private$cached_values$boot_distr_cache[[cache_key]])
+			cached_boot_distr = private$get_cached_resampling_distribution("non_param_boot", cache_key)
+			if (!isTRUE(debug) && !is.null(cached_boot_distr)) {
+				return(cached_boot_distr)
 			}
 			if (private$verbose) cat("Computing bootstrap distribution...\n")
 			# Duplicate objects for thread safety
@@ -205,8 +206,8 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 					iter_val = withCallingHandlers(
 						tryCatch({
 							if (!is.null(worker_state)) {
-								private$load_bootstrap_sample_into_worker(worker_state, boot_draw)
-								private$compute_bootstrap_worker_estimate(worker_state)
+								private$load_resampling_draw_into_worker("non_param_boot", worker_state, boot_draw)
+								private$estimate_bootstrap_worker(worker_state)
 							} else {
 								sub_inf = private$bootstrap_subset_inference(boot_draw, smooth = FALSE)
 								if (is.null(sub_inf)) NA_real_ else as.numeric(sub_inf$compute_estimate(estimate_only = TRUE))[1L]
@@ -226,7 +227,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 					chunks = split(seq_len(B), chunk_id)
 					run_debug_chunk = if (isTRUE(private$use_reusable_bootstrap_worker())) {
 						function(idxs) {
-							worker_state = private$create_bootstrap_worker_state()
+							worker_state = private$create_reusable_bootstrap_worker()
 							lapply(idxs, function(idx) run_debug_boot_iter(boot_draw = boot_draws[[idx]], worker_state = worker_state))
 						}
 					} else {
@@ -278,8 +279,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 					num_errors_vec = lengths(errors_list)
 					num_warnings_vec = lengths(warnings_list)
 					# Populate the normal cache so subsequent non-debug calls can reuse the values
-					if (is.null(private$cached_values$boot_distr_cache)) private$cached_values$boot_distr_cache = list()
-					private$cached_values$boot_distr_cache[[cache_key]] = values
+					private$set_cached_resampling_distribution("non_param_boot", cache_key, values)
 					return(list(
 						values = values,
 						errors = errors_list,
@@ -303,10 +303,10 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			if (actual_cores > 1L) {
 				do_warmup_iter = if (isTRUE(private$use_reusable_bootstrap_worker())) {
 					function() {
-						worker_state = private$create_bootstrap_worker_state()
+						worker_state = private$create_reusable_bootstrap_worker()
 						boot_draw = boot_draws[[1L]]
-						private$load_bootstrap_sample_into_worker(worker_state, boot_draw)
-						tryCatch(private$compute_bootstrap_worker_estimate(worker_state), error = function(e) NA_real_)
+						private$load_resampling_draw_into_worker("non_param_boot", worker_state, boot_draw)
+						tryCatch(private$estimate_bootstrap_worker(worker_state), error = function(e) NA_real_)
 					}
 				} else {
 					function() {
@@ -347,8 +347,7 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				)))
 			}
 			if (!is.numeric(boot_distr)) boot_distr = as.numeric(boot_distr)
-			if (is.null(private$cached_values$boot_distr_cache)) private$cached_values$boot_distr_cache = list()
-			private$cached_values$boot_distr_cache[[cache_key]] = boot_distr
+			private$set_cached_resampling_distribution("non_param_boot", cache_key, boot_distr)
 			boot_distr
 		},
 		#' @description Computes a bootstrap-based two-sided p-value for the treatment effect.
@@ -796,6 +795,40 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 		create_bootstrap_worker_state = function(){
 			NULL
 		},
+		# Reusable-worker contract:
+		# * create_bootstrap_worker_state() returns a list containing the worker object;
+		# * load_bootstrap_sample_into_worker() mutates that state for one draw; and
+		# * compute_bootstrap_worker_estimate() returns one numeric treatment estimate.
+		# The draw itself is deliberately estimator-specific (for example, row indices
+		# or a list containing row indices and match identifiers).
+		validate_bootstrap_worker_state = function(worker_state){
+			if (!is.list(worker_state) || is.null(worker_state$worker)) {
+				stop("Reusable bootstrap workers must be non-NULL lists containing `worker`.")
+			}
+			invisible(worker_state)
+		},
+		create_reusable_bootstrap_worker = function(){
+			worker_state = private$create_bootstrap_worker_state()
+			private$validate_bootstrap_worker_state(worker_state)
+			worker_state
+		},
+		load_bootstrap_draw_into_worker = function(worker_state, boot_draw){
+			private$validate_bootstrap_worker_state(worker_state)
+			private$load_bootstrap_sample_into_worker(worker_state, boot_draw)
+			invisible(worker_state)
+		},
+		load_non_param_bootstrap_draw_into_worker = function(worker_state, draw, ...){
+			private$load_bootstrap_sample_into_worker(worker_state, draw)
+			invisible(worker_state)
+		},
+		estimate_bootstrap_worker = function(worker_state){
+			private$validate_bootstrap_worker_state(worker_state)
+			theta = private$compute_bootstrap_worker_estimate(worker_state)
+			if (!is.numeric(theta) || length(theta) != 1L) {
+				stop("Reusable bootstrap workers must return one numeric treatment estimate.")
+			}
+			theta
+		},
 		create_design_backed_bootstrap_worker_state = function(){
 			worker = self$duplicate(verbose = FALSE, make_fork_cluster = FALSE)
 			worker$num_cores = 1L
@@ -923,46 +956,29 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			}
 			theta
 		},
-		compute_bootstrap_distribution_with_reused_workers = function(boot_draws, actual_cores, show_progress = FALSE, bootstrap_type = NULL){
-			B = length(boot_draws)
-			chunk_n = max(1L, min(as.integer(actual_cores), as.integer(B)))
-			chunk_id = ceiling(seq_len(B) / ceiling(B / chunk_n))
-			chunks = split(seq_len(B), chunk_id)
-			run_chunk = function(idxs) {
-				worker_state = private$create_bootstrap_worker_state()
-				out = numeric(length(idxs))
-				for (k in seq_along(idxs)) {
-					boot_draw = boot_draws[[idxs[[k]]]]
-					out[k] = tryCatch({
-						private$load_bootstrap_sample_into_worker(worker_state, boot_draw)
-						private$compute_bootstrap_worker_estimate(worker_state)
-					}, error = function(e) NA_real_)
-				}
-				out
-			}
-			if (actual_cores <= 1L) {
-				return(as.numeric(run_chunk(seq_len(B))))
-			}
-			as.numeric(unlist(private$par_lapply(
-				chunks,
-				run_chunk,
-				n_cores = actual_cores,
-				budget = 1L,
-				show_progress = show_progress
-			), use.names = FALSE))
-		},
-		compute_jackknife_distribution_with_reused_workers = function(deletion_draws, actual_cores, show_progress = FALSE){
-			n_draws = length(deletion_draws)
+		compute_reusable_bootstrap_worker_distribution = function(draws, actual_cores, show_progress = FALSE, operation = "non_param_boot", loader_args = list()){
+			n_draws = length(draws)
+			if (n_draws == 0L) return(numeric(0))
+			contract = private$get_resampling_draw_contract(operation)
 			chunk_n = max(1L, min(as.integer(actual_cores), as.integer(n_draws)))
 			chunk_id = ceiling(seq_len(n_draws) / ceiling(n_draws / chunk_n))
 			chunks = split(seq_len(n_draws), chunk_id)
 			run_chunk = function(idxs) {
-				worker_state = private$create_bootstrap_worker_state()
+				worker_state = private$create_reusable_bootstrap_worker()
+				# This hot loop has already validated the state once, so resolve the
+				# estimator-specific hooks here and keep per-draw dispatch minimal.
+				load_draw = private[[contract$loader]]
+				estimate_draw = private[[contract$estimator]]
 				out = numeric(length(idxs))
 				for (k in seq_along(idxs)) {
+					boot_draw = draws[[idxs[[k]]]]
 					out[k] = tryCatch({
-						private$load_bootstrap_sample_into_worker(worker_state, deletion_draws[[idxs[k]]])
-						private$compute_bootstrap_worker_estimate(worker_state)
+						if (length(loader_args)) {
+							do.call(load_draw, c(list(worker_state = worker_state, draw = boot_draw), loader_args))
+						} else {
+							load_draw(worker_state, boot_draw)
+						}
+						estimate_draw(worker_state)
 					}, error = function(e) NA_real_)
 				}
 				out
@@ -977,6 +993,22 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 				budget = 1L,
 				show_progress = show_progress
 			), use.names = FALSE))
+		},
+		compute_bootstrap_distribution_with_reused_workers = function(boot_draws, actual_cores, show_progress = FALSE, bootstrap_type = NULL){
+			private$compute_reusable_bootstrap_worker_distribution(
+				draws = boot_draws,
+				actual_cores = actual_cores,
+				show_progress = show_progress,
+				operation = "non_param_boot"
+			)
+		},
+		compute_jackknife_distribution_with_reused_workers = function(deletion_draws, actual_cores, show_progress = FALSE){
+			private$compute_reusable_bootstrap_worker_distribution(
+				draws = deletion_draws,
+				actual_cores = actual_cores,
+				show_progress = show_progress,
+				operation = "non_param_boot"
+			)
 		},
 		bootstrap_sample_indices = function(n, bootstrap_type = NULL){
 			if (!is.null(private$des_obj)){
@@ -1273,90 +1305,59 @@ InferenceNonParamBootstrap = R6::R6Class("InferenceNonParamBootstrap",
 			private$cached_values$jack_distr_cache[[cache_key]] = jack
 			as.numeric(jack)
 		},
-			ci_from_boot_distribution = function(boot_distr, alpha, type, est = NULL){
-			type = tolower(type)
-			if (should_run_asserts()) {
-				if (length(boot_distr) == 0L) stop("Bootstrap confidence interval returned NA bounds")
+		ci_from_boot_distribution = function(boot_distr, alpha, type, est = NULL){
+			if (should_run_asserts() && length(boot_distr) == 0L) {
+				stop("Bootstrap confidence interval returned NA bounds")
 			}
-			if (is.null(est)) est = as.numeric(self$compute_estimate())[1]
-			if (type == "percentile") {
-				stats::quantile(boot_distr, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8)
-			} else {
-				2 * est - stats::quantile(boot_distr, probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
-				}
-			},
-			studentized_interval_scale_unstable = function(theta, ci = NULL, se_hat = NULL, pivots = NULL, est = 0, alpha = 0.05, max_width_ratio = 5){
-				theta = as.numeric(theta)
-				theta = theta[is.finite(theta)]
-				if (length(theta) < 5L) return(FALSE)
-				theta_width = diff(stats::quantile(theta, probs = c(alpha / 2, 1 - alpha / 2), names = FALSE, type = 8))
-				scale_ref = max(as.numeric(theta_width), 1e-8, 1e-3 * max(1, abs(as.numeric(est)[1L])), na.rm = TRUE)
-				if (!is.finite(scale_ref) || scale_ref <= 0) return(FALSE)
-				if (!is.null(ci)) {
-					ci = as.numeric(ci)
-					if (length(ci) < 2L || !all(is.finite(ci[1:2]))) return(FALSE)
-					width = abs(diff(ci[1:2]))
-				} else {
-					if (is.null(pivots) || !is.finite(se_hat) || se_hat <= 0) return(FALSE)
-					pivots = as.numeric(pivots)
-					pivots = pivots[is.finite(pivots)]
-					if (length(pivots) < 5L) return(FALSE)
-					width = 2 * stats::quantile(abs(pivots), probs = 1 - alpha / 2, names = FALSE, type = 8) * as.numeric(se_hat)[1L]
-				}
-				is.finite(width) && width > max_width_ratio * scale_ref
-			},
-			studentized_bootstrap_pivots = function(theta, se, est, se_hat, min_number_usable_samples = 10L, symmetric = FALSE){
-			se = as.numeric(se)
-			theta = as.numeric(theta)
-			min_number_usable_samples = as.integer(min_number_usable_samples)
-			se_pos = se[is.finite(se) & se > 0]
-			if (!length(se_pos) || !is.finite(se_hat) || se_hat <= 0) {
-				stop("Studentized bootstrap requires finite positive standard errors.")
-			}
-			se_ref = stats::median(se_pos)
-			se_floor = max(.Machine$double.eps, 1e-6 * as.numeric(se_hat), 1e-6 * as.numeric(se_ref))
-			ok = is.finite(theta) & is.finite(se) & se > se_floor
-			pivots = (theta[ok] - est) / se[ok]
-			pivots = pivots[is.finite(pivots)]
-			if (isTRUE(symmetric)) pivots = abs(pivots)
-			if (length(pivots) < min_number_usable_samples) {
-				stop("Studentized bootstrap returned too few stable standard errors.")
-			}
-			if (stats::quantile(abs(pivots), probs = 0.975, names = FALSE, type = 8) > 50) {
-				stop("Studentized bootstrap pivots are numerically unstable.")
-			}
-			pivots
+			if (is.null(est)) est = as.numeric(self$compute_estimate())[1L]
+			bootstrap_ci_from_distribution(boot_distr, alpha, type, est = est)
+		},
+		studentized_interval_scale_unstable = function(theta, ci = NULL, se_hat = NULL, pivots = NULL, est = 0, alpha = 0.05, max_width_ratio = 5){
+			bootstrap_studentized_interval_scale_unstable(
+				theta = theta,
+				ci = ci,
+				se_hat = se_hat,
+				pivots = pivots,
+				est = est,
+				alpha = alpha,
+				max_width_ratio = max_width_ratio
+			)
+		},
+		studentized_bootstrap_pivots = function(theta, se, est, se_hat, min_number_usable_samples = 10L, symmetric = FALSE){
+			bootstrap_studentized_pivots(
+				theta = theta,
+				se = se,
+				est = est,
+				se_hat = se_hat,
+				min_number_usable_samples = min_number_usable_samples,
+				symmetric = symmetric
+			)
 		},
 		ci_studentized = function(boot_stats, alpha, est, min_number_usable_samples = 10L){
 			se_hat = private$infer_original_se()
 			if (should_run_asserts()) {
 				if (!is.finite(se_hat) || se_hat <= 0) stop("Studentized bootstrap CI requires a finite standard error.")
 			}
-			t_vals = private$studentized_bootstrap_pivots(
-				theta = boot_stats$theta,
-				se = boot_stats$se,
+			bootstrap_ci_studentized(
+				boot_stats = boot_stats,
+				alpha = alpha,
 				est = est,
 				se_hat = se_hat,
 				min_number_usable_samples = min_number_usable_samples
 			)
-			q = stats::quantile(t_vals, probs = c(1 - alpha / 2, alpha / 2), names = FALSE, type = 8)
-			c(est - q[1L] * se_hat, est - q[2L] * se_hat)
 		},
 		ci_symmetric_studentized = function(boot_stats, alpha, est, min_number_usable_samples = 10L){
 			se_hat = private$infer_original_se()
 			if (should_run_asserts()) {
 				if (!is.finite(se_hat) || se_hat <= 0) stop("Symmetric percentile-t bootstrap CI requires a finite standard error.")
 			}
-			t_vals = private$studentized_bootstrap_pivots(
-				theta = boot_stats$theta,
-				se = boot_stats$se,
+			bootstrap_ci_symmetric_studentized(
+				boot_stats = boot_stats,
+				alpha = alpha,
 				est = est,
 				se_hat = se_hat,
-				min_number_usable_samples = min_number_usable_samples,
-				symmetric = TRUE
+				min_number_usable_samples = min_number_usable_samples
 			)
-			q = stats::quantile(t_vals, probs = 1 - alpha, names = FALSE, type = 8)
-			c(est - q[1L] * se_hat, est + q[1L] * se_hat)
 		},
 		ci_bca = function(boot_distr, alpha, est){
 			jack = private$approximate_jackknife_distribution_beta_hat_T_private(unit = "auto")

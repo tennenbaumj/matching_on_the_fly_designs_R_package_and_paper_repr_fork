@@ -150,7 +150,10 @@ InferenceIncidExactBinomial = R6::R6Class("InferenceIncidExactBinomial",
 		},
 		get_exact_binomial_log_or_estimate = function(){
 			stats = private$get_exact_binomial_stats()
-			if (stats$m <= 0L) return(NA_real_)
+			if (stats$m <= 0L) {
+				private$cache_nonestimable_estimate("exact_binomial_no_matched_pairs")
+				return(NA_real_)
+			}
 			log((stats$d_plus + 0.5) / (stats$d_minus + 0.5))
 		},
 		get_exact_binomial_stats = function(){

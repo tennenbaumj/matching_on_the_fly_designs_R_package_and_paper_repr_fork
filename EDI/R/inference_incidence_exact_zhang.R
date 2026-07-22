@@ -56,6 +56,7 @@ InferenceIncidenceExactZhang = R6::R6Class("InferenceIncidenceExactZhang",
 	),
 	private = list(
 		default_exact_type = "Zhang",
+		supports_bayesian_bootstrap = function() FALSE,
 		resolve_exact_type = function(type){
 			if (is.null(type)) type = private$default_exact_type
 			if (should_run_asserts()) {

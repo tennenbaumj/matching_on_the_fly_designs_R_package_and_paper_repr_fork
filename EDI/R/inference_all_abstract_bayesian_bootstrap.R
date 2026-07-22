@@ -78,8 +78,9 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				assertFlag(debug)
 			}
 			cache_key = private$bayesian_bootstrap_cache_key(B = B, weighting_unit_type = weighting_unit_type)
-			if (!isTRUE(debug) && !is.null(private$cached_values$bayes_boot_distr_cache[[cache_key]])) {
-				return(private$cached_values$bayes_boot_distr_cache[[cache_key]])
+			cached_bayes_boot_distr = private$get_cached_resampling_distribution("bayesian_boot", cache_key)
+			if (!isTRUE(debug) && !is.null(cached_bayes_boot_distr)) {
+				return(cached_bayes_boot_distr)
 			}
 			inf_template = self$duplicate()
 			if (!is.null(private$seed)) {
@@ -111,7 +112,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 					iter_val = withCallingHandlers(
 						tryCatch({
 							if (!is.null(worker_state)) {
-								private$load_bayesian_bootstrap_weights_into_worker(worker_state, draw)
+								private$load_resampling_draw_into_worker("bayesian_boot", worker_state, draw)
 								private$compute_bayesian_bootstrap_worker_estimate(worker_state)
 							} else {
 								worker_inf$.__enclos_env__$private$current_bayesian_bootstrap_context = draw$context
@@ -159,8 +160,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				warnings_list = lapply(debug_results, `[[`, "warnings")
 				num_errors_vec = lengths(errors_list)
 				num_warnings_vec = lengths(warnings_list)
-				if (is.null(private$cached_values$bayes_boot_distr_cache)) private$cached_values$bayes_boot_distr_cache = list()
-				private$cached_values$bayes_boot_distr_cache[[cache_key]] = values
+				private$set_cached_resampling_distribution("bayesian_boot", cache_key, values)
 				return(list(
 					values = values,
 					errors = errors_list,
@@ -178,7 +178,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 					function() {
 						worker_state = private$create_bootstrap_worker_state()
 						draw = draws[[1L]]
-						private$load_bayesian_bootstrap_weights_into_worker(worker_state, draw)
+						private$load_resampling_draw_into_worker("bayesian_boot", worker_state, draw)
 						tryCatch(private$compute_bayesian_bootstrap_worker_estimate(worker_state), error = function(e) NA_real_)
 					}
 				} else {
@@ -225,8 +225,7 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 				))
 			}
 			boot_distr = as.numeric(boot_distr)
-			if (is.null(private$cached_values$bayes_boot_distr_cache)) private$cached_values$bayes_boot_distr_cache = list()
-			private$cached_values$bayes_boot_distr_cache[[cache_key]] = boot_distr
+			private$set_cached_resampling_distribution("bayesian_boot", cache_key, boot_distr)
 			boot_distr
 		},
 		#' @description Computes a Bayesian-bootstrap-based two-sided p-value for
@@ -577,6 +576,9 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			worker_priv$current_bayesian_bootstrap_subject_or_block_weights = as.numeric(draw$subject_or_block_weights)
 			worker_priv$current_bayesian_bootstrap_context = draw$context
 		},
+		load_bayesian_bootstrap_draw_into_worker = function(worker_state, draw, ...){
+			private$load_bayesian_bootstrap_weights_into_worker(worker_state, draw)
+		},
 		compute_bayesian_bootstrap_worker_estimate = function(worker_state){
 			worker_priv = worker_state$worker$.__enclos_env__$private
 			theta = as.numeric(worker_state$worker$compute_estimate_with_bootstrap_weights(
@@ -709,32 +711,12 @@ InferenceBayesianBootstrap = R6::R6Class("InferenceBayesianBootstrap",
 			})
 		},
 		compute_bayesian_bootstrap_distribution_with_reused_workers = function(draws, actual_cores, show_progress = FALSE){
-			B = length(draws)
-			chunk_n = max(1L, min(as.integer(actual_cores), as.integer(B)))
-			chunk_id = ceiling(seq_len(B) / ceiling(B / chunk_n))
-			chunks = split(seq_len(B), chunk_id)
-			run_chunk = function(idxs) {
-				worker_state = private$create_bootstrap_worker_state()
-				out = numeric(length(idxs))
-				for (k in seq_along(idxs)) {
-					draw = draws[[idxs[[k]]]]
-					out[k] = tryCatch({
-						private$load_bayesian_bootstrap_weights_into_worker(worker_state, draw)
-						private$compute_bayesian_bootstrap_worker_estimate(worker_state)
-					}, error = function(e) NA_real_)
-				}
-				out
-			}
-			if (actual_cores <= 1L) {
-				return(as.numeric(run_chunk(seq_len(B))))
-			}
-			as.numeric(unlist(private$par_lapply(
-				chunks,
-				run_chunk,
-				n_cores = actual_cores,
-				budget = 1L,
-				show_progress = show_progress
-			), use.names = FALSE))
+			private$compute_reusable_bootstrap_worker_distribution(
+				draws = draws,
+				actual_cores = actual_cores,
+				show_progress = show_progress,
+				operation = "bayesian_boot"
+			)
 		}
 	)
 )

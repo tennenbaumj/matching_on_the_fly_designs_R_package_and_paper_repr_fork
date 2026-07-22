@@ -114,9 +114,10 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				if (draws_supplied) attr(rand_bootstrap_draws, "draws_id") else "fresh",
 				sep = "|"
 			)
-			if (is.null(private$cached_values$rand_boot_distr_cache)) private$cached_values$rand_boot_distr_cache = list()
-			if (!isTRUE(debug) && !is.null(private$cached_values$rand_boot_distr_cache[[cache_key]])) {
-				return(private$cached_values$rand_boot_distr_cache[[cache_key]])
+			private$ensure_resampling_distribution_cache("rand_bootstrap")
+			cached_rand_boot_distr = private$get_cached_resampling_distribution("rand_bootstrap", cache_key)
+			if (!isTRUE(debug) && !is.null(cached_rand_boot_distr)) {
+				return(cached_rand_boot_distr)
 			}
 			if (private$verbose) cat("Computing bootstrap randomization distribution...\n")
 			has_custom_randomization_statistic =
@@ -171,7 +172,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				warnings_list = lapply(debug_results, `[[`, "warnings")
 				num_errors_vec = lengths(errors_list)
 				num_warnings_vec = lengths(warnings_list)
-				private$cached_values$rand_boot_distr_cache[[cache_key]] = values
+				private$set_cached_resampling_distribution("rand_bootstrap", cache_key, values)
 				return(list(
 					values = values,
 					errors = errors_list,
@@ -194,7 +195,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				)
 				if (!is.null(fast_distr)) {
 					fast_distr = as.numeric(fast_distr)
-					private$cached_values$rand_boot_distr_cache[[cache_key]] = fast_distr
+					private$set_cached_resampling_distribution("rand_bootstrap", cache_key, fast_distr)
 					return(fast_distr)
 				}
 			}
@@ -215,7 +216,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 					zero_one_logit_clamp = zero_one_logit_clamp
 				)
 				if (!is.numeric(t0s)) t0s = as.numeric(t0s)
-				private$cached_values$rand_boot_distr_cache[[cache_key]] = t0s
+				private$set_cached_resampling_distribution("rand_bootstrap", cache_key, t0s)
 				return(t0s)
 			}
 			# Warm-up guard: run one iteration serially (twice, using the second timing to skip
@@ -248,7 +249,7 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 				zero_one_logit_clamp = zero_one_logit_clamp
 			)))
 			if (!is.numeric(t0s)) t0s = as.numeric(t0s)
-			private$cached_values$rand_boot_distr_cache[[cache_key]] = t0s
+			private$set_cached_resampling_distribution("rand_bootstrap", cache_key, t0s)
 			t0s
 		},
 		#' @description Computes a bootstrap randomization two-sided p-value for Fisher's sharp
@@ -571,6 +572,17 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 		# Loads a fresh assignment (and the sharp-null-shifted responses) into a worker whose
 		# design/inference state already holds the bootstrap row subset. Mirrors the cache
 		# resets of load_randomization_perm_into_worker.
+		load_rand_bootstrap_draw_into_worker = function(worker_state, draw, delta, transform_responses, y0_full, zero_one_logit_clamp = .Machine$double.eps){
+			private$load_bootstrap_sample_into_worker(worker_state, list(i_b = draw$i_b, m_vec_b = draw$m_vec_b))
+			private$load_rand_bootstrap_assignment_into_worker(
+				worker_state = worker_state,
+				draw = draw,
+				delta = delta,
+				transform_responses = transform_responses,
+				y0_full = y0_full,
+				zero_one_logit_clamp = zero_one_logit_clamp
+			)
+		},
 		load_rand_bootstrap_assignment_into_worker = function(worker_state, draw, delta, transform_responses, y0_full, zero_one_logit_clamp = .Machine$double.eps){
 			# NOTE: use [[ ]] for worker_state members — $ partial matching would resolve
 			# worker_state$worker_des to worker_des_priv (an environment), a subtle bug.
@@ -629,31 +641,18 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			invisible(NULL)
 		},
 		compute_rand_bootstrap_distribution_with_reused_workers = function(rand_bootstrap_draws, delta, transform_responses, y0_full, actual_cores, show_progress = FALSE, zero_one_logit_clamp = .Machine$double.eps){
-			B = length(rand_bootstrap_draws)
-			chunk_n = max(1L, min(as.integer(actual_cores), as.integer(B)))
-			chunk_id = ceiling(seq_len(B) / ceiling(B / chunk_n))
-			chunks = split(seq_len(B), chunk_id)
-			run_chunk = function(idxs) {
-				worker_state = private$create_bootstrap_worker_state()
-				out = numeric(length(idxs))
-				for (k in seq_along(idxs)) {
-					draw = rand_bootstrap_draws[[idxs[k]]]
-					out[k] = tryCatch({
-						private$load_bootstrap_sample_into_worker(worker_state, list(i_b = draw$i_b, m_vec_b = draw$m_vec_b))
-						private$load_rand_bootstrap_assignment_into_worker(worker_state, draw, delta, transform_responses, y0_full, zero_one_logit_clamp)
-						as.numeric(private$compute_bootstrap_worker_estimate(worker_state))[1L]
-					}, error = function(e) NA_real_)
-				}
-				out
-			}
-			if (actual_cores <= 1L) return(as.numeric(run_chunk(seq_len(B))))
-			as.numeric(unlist(private$par_lapply(
-				chunks,
-				run_chunk,
-				n_cores = actual_cores,
-				budget = 1L,
-				show_progress = show_progress
-			), use.names = FALSE))
+			private$compute_reusable_bootstrap_worker_distribution(
+				draws = rand_bootstrap_draws,
+				actual_cores = actual_cores,
+				show_progress = show_progress,
+				operation = "rand_bootstrap",
+				loader_args = list(
+					delta = delta,
+					transform_responses = transform_responses,
+					y0_full = y0_full,
+					zero_one_logit_clamp = zero_one_logit_clamp
+				)
+			)
 		},
 		# Evaluates draws[1:target] from a pre-materialized draw list, accumulating results in a
 		# prefix cache keyed by (draws_id, delta, transform). Dispatches the new batch through the
@@ -719,10 +718,10 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			threshold = mc_ctrl$mc_stop_threshold
 			# Short-circuit: if the full B-draw distribution is already cached, skip batching.
 			draws_id = attr(draws, "draws_id")
-			if (!is.null(draws_id) && !is.null(private$cached_values[["rand_boot_distr_cache"]])) {
+			if (!is.null(draws_id)) {
 				delta_key = formatC(as.numeric(delta), digits = 17L, format = "fg", flag = "#")
 				full_key = paste(B_int, delta_key, transform_arg, draws_id, sep = "|")
-				full_distr = private$cached_values$rand_boot_distr_cache[[full_key]]
+				full_distr = private$get_cached_resampling_distribution("rand_bootstrap", full_key)
 				if (!is.null(full_distr) && length(full_distr) >= B_int) {
 					return(private$compute_two_sided_randomization_pval_from_t0s(full_distr, t))
 				}
@@ -787,11 +786,18 @@ InferenceRandBootstrap = R6::R6Class("InferenceRandBootstrap",
 			worker_state = private$create_bootstrap_worker_state()
 			results_mat = matrix(NA_real_, nrow = B, ncol = 2L)
 			worker_obj = worker_state[["worker"]]
+			load_draw = private[[private$get_resampling_draw_contract("rand_bootstrap")$loader]]
 			for (b in seq_len(B)) {
 				draw = draws[[b]]
 				results_mat[b, ] = tryCatch({
-					private$load_bootstrap_sample_into_worker(worker_state, list(i_b = draw$i_b, m_vec_b = draw$m_vec_b))
-					private$load_rand_bootstrap_assignment_into_worker(worker_state, draw, delta, transform_arg, y0_full, zero_one_logit_clamp)
+					load_draw(
+						worker_state,
+						draw,
+						delta = delta,
+						transform_responses = transform_arg,
+						y0_full = y0_full,
+						zero_one_logit_clamp = zero_one_logit_clamp
+					)
 					tryCatch(worker_obj$compute_estimate(estimate_only = FALSE), error = function(e) NULL)
 					if (is.function(worker_obj$is_nonestimable) && isTRUE(worker_obj$is_nonestimable("estimate"))) {
 						c(NA_real_, NA_real_)

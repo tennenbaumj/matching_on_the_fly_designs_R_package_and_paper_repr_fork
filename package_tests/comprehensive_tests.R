@@ -244,6 +244,25 @@ design_supports_exact_binomial_incidence = function(des_obj){
 		is(des_obj, "DesignFixedBinaryMatch")
 }
 
+design_has_realized_matched_pair = function(des_obj){
+	if (!design_supports_exact_binomial_incidence(des_obj)) {
+		return(FALSE)
+	}
+	tryCatch({
+		if (is(des_obj, "DesignFixedBinaryMatch")) {
+			des_obj$.__enclos_env__$private$ensure_matching_structure_computed()
+		}
+		m_vec = des_obj$.__enclos_env__$private$m
+		if (is.null(m_vec) || length(m_vec) == 0L) {
+			return(FALSE)
+		}
+		m_vec = as.integer(m_vec)
+		m_vec[is.na(m_vec)] = 0L
+		pair_sizes = table(m_vec[m_vec > 0L])
+		length(pair_sizes) > 0L && any(as.integer(pair_sizes) == 2L)
+	}, error = function(e) FALSE)
+}
+
 build_result_key = function(rep_val, beta_val, dataset_val, response_val, design_val, inference_val, function_run_val){
 	paste(
 		as.integer(rep_val),
@@ -570,6 +589,7 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 		"InferenceContinMultGLS",
 		"InferenceSurvivalKKClaytonCopulaOneLik",
 		"InferenceAbstractKKWeibullFrailtyOneLik",
+		"InferenceIncidenceExactZhang",
 		"InferenceIncidExactZhangAbstract",
 		"InferenceOrdinalPairedSignTest",
 		"InferenceOrdinalKKCondAdjCatLogitRegr",
@@ -592,13 +612,15 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 	))
 	# Per-operation slow skips (avg >30s in comprehensive_tests_*_20260720.log)
 	skip_rand_slow            = is_any_inference_class(c("InferenceContinKKGLMM"))
-	skip_rand_ci_slow         = is_any_inference_class(c("InferenceSurvivalWeibullRegr", "InferenceSurvivalKKClaytonCopulaOneLik", "InferenceSurvivalKKWeibullFrailtyOneLik", "InferencePropQuantileRegr", "InferencePropKKGEE"))
+	skip_rand_ci_slow         = is_any_inference_class(c("InferenceSurvivalWeibullRegr", "InferenceSurvivalKKClaytonCopulaOneLik", "InferenceSurvivalKKWeibullFrailtyOneLik", "InferencePropQuantileRegr", "InferencePropKKGEE", "InferencePropBetaRegr"))
 	skip_score_ci_slow        = is_any_inference_class(c("InferenceSurvivalKKWeibullFrailtyOneLik"))  # score CI avg 50.1s / max 324.8s at n=13
 	skip_lik_ratio_ci_slow    = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))  # lik-ratio CI avg 39s / max 234s at n=6
 	skip_bbt_pval_slow        = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))  # Bayesian bootstrap pval avg 32.4s / max 68.4s at n=32
 	skip_bbt_pval_symmetric_slow = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))  # Bayesian bootstrap symmetric pval avg 30.6s / max 54.9s at n=18
 	skip_bbt_ci_slow          = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))
-	skip_boot_stud_slow       = FALSE
+	skip_boot_ci_default_slow = is_any_inference_class(c("InferenceIncidRiskDiff", "InferenceContinKKQuantileRegrOneLik"))  # RiskDiff bootstrap CI avg 261.1s / max 2014.1s at n=8; ContinKKQuantileRegrOneLik bootstrap CI mean 109.0s / max 9434.3s at n=98
+	skip_boot_stud_slow       = is_any_inference_class(c("InferenceIncidRiskDiff"))  # bootstrap studentized CI avg 261.1s / max 2014.1s at n=8
+	skip_boot_pval_stud_slow  = is_any_inference_class(c("InferenceAllSimpleMeanDiff"))  # bootstrap studentized pval avg 178.8s / max 2001.5s at n=12
 	skip_boot_ci_slow         = FALSE
 	skip_jack_slow            = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik", "InferenceContinKKGLMM"))  # ClaytonCopula frailty refits; ContinKKGLMM jackknife estimate avg 54s / max 102s
 	skip_pboot_ci_slow        = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))
@@ -637,9 +659,14 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 		(isTRUE(tryCatch(seq_des_inf$.__enclos_env__$private$supports_bartlett_likelihood_ratio_exact(), error = function(e) FALSE)) ||
 		 isTRUE(tryCatch(seq_des_inf$.__enclos_env__$private$supports_bartlett_likelihood_ratio_approx(), error = function(e) FALSE)))
 	supports_bartlett_ci = run_parametric_bootstrap_ci && supports_bartlett
+	supports_incidence_rand_pval =
+		response_type != "incidence" ||
+		isTRUE(tryCatch(seq_des_inf$.__enclos_env__$private$should_use_zhang_incidence_randomization(), error = function(e) FALSE)) ||
+		isTRUE(tryCatch(seq_des_inf$.__enclos_env__$private$should_use_design_randomization_for_incidence(), error = function(e) FALSE))
 	skip_rand      = is(seq_des_inf, "InferenceIncidenceExactZhang") || is(seq_des_inf, "InferenceIncidExactZhangAbstract") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalPairedSignTest") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalGCompMeanDiff") || is(seq_des_inf, "InferenceOrdinalCloglogRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalOrderedProbitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalCauchitRegr") || is(seq_des_inf, "InferenceOrdinalKKCondAdjCatLogitRegr")
 	skip_mle_pval  = FALSE
 	skip_rand_pval = is(seq_des_inf, "InferenceContinMultGLS") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferencePropGCompMeanDiff") || is(seq_des_inf, "InferenceSurvivalKKClaytonCopulaOneLik")
+	skip_regular_rand_pval = skip_rand_pval || !supports_incidence_rand_pval
 	skip_ci_rand   = is_any_inference_class(c(
 		"InferenceContinMultKKQuantileRegrOneLik",
 		"InferencePropGCompMeanDiff",
@@ -658,7 +685,7 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 		"InferenceCountKKHurdlePoissonOneLik"
 	)) || response_type == "count" ||
 		(response_type != "continuous" && is(seq_des_inf, "InferenceAllSimpleMeanDiff"))
-	skip_ci_rand_custom = FALSE
+	skip_ci_rand_custom = is_any_inference_class(c("InferenceContinKKRobustRegrOneLik", "InferenceSurvivalKKClaytonCopulaOneLik"))  # custom rand CI slow: robust avg 336.6s / max 1994.8s at n=6; Clayton avg 41.9s / max 1993.3s at n=53
 	supports_jackknife = is(seq_des_inf, "InferenceJackknife") ||
 		(
 			"compute_jackknife_wald_two_sided_pval" %in% names(seq_des_inf) &&
@@ -1025,8 +1052,8 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	}
 	if (response_type == "incidence" &&
 	    is(seq_des_inf, "InferenceIncidExactBinomial") &&
-	    !design_supports_exact_binomial_incidence(des_obj_for_exact)) {
-		message("          Skipping InferenceIncidExactBinomial: design is not exact-binomial compatible.")
+	    !design_has_realized_matched_pair(des_obj_for_exact)) {
+		message("          Skipping InferenceIncidExactBinomial: design has no realized matched pairs.")
 		return(invisible(NULL))
 	}
 
@@ -1133,9 +1160,16 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	}
 	# Nonparametric bootstrap CI — default type first (warms the distribution cache), then extra types reuse it
 	if (should_run_test_family("bootstrap") && !skip_slow && !skip_bootstrap && !skip_bootstrap_slow && !skip_boot_ci_slow){
-		safe_call("compute_bootstrap_confidence_interval", seq_des_inf$compute_bootstrap_confidence_interval(B = r, na.rm = TRUE, show_progress = FALSE))
+		if (!skip_boot_ci_default_slow) {
+			safe_call("compute_bootstrap_confidence_interval", seq_des_inf$compute_bootstrap_confidence_interval(B = r, na.rm = TRUE, show_progress = FALSE))
+		} else {
+			message("          Skipping compute_bootstrap_confidence_interval (too slow)")
+		}
 		for (boot_ci_type in c("basic", "bca", "studentized")) {
-			if (boot_ci_type == "studentized" && skip_boot_stud_slow) next
+			if (boot_ci_type == "studentized" && skip_boot_stud_slow) {
+				message("          Skipping compute_bootstrap_confidence_interval_studentized (too slow)")
+				next
+			}
 			safe_call(paste0("compute_bootstrap_confidence_interval_", boot_ci_type),
 					  seq_des_inf$compute_bootstrap_confidence_interval(B = r, type = boot_ci_type, na.rm = TRUE, show_progress = FALSE))
 		}
@@ -1152,7 +1186,10 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	if (should_run_test_family("bootstrap") && !skip_slow && !skip_bootstrap && !skip_bootstrap_slow){
 		safe_call("compute_bootstrap_two_sided_pval", seq_des_inf$compute_bootstrap_two_sided_pval(B = r, na.rm = TRUE, show_progress = FALSE))
 		for (boot_pval_type in c("symmetric", "bca", "studentized")) {
-			if (boot_pval_type == "studentized" && skip_boot_stud_slow) next
+			if (boot_pval_type == "studentized" && skip_boot_pval_stud_slow) {
+				message("          Skipping compute_bootstrap_two_sided_pval_studentized (too slow)")
+				next
+			}
 			safe_call(paste0("compute_bootstrap_two_sided_pval_", boot_pval_type),
 					  seq_des_inf$compute_bootstrap_two_sided_pval(B = r, type = boot_pval_type, na.rm = TRUE, show_progress = FALSE))
 		}
@@ -1200,7 +1237,7 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	if (should_run_test_family("jackknife") && !skip_slow && supports_jackknife && !skip_jack_slow){
 		safe_call("compute_jackknife_wald_confidence_interval", seq_des_inf$compute_jackknife_wald_confidence_interval())
 	}
-	if (should_run_test_family("rand") && !skip_slow && !skip_rand && !skip_rand_pval && !skip_rand_slow && response_type %in% c("continuous", "survival", "proportion", "incidence", "count", "ordinal")){
+	if (should_run_test_family("rand") && !skip_slow && !skip_rand && !skip_regular_rand_pval && !skip_rand_slow && response_type %in% c("continuous", "survival", "proportion", "incidence", "count", "ordinal")){
 		if (run_debug_resampling) {
 			safe_call_debug("approximate_randomization_distribution_beta_hat_T_debug",
 						seq_des_inf$approximate_randomization_distribution_beta_hat_T(r = r_debug, debug = TRUE))
@@ -1325,7 +1362,8 @@ instantiate_inference_generator = function(class_gen, des_obj, model_formula = N
 }
 
 is_skipped_inference_label = function(class_names){
-	class_names %in% c("InferenceIncidCMH", "InferenceIncidExtendedRobins")
+	class_names %in% c("InferenceIncidCMH", "InferenceIncidExtendedRobins") |
+		grepl("IVWC", class_names, fixed = TRUE)
 }
 
 run_exhaustive_remaining_inference_classes = function(des_obj, response_type, design_type, dataset_name, n_rows, n_cols, model_formula = NULL){
@@ -1741,7 +1779,7 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 
 	if (response_type == "incidence"){
 		supports_exact_fisher_design = design_supports_exact_fisher_incidence(des_obj)
-		supports_exact_binomial_design = design_supports_exact_binomial_incidence(des_obj)
+		supports_exact_binomial_design = design_has_realized_matched_pair(des_obj)
 
 			inference_banner("InferenceAllSimpleMeanDiff")
 			run_inference_checks(InferenceAllSimpleMeanDiff$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
@@ -1749,10 +1787,12 @@ run_tests_for_response = function(response_type, design_type, dataset_name, mode
 				inference_banner("InferenceIncidExactFisher")
 				run_inference_checks(InferenceIncidExactFisher$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
 			}
-			if (supports_exact_binomial_design) {
-				inference_banner("InferenceIncidExactBinomial")
-				run_inference_checks(InferenceIncidExactBinomial$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
-			}
+				if (supports_exact_binomial_design) {
+					inference_banner("InferenceIncidExactBinomial")
+					run_inference_checks(InferenceIncidExactBinomial$new(des_obj, model_formula = model_formula), response_type, design_type, dataset_name, n_X, p_X)
+				} else if (design_supports_exact_binomial_incidence(des_obj)) {
+					message("  Skipping InferenceIncidExactBinomial: design has no realized matched pairs.")
+				}
 			if (design_supports_zhang_incidence(des_obj)) {
 				inference_banner("InferenceIncidenceExactZhang")
 				err_msg_ez = tryCatch({

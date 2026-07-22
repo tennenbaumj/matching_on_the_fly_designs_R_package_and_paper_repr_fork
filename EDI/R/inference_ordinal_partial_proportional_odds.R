@@ -117,6 +117,57 @@ InferenceOrdinalPartialProportionalOddsRegr = R6::R6Class(
 			}
 			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
 		},
+		#' @description Compute a Wald-style confidence interval for the treatment effect.
+		#' If the model-based standard error is unavailable, falls back to the
+		#' bootstrap interval.
+		#' @param alpha Significance level for the interval.
+		#'
+		#' @return A confidence interval for the treatment effect.
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(
+					alpha,
+					lower = .Machine$double.xmin,
+					upper = 1 - .Machine$double.xmin
+				)
+			}
+			private$shared()
+			if (!private$has_finite_se()){
+				warning(
+					"Partial proportional-odds regression: falling back to ",
+					"bootstrap because standard error is unavailable."
+				)
+				return(self$compute_bootstrap_confidence_interval(
+					alpha = alpha,
+					na.rm = TRUE
+				))
+			}
+			private$compute_z_or_t_ci_from_s_and_df(alpha)
+		},
+
+		#' @description Compute a Wald-style two-sided p-value for the treatment effect.
+		#' If the model-based standard error is unavailable, falls back to the
+		#' bootstrap p-value.
+		#' @param delta Null treatment effect to test.
+		#'
+		#' @return A two-sided p-value.
+		compute_wald_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			private$shared()
+			if (!private$has_finite_se()){
+				warning(
+					"Partial proportional-odds regression: falling back to ",
+					"bootstrap because standard error is unavailable."
+				)
+				return(self$compute_bootstrap_two_sided_pval(
+					delta = delta,
+					na.rm = TRUE
+				))
+			}
+			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+		},
 
 		#' @description Benchmark the asymptotic p-value path with a timing breakdown.
 		#'
@@ -225,6 +276,14 @@ InferenceOrdinalPartialProportionalOddsRegr = R6::R6Class(
 		has_finite_se = function(){
 			is.finite(private$cached_values$s_beta_hat_T) &&
 				private$cached_values$s_beta_hat_T > 0
+		},
+		get_standard_error = function(){
+			private$shared(estimate_only = FALSE)
+			private$cached_values$s_beta_hat_T %||% NA_real_
+		},
+		get_degrees_of_freedom = function(){
+			private$shared(estimate_only = FALSE)
+			private$cached_values$df %||% NA_real_
 		},
 
 		fit_partial_proportional_odds = function(){

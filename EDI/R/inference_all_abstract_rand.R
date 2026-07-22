@@ -110,9 +110,17 @@ InferenceRand = R6::R6Class("InferenceRand",
 									sample(private$w)
 								}
 								# Load into worker
-								private$load_randomization_perm_into_worker(worker_state, perm_w, delta, transform_responses, setup$y_delta, setup$base_template_y, setup$base_template_dead, zero_one_logit_clamp)
+								private$load_resampling_draw_into_worker(
+									operation = "rand",
+									worker_state = worker_state,
+									draw = perm_w,
+									delta = delta,
+									transform_responses = transform_responses,
+									setup = setup,
+									zero_one_logit_clamp = zero_one_logit_clamp
+								)
 								# Compute estimate
-								list(val = private$compute_bootstrap_worker_estimate(worker_state))
+								list(val = private$compute_randomization_worker_estimate(worker_state))
 							}, error = function(e) list(val = NA_real_, error = conditionMessage(e))),
 							warning = function(w) { iter_warns <<- c(iter_warns, conditionMessage(w)); invokeRestart("muffleWarning") }
 						)
@@ -268,7 +276,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 				}
 				return(min(1, max(2 / nsim_adj, 2 * min(sum(t0s >= t, na.rm = TRUE) / nsim_adj, sum(t0s <= t, na.rm = TRUE) / nsim_adj))))
 			}
-			if (is.null(private$cached_values$rand_distr_cache)) private$cached_values$rand_distr_cache = list()
+			private$ensure_resampling_distribution_cache("rand")
 			t = if (!is.null(private[["custom_randomization_statistic_function"]]) || !is.null(private[["compiled_cpp_stat_fn"]])) {
 				custom_stat_analysis = private$analyze_custom_randomization_statistic()
 				if (isTRUE(custom_stat_analysis$can_use_lightweight_yw_only)) {
@@ -378,18 +386,24 @@ InferenceRand = R6::R6Class("InferenceRand",
 			chunk_n = max(1L, min(as.integer(actual_rand_cores), nsim))
 			chunk_id = ceiling(seq_len(nsim) / ceiling(nsim / chunk_n))
 			chunks = split(seq_len(nsim), chunk_id)
+			contract = private$get_resampling_draw_contract("rand")
 			run_chunk = function(idxs) {
 				worker_state = private$create_bootstrap_worker_state()
+				load_draw = private[[contract$loader]]
+				estimate_draw = private[[contract$estimator]]
 				out = numeric(length(idxs))
 				for (k in seq_along(idxs)) {
 					perm_w = get_perm_w(idxs[k])
 					out[k] = tryCatch({
-						private$load_randomization_perm_into_worker(
-							worker_state, perm_w, delta, transform_responses,
-							setup$y_delta, setup$base_template_y, setup$base_template_dead,
-							zero_one_logit_clamp
+						load_draw(
+							worker_state,
+							perm_w,
+							delta = delta,
+							transform_responses = transform_responses,
+							setup = setup,
+							zero_one_logit_clamp = zero_one_logit_clamp
 						)
-						as.numeric(private$compute_bootstrap_worker_estimate(worker_state))[1L]
+						as.numeric(estimate_draw(worker_state))[1L]
 					}, error = function(e) NA_real_)
 					# Sequential null anchoring: after each successful permutation, update
 					# base_fit_warm_start to the converged parameters so the next permutation
@@ -597,11 +611,11 @@ InferenceRand = R6::R6Class("InferenceRand",
 			}
 		},
 		get_randomization_distribution_prefix = function(r, delta, transform_responses, show_progress, permutations, cache_key, batch_size = NULL, zero_one_logit_clamp = .Machine$double.eps){
-			if (is.null(private$cached_values$rand_distr_cache)) private$cached_values$rand_distr_cache = list()
-			cached = if (!is.null(cache_key)) private$cached_values$rand_distr_cache[[cache_key]] else NULL
+			private$ensure_resampling_distribution_cache("rand")
+			cached = if (!is.null(cache_key)) private$get_cached_resampling_distribution("rand", cache_key) else NULL
 			if (length(cached) > 0L && !any(is.finite(cached))) {
 				cached = NULL
-				if (!is.null(cache_key)) private$cached_values$rand_distr_cache[[cache_key]] = NULL
+				if (!is.null(cache_key)) private$set_cached_resampling_distribution("rand", cache_key, NULL)
 			}
 			have = length(cached)
 			target = if (is.null(batch_size)) as.integer(r) else min(as.integer(r), have + as.integer(batch_size))
@@ -616,7 +630,7 @@ InferenceRand = R6::R6Class("InferenceRand",
 					zero_one_logit_clamp = zero_one_logit_clamp
 				)
 				cached = c(cached, new_t0s)
-				if (!is.null(cache_key)) private$cached_values$rand_distr_cache[[cache_key]] = cached
+				if (!is.null(cache_key)) private$set_cached_resampling_distribution("rand", cache_key, cached)
 			}
 			cached[seq_len(target)]
 		},
@@ -682,6 +696,61 @@ InferenceRand = R6::R6Class("InferenceRand",
 			delta_key = formatC(as.numeric(delta), digits = 17, format = "fg", flag = "#")
 			perm_sig = private$stable_signature(permutations)
 			paste(as.integer(r), delta_key, transform_responses, perm_sig, sep = "|")
+		},
+		get_resampling_draw_contract = function(operation){
+			resampling_draw_contract(operation)
+		},
+		ensure_resampling_distribution_cache = function(operation){
+			private$cached_values = resampling_distribution_cache_ensure(
+				private$cached_values,
+				operation
+			)
+			invisible(private$cached_values)
+		},
+		get_cached_resampling_distribution = function(operation, cache_key){
+			resampling_distribution_cache_get(
+				private$cached_values,
+				operation,
+				cache_key
+			)
+		},
+		set_cached_resampling_distribution = function(operation, cache_key, value){
+			private$cached_values = resampling_distribution_cache_set(
+				private$cached_values,
+				operation,
+				cache_key,
+				value
+			)
+			invisible(value)
+		},
+		load_resampling_draw_into_worker = function(operation, worker_state, draw, ...){
+			contract = private$get_resampling_draw_contract(operation)
+			loader = private[[contract$loader]]
+			if (!is.function(loader)) {
+				stop("No resampling draw loader named `", contract$loader, "` for operation `", operation, "`.", call. = FALSE)
+			}
+			do.call(loader, c(list(worker_state = worker_state, draw = draw), list(...)))
+			invisible(worker_state)
+		},
+		load_randomization_draw_into_worker = function(worker_state, draw, delta, transform_responses, setup, zero_one_logit_clamp = .Machine$double.eps){
+			perm_w = if (is.list(draw) && !is.null(draw$w)) draw$w else draw
+			private$load_randomization_perm_into_worker(
+				worker_state = worker_state,
+				perm_w = perm_w,
+				delta = delta,
+				transform_responses = transform_responses,
+				y_delta = setup$y_delta,
+				base_template_y = setup$base_template_y,
+				base_template_dead = setup$base_template_dead,
+				zero_one_logit_clamp = zero_one_logit_clamp
+			)
+		},
+		compute_randomization_worker_estimate = function(worker_state){
+			estimator = private[["compute_bootstrap_worker_estimate"]]
+			if (!is.function(estimator)) {
+				stop("No reusable-worker estimator is available for randomization draws.", call. = FALSE)
+			}
+			estimator(worker_state)
 		},
 		shift_randomization_responses = function(y, w, delta, transform_responses, response_type, inverse = FALSE, zero_one_logit_clamp = .Machine$double.eps){
 			if (delta == 0) return(y)

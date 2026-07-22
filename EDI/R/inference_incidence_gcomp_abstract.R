@@ -77,20 +77,15 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 			row_weights = private$expand_subject_or_block_weights_to_row_weights(subject_or_block_weights)
 			effects = private$weighted_gcomp_effects_from_row_weights(row_weights)
 			if (is.null(effects) || !private$effects_are_usable(effects, estimate_only = TRUE)) {
-				private$set_failed_fit_cache()
+				private$set_failed_fit_cache(inference_ready = FALSE)
 				private$cached_values$beta_hat_T = NA_real_
 				return(NA_real_)
 			}
-			private$cached_values$risk1 = effects$risk1
-			private$cached_values$risk0 = effects$risk0
-			private$cached_values$rd = effects$rd
-			private$cached_values$se_rd = NA_real_
-			private$cached_values$log_rr = effects$log_rr
-			private$cached_values$rr = effects$rr
-			private$cached_values$se_log_rr = NA_real_
-			private$cached_values$summary_table = NULL
-			private$cached_values$full_coefficients = effects$full_coefficients
-			private$cached_values$full_vcov = NULL
+			private$cached_values = gcomp_cache_standardized_effects(
+				private$cached_values,
+				effects,
+				inference_ready = FALSE
+			)
 			private$cached_values$beta_hat_T = if (identical(private$get_estimand_type(), "RD")) effects$rd else effects$rr
 			private$cached_values$beta_hat_T
 		},
@@ -369,15 +364,11 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 			ci[] = exp(log(est) + c(-1, 1) * z * se_log)
 			ci
 		},
-		set_failed_fit_cache = function(){
-			private$cached_values$summary_table = NULL
-			private$cached_values$full_coefficients = NULL
-			private$cached_values$full_vcov = NULL
-			private$cached_values$rd = NA_real_
-			private$cached_values$se_rd = NA_real_
-			private$cached_values$log_rr = NA_real_
-			private$cached_values$rr = NA_real_
-			private$cached_values$se_log_rr = NA_real_
+		set_failed_fit_cache = function(inference_ready = TRUE){
+			private$cached_values = gcomp_cache_failed_standardized_effects(
+				private$cached_values,
+				inference_ready = inference_ready
+			)
 		},
 		effects_are_usable = function(effects, estimate_only = FALSE){
 			estimand = private$get_estimand_type()
@@ -395,15 +386,6 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 					is.finite(effects$log_rr) &&
 					is.finite(effects$se_log_rr) && effects$se_log_rr > 0
 			}
-		},
-		select_covariate_to_drop = function(X_curr, coef_hat){
-			covariate_cols = seq.int(3L, ncol(X_curr))
-			if (length(covariate_cols) == 0L) return(NA_integer_)
-			coef_mags = abs(coef_hat[covariate_cols])
-			if (length(coef_mags) == 0L || all(!is.finite(coef_mags))){
-				return(tail(covariate_cols, 1L))
-			}
-			covariate_cols[which.max(replace(coef_mags, !is.finite(coef_mags), -Inf))]
 		},
 		weighted_gcomp_fit = function(X_full, row_weights){
 			X_curr = X_full
@@ -444,19 +426,16 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 					return(list(X = X_fit, j_treat = j_treat, coefficients = coef_hat, estimate_only = TRUE))
 				}
 				if (ncol(X_curr) <= 2L) return(NULL)
-				drop_col = private$select_covariate_to_drop(X_curr, coef_hat)
+				drop_col = gcomp_select_covariate_to_drop(X_curr, coef_hat)
 				if (!is.finite(drop_col)) return(NULL)
 				X_curr = X_curr[, -drop_col, drop = FALSE]
 			}
 		},
 		weighted_gcomp_effects_from_row_weights = function(row_weights){
-			X_full = private$build_design_matrix()
-			if (is.null(dim(X_full))){
-				X_full = matrix(X_full, ncol = 2L)
-			}
-			if (is.null(colnames(X_full))) {
-				colnames(X_full) = c("(Intercept)", "treatment", if (ncol(X_full) > 2L) private$get_covariate_names() else NULL)
-			}
+			X_full = gcomp_normalize_treatment_design_matrix(
+				private$build_design_matrix(),
+				covariate_names = private$get_covariate_names
+			)
 			fit = private$weighted_gcomp_fit(X_full, row_weights)
 			if (is.null(fit) && private$harden && ncol(X_full) > 2L) {
 				fit = private$weighted_gcomp_fit(X_full[, 1:2, drop = FALSE], row_weights)
@@ -496,7 +475,7 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 				converged = private$coefficients_are_usable(coef_hat)
 				if (!converged){
 					if (ncol(X_curr) <= 2L) return(NULL)
-					drop_col = private$select_covariate_to_drop(X_curr, coef_hat)
+					drop_col = gcomp_select_covariate_to_drop(X_curr, coef_hat)
 					if (!is.finite(drop_col)) return(NULL)
 					X_curr = X_curr[, -drop_col, drop = FALSE]
 					next
@@ -516,7 +495,7 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 				W = mu_hat * (1 - mu_hat)
 				if (any(!is.finite(W)) || any(W <= 0)){
 					if (ncol(X_curr) <= 2L) return(NULL)
-					drop_col = private$select_covariate_to_drop(X_curr, coef_hat)
+					drop_col = gcomp_select_covariate_to_drop(X_curr, coef_hat)
 					if (!is.finite(drop_col)) return(NULL)
 					X_curr = X_curr[, -drop_col, drop = FALSE]
 					next
@@ -533,7 +512,7 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 				)
 				if (is.null(post_fit)){
 					if (ncol(X_curr) <= 2L) return(NULL)
-					drop_col = private$select_covariate_to_drop(X_curr, coef_hat)
+					drop_col = gcomp_select_covariate_to_drop(X_curr, coef_hat)
 					if (!is.finite(drop_col)) return(NULL)
 					X_curr = X_curr[, -drop_col, drop = FALSE]
 					next
@@ -559,16 +538,13 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 			vcov_robust = fit$vcov
 			j_treat = fit$j_treat
 			estimate_only = isTRUE(fit$estimate_only)
-			X1 = X_fit
-			X0 = X_fit
-			X1[, j_treat] = 1
-			X0[, j_treat] = 0
-			eta1 = as.numeric(X1 %*% coef_hat)
-			eta0 = as.numeric(X0 %*% coef_hat)
-			risk1_i = stats::plogis(eta1)
-			risk0_i = stats::plogis(eta0)
-			risk1 = mean(risk1_i)
-			risk0 = mean(risk0_i)
+			potential_outcomes = gcomp_logistic_potential_outcomes(X_fit, coef_hat, j_treat)
+			X1 = potential_outcomes$X1
+			X0 = potential_outcomes$X0
+			risk1_i = potential_outcomes$risk1_i
+			risk0_i = potential_outcomes$risk0_i
+			risk1 = potential_outcomes$risk1
+			risk0 = potential_outcomes$risk0
 			rd = risk1 - risk0
 			log_rr = if (risk1 > 0 && risk0 > 0) log(risk1) - log(risk0) else NA_real_
 			rr = if (is.finite(log_rr)) exp(log_rr) else NA_real_
@@ -710,8 +686,7 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 			2 * stats::pnorm(-abs(z_stat))
 		},
 		shared = function(estimate_only = FALSE){
-			if (estimate_only && (!is.null(private$cached_values$rd) || !is.null(private$cached_values$rr))) return(invisible(NULL))
-			if (!estimate_only && (!is.null(private$cached_values$se_rd) || !is.null(private$cached_values$se_log_rr))) return(invisible(NULL))
+			if (gcomp_standardized_effect_cache_is_ready(private$cached_values, estimate_only = estimate_only)) return(invisible(NULL))
 			if (estimate_only && isFALSE(private$harden)) {
 				X = private$build_design_matrix()
 				if (!is.null(dim(X)) && is.null(colnames(X))) {
@@ -729,16 +704,14 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 					private$cached_values$rr = as.numeric(risk1 / risk0)
 					private$cached_values$log_rr = log(private$cached_values$rr)
 					private$cached_values$beta_hat_T = if (identical(private$get_estimand_type(), "RD")) private$cached_values$rd else private$cached_values$rr
+					private$cached_values$gcomp_standardized_effects_inference_ready = FALSE
 					return(invisible(NULL))
 				}
 			}
-			X_full = private$build_design_matrix()
-			if (is.null(dim(X_full))){
-				X_full = matrix(X_full, ncol = 2L)
-			}
-			if (is.null(colnames(X_full))) {
-				colnames(X_full) = c("(Intercept)", "treatment", if (ncol(X_full) > 2L) private$get_covariate_names() else NULL)
-			}
+			X_full = gcomp_normalize_treatment_design_matrix(
+				private$build_design_matrix(),
+				covariate_names = private$get_covariate_names
+			)
 			fit = private$fit_logistic_with_sandwich(X_full, estimate_only = estimate_only)
 			if (!is.null(fit)) {
 				private$best_X_colnames = setdiff(colnames(fit$X), c("(Intercept)", "treatment"))
@@ -749,19 +722,14 @@ InferenceIncidGCompAbstract = R6::R6Class("InferenceIncidGCompAbstract",
 				effects = if (!is.null(fit)) private$compute_standardized_effects(fit) else NULL
 			}
 			if (is.null(fit) || is.null(effects) || !private$effects_are_usable(effects, estimate_only)){
-				private$set_failed_fit_cache()
+				private$set_failed_fit_cache(inference_ready = !estimate_only)
 				return(invisible(NULL))
 			}
-			private$cached_values$summary_table = effects$summary_table
-			private$cached_values$full_coefficients = effects$full_coefficients
-			private$cached_values$full_vcov = effects$full_vcov
-			private$cached_values$risk1 = effects$risk1
-			private$cached_values$risk0 = effects$risk0
-			private$cached_values$rd = effects$rd
-			private$cached_values$se_rd = effects$se_rd
-			private$cached_values$log_rr = effects$log_rr
-			private$cached_values$rr = effects$rr
-			private$cached_values$se_log_rr = effects$se_log_rr
+			private$cached_values = gcomp_cache_standardized_effects(
+				private$cached_values,
+				effects,
+				inference_ready = !estimate_only
+			)
 			# Populate beta_hat_T for the base class methods
 			private$cached_values$beta_hat_T = if (identical(private$get_estimand_type(), "RD")) effects$rd else effects$rr
 		}

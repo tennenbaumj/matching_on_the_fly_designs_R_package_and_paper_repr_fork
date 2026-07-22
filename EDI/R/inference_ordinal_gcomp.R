@@ -108,6 +108,42 @@ InferenceOrdinalGCompMeanDiff = R6::R6Class("InferenceOrdinalGCompMeanDiff",
 			}
 			z_val = (private$cached_values$md - delta) / private$cached_values$se_md
 			2 * stats::pnorm(-abs(z_val))
+		},
+		#' @description Computes a Wald confidence interval for the G-Comp mean difference.
+		#' @param alpha The significance level (default 0.05).
+		compute_wald_confidence_interval = function(alpha = 0.05){
+			if (should_run_asserts()) {
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+			}
+			private$shared()
+			if (!private$has_finite_md_se()){
+				warning(
+					"Ordinal G-computation: falling back to bootstrap because ",
+					"delta-method standard error is unavailable."
+				)
+				return(self$compute_bootstrap_confidence_interval(alpha = alpha, na.rm = TRUE))
+			}
+			z_val = stats::qnorm(1 - alpha / 2)
+			ci = private$cached_values$md + c(-1, 1) * z_val * private$cached_values$se_md
+			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			ci
+		},
+		#' @description Computes a Wald two-sided p-value for the G-Comp mean difference.
+		#' @param delta The null treatment effect (default 0).
+		compute_wald_two_sided_pval = function(delta = 0){
+			if (should_run_asserts()) {
+				assertNumeric(delta)
+			}
+			private$shared()
+			if (!private$has_finite_md_se()){
+				warning(
+					"Ordinal G-computation: falling back to bootstrap because ",
+					"delta-method standard error is unavailable."
+				)
+				return(self$compute_bootstrap_two_sided_pval(delta = delta, na.rm = TRUE))
+			}
+			z_val = (private$cached_values$md - delta) / private$cached_values$se_md
+			2 * stats::pnorm(-abs(z_val))
 		}
 	),
 	private = list(
@@ -329,6 +365,14 @@ InferenceOrdinalGCompMeanDiff = R6::R6Class("InferenceOrdinalGCompMeanDiff",
 		has_finite_md_se = function(){
 			se = private$cached_values$se_md
 			is.finite(se) && se > 0
+		},
+		get_standard_error = function(){
+			private$shared(estimate_only = FALSE)
+			private$cached_values$s_beta_hat_T %||% private$cached_values$se_md %||% NA_real_
+		},
+		get_degrees_of_freedom = function(){
+			private$shared(estimate_only = FALSE)
+			private$cached_values$df %||% NA_real_
 		}
 	)
 )
