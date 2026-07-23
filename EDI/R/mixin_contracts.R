@@ -110,6 +110,15 @@ EDI_MIXIN_CONTRACTS = list(
 		),
 		private_state = "null_fit_warm_start_enabled"
 	),
+	InferenceMixinParamBootstrapEstimate = list(
+		file = "inference_mixin_param_bootstrap_estimate.R",
+		private_methods = c(
+			"cache_nonestimable_se", "effective_parallel_cores", "get_likelihood_test_spec",
+			"par_lapply", "simulate_under_lik_null", "supports_lik_ratio_param_bootstrap",
+			"use_deterministic_param_bootstrap", "with_param_bootstrap_seed"
+		),
+		private_state = c("cached_values", "seed")
+	),
 	InferenceMixinQuantileRandCI = list(
 		file = "inference_mixin_quantile_rand_ci.R",
 		private_methods = c("compute_rand_pval_matched_pairs", "compute_rand_pval_reservoir"),
@@ -131,7 +140,9 @@ EDI_MIXIN_COMPOSITIONS = list(
 		"InferenceMixinKKPassThrough", "InferenceMixinKKPassThroughCompound"
 	),
 	InferenceNonParamBootstrap = "InferenceMixinBcaBootstrapCI",
-	InferenceParamBootstrap = "InferenceMixinBartlettApprox",
+	InferenceParamBootstrap = c(
+		"InferenceMixinBartlettApprox", "InferenceMixinParamBootstrapEstimate"
+	),
 	InferenceRand = c(
 		"InferenceMixinCustomRandomizationStatistic", "InferenceMixinSequentialMCPval"
 	),

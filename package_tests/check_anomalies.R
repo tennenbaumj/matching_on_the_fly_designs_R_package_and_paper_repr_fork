@@ -51,7 +51,7 @@ if (nrow(extreme_wide_ci) > 0) {
 }
 
 # 4. Estimates that are extreme (|estimate| > 100, for datasets where responses are O(1))
-est_rows = dt[function_run == "compute_estimate" & status == "ok" & response_type %in% c("continuous","proportion")]
+est_rows = dt[function_run %in% c("compute_estimate", "compute_param_bootstrap_estimate") & status == "ok" & response_type %in% c("continuous","proportion")]
 est_rows[, v := suppressWarnings(as.numeric(result_1))]
 bad_est = est_rows[is.finite(v) & abs(v) > 100]
 if (nrow(bad_est) > 0) {

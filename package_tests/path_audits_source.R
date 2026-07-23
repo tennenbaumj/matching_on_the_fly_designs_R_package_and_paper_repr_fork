@@ -33,11 +33,11 @@ audit_classes = list(
 
   # ── INCIDENCE KK ─────────────────────────────────────────────────────────────
   list(name="InferenceIncidKKCondLogitOneLik",          section="Incidence", resp="incid", kk=TRUE,  types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=TRUE,  notes="InferenceParamBootstrap directly; explicit TRUE"),
-  list(name="InferenceIncidKKCondLogitPlusGLMMOneLik",  section="Incidence", resp="incid", kk=TRUE,  types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, skip_bbt_ci=TRUE, slow_methods=c("compute_bayesian_bootstrap_two_sided_pval", "compute_bayesian_bootstrap_two_sided_pval_symmetric"), notes="AbstractKKCondLogitPlusGLMM → InferenceParamBootstrap; supports_lik_ratio_param_bootstrap=FALSE (no simulate_under_lik_null); rand delta=0.5 pval avg 205s; Bayesian bootstrap pval avg 32.4s / max 68.4s at n=32 slow; symmetric Bayesian bootstrap pval avg 30.6s / max 54.9s at n=18 slow"),
+  list(name="InferenceIncidKKCondLogitPlusGLMMOneLik",  section="Incidence", resp="incid", kk=TRUE,  types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, skip_bbt_ci=TRUE, slow_methods=c("compute_rand_two_sided_pval(delta=0.5)", "compute_bayesian_bootstrap_two_sided_pval", "compute_bayesian_bootstrap_two_sided_pval_symmetric"), notes="AbstractKKCondLogitPlusGLMM → InferenceParamBootstrap; supports_lik_ratio_param_bootstrap=FALSE (no simulate_under_lik_null); rand delta=0.5 pval avg 205s; Bayesian bootstrap pval avg 32.4s / max 68.4s at n=32 slow; symmetric Bayesian bootstrap pval avg 30.6s / max 54.9s at n=18 slow"),
   list(name="InferenceIncidKKGEE",                     section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="InferenceAsymp"),
   list(name="InferenceIncidKKNewcombeRiskDiff",         section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="KKPassThroughCompoundNoParamBootstrap"),
   list(name="InferenceIncidKKGCompRiskDiff",            section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, notes="AbstractKKMarginalIncid → ParamBootstrap; supports_lik_ratio_param_bootstrap()=FALSE (no simulate_under_lik_null)"),
-  list(name="InferenceIncidKKGCompRiskRatio",           section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, notes="AbstractKKMarginalIncid → ParamBootstrap; supports_lik_ratio_param_bootstrap()=FALSE (no simulate_under_lik_null)"),
+  list(name="InferenceIncidKKGCompRiskRatio",           section="Incidence", resp="incid", kk=TRUE,  types="wald",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=FALSE, slow_methods=c("compute_bootstrap_two_sided_pval_symmetric"), notes="AbstractKKMarginalIncid → ParamBootstrap; supports_lik_ratio_param_bootstrap()=FALSE (no simulate_under_lik_null); bootstrap symmetric pval max 10456.5s slow"),
   list(name="InferenceIncidKKModifiedPoisson",          section="Incidence", resp="incid", kk=TRUE,  types="full",   skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="i", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=TRUE,  notes="AbstractKKModifiedPoisson → AbstractKKMarginalIncid → ParamBootstrap; simulate_under_lik_null: Poisson draw"),
 
   # ── INCIDENCE non-KK ──────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ audit_classes = list(
   list(name="InferenceCountHurdleNegBin",           section="Count",      resp="count", kk=FALSE, types="full",           skip_asymp=FALSE, skip_ci=FALSE, skip_boot=TRUE,  skip_bbt=TRUE,  jack=TRUE,  skip_rand=FALSE, rand_resp="count",  skip_rpv=FALSE, skip_rci=TRUE,  rci_resp="", pboot=TRUE, notes="InferenceCountLikelihood → InferenceParamBootstrap; simulate_under_lik_null implemented; in skip_ci_rand"),
 
   # ── SURVIVAL ─────────────────────────────────────────────────────────────────
-  list(name="InferenceSurvivalGehanWilcox",            section="Survival",  resp="surv", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE, skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="surv", pboot=NA,    skip_brt="ci", notes="InferenceAsymp; all BRT CI types avg 33-39s slow"),
+  list(name="InferenceSurvivalGehanWilcox",            section="Survival",  resp="surv", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE, skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="surv", pboot=NA,    skip_brt="ci", slow_methods=c("compute_bootstrap_confidence_interval_studentized"), notes="InferenceAsymp; all BRT CI types avg 33-39s slow; bootstrap studentized CI max 10443.4s slow"),
   list(name="InferenceSurvivalLogRank",                section="Survival",  resp="surv", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE, skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="surv", pboot=NA,    notes="InferenceAsymp"),
   list(name="InferenceSurvivalRestrictedMeanDiff",     section="Survival",  resp="surv", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE, skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="surv", pboot=NA,    notes="InferenceAsymp"),
   list(name="InferenceSurvivalKMDiff",                 section="Survival",  resp="surv", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE,   skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE, skip_rand=FALSE, rand_resp="csp", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="surv", pboot=NA,    notes="InferenceAsymp"),
@@ -113,32 +113,169 @@ audit_classes = list(
   list(name="InferenceOrdinalPropOddsRegr",             section="Ordinal", resp="ord", kk=FALSE, types="full", skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="ordinal", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=TRUE,  notes="AsympLikStdModCache → ParamBootstrap"),
   list(name="InferenceOrdinalPartialProportionalOddsRegr",section="Ordinal",resp="ord",kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE, skip_boot=TRUE,  skip_bbt=TRUE,  jack=TRUE,  skip_rand=FALSE, rand_resp="ordinal", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="InferenceAsymp"),
   list(name="InferenceOrdinalGCompMeanDiff",            section="Ordinal", resp="ord", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE, skip_boot=TRUE,  skip_bbt=TRUE,  jack=TRUE,  skip_rand=TRUE,  rand_resp="ordinal", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="InferenceAsymp"),
-  list(name="InferenceOrdinalJonckheereTerpstraTest",   section="Ordinal", resp="ord", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="ordinal", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    exact_p=TRUE, notes="InferenceAsymp; SPECIAL: only exact pval + estimate called"),
+  list(name="InferenceOrdinalJonckheereTerpstraTest",   section="Ordinal", resp="ord", kk=FALSE, types="none", skip_asymp=TRUE,  skip_ci=TRUE,  skip_boot=TRUE,  skip_bbt=TRUE,  jack=FALSE, skip_rand=TRUE,  rand_resp="",        skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    exact_p=TRUE, notes="InferenceAsymp; SPECIAL: only exact pval + estimate called"),
   list(name="InferenceOrdinalRidit",                   section="Ordinal", resp="ord", kk=FALSE, types="wald", skip_asymp=FALSE, skip_ci=FALSE, skip_boot=FALSE, skip_bbt=FALSE, jack=TRUE,  skip_rand=FALSE, rand_resp="ordinal", skip_rpv=FALSE, skip_rci=FALSE, rci_resp="", pboot=NA,    notes="InferenceAsymp")
 )
 
 # ── HTML renderer ─────────────────────────────────────────────────────────────
+load_nonestimability_stats = function(result_dir = "package_tests") {
+  defaults_file = file.path(result_dir, "path_audits_nonestimability_defaults.csv")
+  stats_env_from_rates = function(rates) {
+    stats_env = new.env(parent = emptyenv())
+    required = c("base_class", "function_run", "n", "nonestimable", "rate")
+    if (is.null(rates) || !all(required %in% names(rates))) return(stats_env)
+    for (i in seq_len(nrow(rates))) {
+      assign(
+        paste(rates$base_class[i], rates$function_run[i], sep = "||"),
+        list(
+          n = as.integer(rates$n[i]),
+          nonestimable = as.integer(rates$nonestimable[i]),
+          rate = as.numeric(rates$rate[i])
+        ),
+        envir = stats_env
+      )
+    }
+    stats_env
+  }
+  read_default_rates = function() {
+    if (!file.exists(defaults_file)) return(NULL)
+    tryCatch(utils::read.csv(defaults_file, stringsAsFactors = FALSE), error = function(e) NULL)
+  }
+  load_default_stats = function() {
+    stats_env_from_rates(read_default_rates())
+  }
+  maybe_update_default_stats = function(rates) {
+    if (is.null(rates) || !all(c("n", "base_class", "function_run", "nonestimable", "rate") %in% names(rates))) {
+      return(invisible(FALSE))
+    }
+    default_rates = read_default_rates()
+    current_total = sum(as.numeric(rates$n), na.rm = TRUE)
+    default_total = if (is.null(default_rates) || !"n" %in% names(default_rates)) {
+      -Inf
+    } else {
+      sum(as.numeric(default_rates$n), na.rm = TRUE)
+    }
+    if (is.finite(current_total) && current_total > default_total) {
+      utils::write.csv(rates, defaults_file, row.names = FALSE)
+      return(invisible(TRUE))
+    }
+    invisible(FALSE)
+  }
+  files = list.files(result_dir, pattern = "^comprehensive_tests_results.*\\.csv$", full.names = TRUE)
+  files = files[!grepl("_filtered_", basename(files), fixed = TRUE)]
+  if (!length(files) || !requireNamespace("data.table", quietly = TRUE)) {
+    return(load_default_stats())
+  }
+  pieces = lapply(files, function(f) {
+    tryCatch(data.table::fread(f, showProgress = FALSE, fill = TRUE), error = function(e) NULL)
+  })
+  pieces = Filter(Negate(is.null), pieces)
+  if (!length(pieces)) return(load_default_stats())
+  dt = data.table::rbindlist(pieces, fill = TRUE)
+  required = c("inference_class", "function_run", "error_message")
+  if (!all(required %in% names(dt))) return(load_default_stats())
+  dt[, base_class := sub(" [\\(\\[].*$", "", inference_class)]
+  dt[, explicit_nonestimable := grepl("^Explicitly non-estimable", error_message)]
+  rates = dt[, .(
+    n = .N,
+    nonestimable = sum(explicit_nonestimable, na.rm = TRUE)
+  ), by = .(base_class, function_run)]
+  rates[, rate := data.table::fifelse(n > 0L, nonestimable / n, NA_real_)]
+  data.table::setorder(rates, base_class, function_run)
+  maybe_update_default_stats(rates)
+  stats_env_from_rates(rates)
+}
+
 html_from_audit = function(classes, outfile = "path_audits.html") {
-  GREEN = "#81c784"; LIGHT_GREEN = "#dff3df"; DARK_GREY = "#333333"; YELLOW = "#fff9c4"; GREY = "#e0e0e0"
+  GREEN = "#2e7d32"; LIGHT_GREEN = "#a5d6a7"; PALE_GREEN = "#dff3df"; LIME = "#dce775"; YELLOW = "#fff176"; ORANGE_LIGHT = "#ffcc80"; ORANGE = "#ff9800"; ORANGE_DARK = "#ef6c00"; LIGHT_RED = "#ffcdd2"; DARK_GREY = "#333333"; GREY = "#e0e0e0"
   `%||%` = function(x, y) if (is.null(x)) y else x
+  nonestimability_stats = load_nonestimability_stats(dirname(outfile))
+  html_escape = function(x) {
+    x = gsub("&", "&amp;", x, fixed = TRUE)
+    x = gsub("<", "&lt;", x, fixed = TRUE)
+    x = gsub(">", "&gt;", x, fixed = TRUE)
+    x = gsub('"', "&quot;", x, fixed = TRUE)
+    x
+  }
+  low_estimability_rows = function() {
+    audited_names = vapply(classes, function(r) r$name, character(1))
+    keys = ls(nonestimability_stats, all.names = TRUE)
+    keys = keys[grepl("\\|\\|", keys)]
+    rows = lapply(keys, function(key) {
+      info = get(key, envir = nonestimability_stats, inherits = FALSE)
+      parts = strsplit(key, "\\|\\|")[[1]]
+      if (length(parts) != 2L || !parts[1] %in% audited_names) return(NULL)
+      estimable_rate = 1 - info$rate
+      if (!is.finite(estimable_rate) || estimable_rate >= 0.01) return(NULL)
+      data.frame(
+        base_class = parts[1],
+        function_run = parts[2],
+        n = as.integer(info$n),
+        nonestimable = as.integer(info$nonestimable),
+        estimable_rate = as.numeric(estimable_rate),
+        stringsAsFactors = FALSE
+      )
+    })
+    rows = Filter(Negate(is.null), rows)
+    if (!length(rows)) {
+      return(data.frame(base_class = character(), function_run = character(), n = integer(), nonestimable = integer(), estimable_rate = numeric(), stringsAsFactors = FALSE))
+    }
+    rows = do.call(rbind, rows)
+    rows[order(rows$base_class, rows$function_run), , drop = FALSE]
+  }
+  low_estimability_html = function() {
+    rows = low_estimability_rows()
+    if (!nrow(rows)) {
+      return('<h2>&lt;1% Estimable Paths</h2><p>No audited paths are currently below 1% observed estimability.</p>')
+    }
+    row_html = vapply(seq_len(nrow(rows)), function(i) {
+      sprintf(
+        '<tr><td style="font-family:monospace;white-space:nowrap">%s</td><td style="font-family:monospace;white-space:nowrap">%s</td><td style="text-align:right">%d</td><td style="text-align:right">%d</td><td style="text-align:right">%.2f%%</td></tr>',
+        html_escape(rows$base_class[i]), html_escape(rows$function_run[i]), rows$n[i], rows$nonestimable[i], 100 * rows$estimable_rate[i]
+      )
+    }, character(1))
+    paste0(
+      '<h2>&lt;1% Estimable Paths</h2>',
+      '<p style="color:#555">Audited class/function paths with observed estimability below 1%, using the same current/default comprehensive results snapshot as the color scale.</p>',
+      '<table class="low-estimability"><thead><tr><th>Inference Type</th><th>Function</th><th>n</th><th>Non-Estimable</th><th>Estimable</th></tr></thead><tbody>',
+      paste(row_html, collapse = "\n"),
+      '</tbody></table>'
+    )
+  }
   cell = function(color, s, title = NULL, text_color = NULL) {
     title_attr = if (is.null(title)) "" else sprintf(' title="%s"', title)
-    style = sprintf("background:%s;text-align:center", color)
+    style = sprintf("background:%s;text-align:center;white-space:nowrap", color)
     if (!is.null(text_color)) style = paste0(style, ";color:", text_color)
     sprintf('<td style="%s"%s>%s</td>', style, title_attr, s)
   }
-  status_cell = function(status) {
+  status_cell = function(status, info = NULL) {
+    rate_title = function(default_title) {
+      if (is.null(info)) return(default_title)
+      estimable_rate = 1 - info$rate
+      sprintf(
+        "%s; observed approx estimable rate %.1f%%; explicit non-estimable rate %.1f%% (%d/%d rows)",
+        default_title, 100 * estimable_rate, 100 * info$rate, as.integer(info$nonestimable), as.integer(info$n)
+      )
+    }
     switch(status,
-      always_numeric = cell(GREEN,       "✓",    "Always returns numeric in the comprehensive-test contract"),
-      maybe          = cell(LIGHT_GREEN, "✓",    "Attempted, but may return explicit non-estimable output"),
-      slow           = cell(YELLOW,      "SLOW", "Skipped in comprehensive tests"),
+      always_numeric = cell(GREEN,       "✓",        "Theoretically guaranteed by the comprehensive-test contract", text_color = "#fff"),
+      maybe_unknown  = cell(PALE_GREEN,  "unknown",  "Attempted, empirical estimability unknown; no result rows found"),
+      maybe_0        = cell(LIGHT_GREEN, "100%",     rate_title("Attempted, 100% estimable observed")),
+      maybe_low      = cell(PALE_GREEN,  "[95-100)%",rate_title("Attempted, [95-100)% estimable observed")),
+      maybe_mid      = cell(LIME,        "[75-95)%", rate_title("Attempted, [75-95)% estimable observed")),
+      maybe_high     = cell(YELLOW,      "[25-75)%", rate_title("Attempted, [25-75)% estimable observed")),
+      maybe_5_25     = cell(ORANGE_LIGHT,"[5-25)%",  rate_title("Attempted, [5-25)% estimable observed")),
+      maybe_1_5      = cell(ORANGE,      "[1-5)%",   rate_title("Attempted, [1-5)% estimable observed")),
+      maybe_lt_1     = cell(ORANGE_DARK, "(0-1)%",   rate_title("Attempted, (0-1)% estimable observed"), text_color = "#fff"),
+      maybe_zero     = cell(ORANGE_DARK, "0%",       rate_title("Attempted, 0% estimable observed"), text_color = "#fff"),
+      slow           = cell(LIGHT_RED,   "SLOW", "Skipped or lightly tested in comprehensive tests because this path is too slow"),
       unsupported    = cell(DARK_GREY,   "NTS",  "Not theoretically supported by this model", text_color = "#fff"),
       not_implemented= cell(GREY,        "NI",   "Not implemented yet"),
       stop("Unknown audit cell status: ", status)
     )
   }
   ok    = function() status_cell("always_numeric")
-  maybe = function() status_cell("maybe")
+  maybe = function() status_cell("maybe_unknown")
   bad   = function() status_cell("slow")
   na    = function() status_cell("unsupported")
   ni    = function() status_cell("not_implemented")
@@ -153,8 +290,29 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
     if (method_id %in% row_methods(r, "maybe_nonestimable_methods")) return("maybe")
     default_status
   }
+  method_info = function(r, method_id) {
+    key = paste(r$name, method_id, sep = "||")
+    if (exists(key, envir = nonestimability_stats, inherits = FALSE)) {
+      return(get(key, envir = nonestimability_stats, inherits = FALSE))
+    }
+    NULL
+  }
+  maybe_status = function(info) {
+    if (is.null(info) || !is.finite(info$rate)) return("maybe_unknown")
+    if (info$rate <= 0) return("maybe_0")
+    if (info$rate <= 0.05) return("maybe_low")
+    if (info$rate <= 0.25) return("maybe_mid")
+    if (info$rate <= 0.75) return("maybe_high")
+    if (info$rate < 0.95) return("maybe_5_25")
+    if (info$rate < 0.99) return("maybe_1_5")
+    if (info$rate < 1) return("maybe_lt_1")
+    "maybe_zero"
+  }
   method_cell = function(r, method_id, default_status) {
-    status_cell(method_status(r, method_id, default_status))
+    status = method_status(r, method_id, default_status)
+    info = if (identical(status, "maybe")) method_info(r, method_id) else NULL
+    if (identical(status, "maybe")) status = maybe_status(info)
+    status_cell(status, info)
   }
 
   stable_model_based_numeric = function(r, ttype) {
@@ -225,15 +383,18 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   # type_ok("lr") gate used by the "LR" column itself) are structurally NTS here, same as "LR".
   # Among the remainder, rows follow pboot exactly: pboot=TRUE -> maybe, pboot=FALSE/NA -> NI.
   cell_likrat_bart_p = function(r) {
-    method_id = "compute_lik_ratio_bartlett_approx_two_sided_pval"
+    method_id = "compute_lik_ratio_bartlett_two_sided_pval"
     if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
+    if (isTRUE(r$bartlett_exact)) return(method_cell(r, method_id, "not_implemented"))
     if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "not_implemented"))
     method_cell(r, method_id, "maybe")
   }
   cell_likrat_bart_c = function(r) {
-    method_id = "compute_lik_ratio_bartlett_approx_confidence_interval"
+    method_id = "compute_lik_ratio_bartlett_confidence_interval"
     if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
+    if (isTRUE(r$bartlett_exact)) return(method_cell(r, method_id, "not_implemented"))
     if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "not_implemented"))
+    if (!isTRUE(r$run_pboot_ci)) return(method_cell(r, method_id, "slow"))
     method_cell(r, method_id, "maybe")
   }
   # "LR-Bart-ex": exact-factor (closed-form analytic) Bartlett correction, nested
@@ -244,15 +405,16 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   # tensor derivation. Every other family remains NI -- see
   # package_metadata/likrat_correction_bartlett.md's practical-derivation-risk table.
   cell_likrat_bart_ex_p = function(r) {
-    method_id = "compute_lik_ratio_bartlett_exact_two_sided_pval"
+    method_id = "compute_lik_ratio_bartlett_two_sided_pval"
     if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
     if (!isTRUE(r$bartlett_exact)) return(method_cell(r, method_id, "not_implemented"))
     method_cell(r, method_id, "maybe")
   }
   cell_likrat_bart_ex_c = function(r) {
-    method_id = "compute_lik_ratio_bartlett_exact_confidence_interval"
+    method_id = "compute_lik_ratio_bartlett_confidence_interval"
     if (!type_ok(r, "lr")) return(method_cell(r, method_id, "unsupported"))
     if (!isTRUE(r$bartlett_exact)) return(method_cell(r, method_id, "not_implemented"))
+    if (!isTRUE(r$run_pboot_ci)) return(method_cell(r, method_id, "slow"))
     method_cell(r, method_id, "maybe")
   }
 
@@ -317,9 +479,37 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   cell_pb_c = function(r, method_id) {
     if (is.na(r$pboot)) return(method_cell(r, method_id, "unsupported"))
     if (!isTRUE(r$pboot)) return(method_cell(r, method_id, "not_implemented"))
+    if (!isTRUE(r$run_pboot_ci)) return(method_cell(r, method_id, "slow"))
     if (isTRUE(r$skip_pboot_ci)) return(method_cell(r, method_id, "slow"))
     if (isTRUE(r$skip_ci)) return(method_cell(r, method_id, "slow"))
     method_cell(r, method_id, "maybe")
+  }
+
+  # ── Parametric bootstrap estimate (blank subheader, nested left of "LR") ────
+  # compute_param_bootstrap_estimate()/compute_param_bootstrap_pval()/
+  # compute_param_bootstrap_confidence_interval() (InferenceParamBootstrap):
+  # single-level parametric-bootstrap bias correction of the point estimate
+  # (2*theta_hat - mean(theta_star)) plus its "basic"/reflected-quantile pval
+  # and CI companions -- all three share the same simulate_under_lik_null()
+  # contract as the "LR" pair and are gated by the same pboot field (they
+  # default to isTRUE(supports_lik_ratio_param_bootstrap())). Per explicit
+  # instruction: is.na(pboot) (not InferenceParamBootstrap at all) -> NTS;
+  # everything else (pboot TRUE or FALSE) is left blank pending audit.
+  cell_pbest_blank = function() '<td></td>'
+  cell_pbest_estimate = function(r) {
+    method_id = "compute_param_bootstrap_estimate"
+    if (is.na(r$pboot)) return(method_cell(r, method_id, "unsupported"))
+    cell_pbest_blank()
+  }
+  cell_pbest_p = function(r) {
+    method_id = "compute_param_bootstrap_pval"
+    if (is.na(r$pboot)) return(method_cell(r, method_id, "unsupported"))
+    cell_pbest_blank()
+  }
+  cell_pbest_c = function(r) {
+    method_id = "compute_param_bootstrap_confidence_interval"
+    if (is.na(r$pboot)) return(method_cell(r, method_id, "unsupported"))
+    cell_pbest_blank()
   }
 
   # ── Jackknife ───────────────────────────────────────────────────────────────
@@ -329,6 +519,7 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   cell_jack_estimate = function(r) {
     method_id = "compute_jackknife_estimate"
     if (!isTRUE(r$jack)) return(method_cell(r, method_id, "unsupported"))
+    if (identical(r$resp, "count")) return(method_cell(r, method_id, "not_implemented"))
     if (isTRUE(r$skip_jack_slow)) return(method_cell(r, method_id, "slow"))
     method_cell(r, method_id, "maybe")
   }
@@ -370,12 +561,14 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   # skip_brt="ci" means pval runs but CI is too slow (e.g. ContinRobustRegr)
   cell_brt_p = function(r, method_id) {
     if (!nchar(r$rand_resp)) return(method_cell(r, method_id, "unsupported"))
+    if (!isTRUE(r$run_brt)) return(method_cell(r, method_id, "slow"))
     if (isTRUE(r$skip_rand) || isTRUE(r$skip_rpv)) return(method_cell(r, method_id, "slow"))
     if (!identical(r$skip_brt, "ci") && isTRUE(r$skip_boot)) return(method_cell(r, method_id, "slow"))
     method_cell(r, method_id, "maybe")
   }
   cell_brt_c = function(r, method_id) {
     if (!nchar(r$rci_resp)) return(method_cell(r, method_id, "unsupported"))
+    if (!isTRUE(r$run_brt)) return(method_cell(r, method_id, "slow"))
     if (identical(r$skip_brt, "ci")) return(method_cell(r, method_id, "slow"))
     if (isTRUE(r$skip_boot) || isTRUE(r$skip_rand)) return(method_cell(r, method_id, "slow"))
     if (isTRUE(r$skip_rand_ci)) return(method_cell(r, method_id, "slow"))
@@ -397,13 +590,14 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
   # Data cols: 14 (model-based, incl. 1 model "est", 1 log-rank "other", and the
   #            2-col "LR-Bart-app" + 2-col "LR-Bart-ex" plumbing-only pairs next to "LR")
   #            + 2 (exact-other) + 5 (exact-rand) + 18 (npboot, incl. 10 for the 6 bayes flavors)
-  #            + 2 (pboot) + 3 (jack, incl. 1 jackknife "est") + 9 (brt) = 53
-  NCOL = 54  # 1 (class) + 53 (data)
+  #            + 5 (pboot: 3-col parametric-bootstrap-estimate [blank subheader, est/pval/ci]
+  #                + 2-col "LR" pval/ci) + 3 (jack, incl. 1 jackknife "est") + 9 (brt) = 56
+  NCOL = 57  # 1 (class) + 56 (data)
   hdr = paste0(
-    # Row 0: meta-categories — Asymptotic (46) | Exact (7)
+    # Row 0: meta-categories — Asymptotic (49) | Exact (7)
     '<tr class="hdr0">',
       '<th rowspan="4" style="text-align:left">Inference Type</th>',
-      '<th colspan="46">Asymptotic</th>',
+      '<th colspan="49">Asymptotic</th>',
       '<th colspan="7">Exact</th>',
     '</tr>',
     # Row 1: categories
@@ -411,7 +605,7 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
       # Under Asymptotic (44)
       '<th colspan="14">Model-Based</th>',
       '<th colspan="18">Nonparam Boot</th>',
-      '<th colspan="2">Param Boot</th>',
+      '<th colspan="5">Param Boot</th>',
       '<th colspan="3">Jackknife</th>',
       '<th colspan="9">Boot-Rand</th>',
       # Under Exact (7)
@@ -443,7 +637,8 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
       '<th colspan="2">bayes-wald</th>',
       '<th colspan="2">bayes-bca</th>',
       '<th colspan="2">bayes-stud</th>',
-      # Param Boot
+      # Param Boot: blank subheader (parametric-bootstrap-estimate: est/pval/ci) then "LR"
+      '<th colspan="3"></th>',
       '<th colspan="2">LR</th>',
       # Jackknife (no named sub-type)
       '<th colspan="3"></th>',
@@ -481,7 +676,8 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
       '<th>pval</th><th>ci</th>',   # bayes-wald
       '<th>pval</th><th>ci</th>',   # bayes-bca
       '<th>pval</th><th>ci</th>',   # bayes-stud
-      # Param Boot (2)
+      # Param Boot (5): parametric-bootstrap-estimate (est/pval/ci) then LR (pval/ci)
+      '<th>est</th><th>pval</th><th>ci</th>',
       '<th>pval</th><th>ci</th>',
       # Jackknife (3)
       '<th>est</th><th>pval</th><th>ci</th>',
@@ -529,7 +725,8 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
         cell_bbt_p(r, "compute_bayesian_bootstrap_two_sided_pval_wald"), cell_bbt_c(r, "compute_bayesian_bootstrap_confidence_interval_wald"), # bayes-wald p + ci
         cell_bbt_p(r, "compute_bayesian_bootstrap_two_sided_pval_bca"), cell_bbt_c(r, "compute_bayesian_bootstrap_confidence_interval_bca"),   # bayes-bca p + ci
         cell_bbt_p(r, "compute_bayesian_bootstrap_two_sided_pval_studentized"), cell_bbt_c(r, "compute_bayesian_bootstrap_confidence_interval_studentized"), # bayes-stud p + ci
-        # Param Boot (2)
+        # Param Boot (5): parametric-bootstrap-estimate (est/pval/ci) then LR (pval/ci)
+        cell_pbest_estimate(r), cell_pbest_p(r), cell_pbest_c(r),
         cell_pb_p(r, "compute_lik_ratio_bootstrap_two_sided_pval"), cell_pb_c(r, "compute_lik_ratio_bootstrap_confidence_interval"),
         # Jackknife (3)
         cell_jack_estimate(r),
@@ -550,18 +747,25 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
 
   legend = '<div style="font-family:sans-serif;font-size:12px;margin-bottom:8px">
     <b>Legend:</b>
-    <span style="background:#81c784;padding:2px 6px">✓ always numeric</span>
-    <span style="background:#dff3df;padding:2px 6px">✓ attempted, may be non-estimable</span>
-    <span style="background:#fff9c4;padding:2px 6px">SLOW too slow to test (skipped)</span>
+    <span style="background:#2e7d32;color:#fff;padding:2px 6px">✓ theoretically guaranteed</span>
+    <span style="background:#a5d6a7;padding:2px 6px">100% observed estimable</span>
+    <span style="background:#c8e6c9;padding:2px 4px">other</span><span style="background:#dce775;padding:2px 4px">varying</span><span style="background:#fff59d;padding:2px 4px">degrees</span><span style="background:#ffcc80;padding:2px 4px">of</span><span style="background:#ffb74d;padding:2px 4px">estimability</span>
+    <span style="background:#ffcdd2;padding:2px 6px">SLOW skipped/lightly tested</span>
     <span style="background:#333333;color:#fff;padding:2px 6px">NTS not theoretically supported</span>
     <span style="background:#e0e0e0;padding:2px 6px">NI not implemented yet</span>
   </div>'
+
+  reliability_note = '<p style="color:#555"><b>Note:</b> Completion rates are empirical stress-test rates, not mathematical guarantees.
+  Low completion usually reflects finite-sample pathologies such as sparse data, separation, censoring, boundary estimates, or resampling degeneracy.
+  A low rate does not by itself mean the estimator is invalid; it means the path is numerically fragile under these comprehensive-test settings.</p>'
 
   html = paste0('<!DOCTYPE html><html><head><meta charset="utf-8">
   <title>EDI Comprehensive Tests Coverage Audit</title>
   <style>
     body{font-family:sans-serif;font-size:13px;margin:16px}
-    .table-wrap{overflow-x:auto;overflow-y:auto;max-height:85vh;border:1px solid #ccc}
+    .scroll-x-top{overflow-x:auto;overflow-y:hidden;border:1px solid #ccc;border-bottom:none;position:sticky;top:0;background:#fff;z-index:20}
+    .scroll-x-spacer{height:1px}
+    .table-wrap{overflow-x:hidden;overflow-y:auto;max-height:85vh;border:1px solid #ccc}
     table{border-collapse:collapse;font-size:11px;border-spacing:0}
     td,th{border:1px solid #ccc;padding:2px 5px}
     .hdr0 th,.hdr1 th,.hdr2 th,.hdr3 th{position:sticky;background-clip:padding-box}
@@ -571,6 +775,10 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
     .hdr3 th{padding:2px 5px;z-index:2;top:0;background:#607d8b;color:white;text-align:center}
     .hdr0 th[rowspan]{z-index:6;top:0;background:#263238;border-bottom:1px solid #ccc;vertical-align:bottom;text-align:left}
     td[style*="monospace"]{position:sticky;left:0;background:#fff;z-index:1;border-right:2px solid #999}
+    .low-estimability{margin-top:8px;font-size:12px}
+    .low-estimability th{background:#ef6c00;color:#fff;text-align:left;padding:4px 6px;position:static}
+    .low-estimability td{position:static;padding:3px 6px}
+    .low-estimability td[style*="monospace"]{position:static;left:auto;background:transparent;z-index:auto;border-right:1px solid #ccc}
   </style>
   <script>
     document.addEventListener("DOMContentLoaded", function() {
@@ -581,14 +789,26 @@ html_from_audit = function(classes, outfile = "path_audits.html") {
         tr.querySelectorAll("th").forEach(function(th) { th.style.top = off + "px"; });
         off += tr.getBoundingClientRect().height;
       });
+      var topScroll = document.querySelector(".scroll-x-top");
+      var wrap = document.querySelector(".table-wrap");
+      var table = wrap ? wrap.querySelector("table") : null;
+      var spacer = document.querySelector(".scroll-x-spacer");
+      if (topScroll && wrap && table && spacer) {
+        var syncWidth = function() { spacer.style.width = table.scrollWidth + "px"; };
+        syncWidth();
+        window.addEventListener("resize", syncWidth);
+        topScroll.addEventListener("scroll", function() { wrap.scrollLeft = topScroll.scrollLeft; });
+        wrap.addEventListener("scroll", function() { topScroll.scrollLeft = wrap.scrollLeft; });
+      }
     });
   </script>
   </head><body>
   <h2>EDI Comprehensive Tests Coverage Audit</h2>
-  <p style="color:#555">Generated 2026-07-21. Dark green means the method should return numeric output under the comprehensive-test contract.
-  Light green means the method is attempted, but may produce explicit non-estimable output for finite-sample numerical or data-degeneracy reasons.
+  <p style="color:#555">Generated ', format(Sys.Date()), '. Green-to-yellow attempted cells use empirical explicit-nonestimability rates from main
+  <code>comprehensive_tests_results*.csv</code> files in <code>package_tests/</code>; focused <code>_filtered_</code> runs are excluded.
+  Dark green means the method is theoretically guaranteed under the comprehensive-test contract.
   rand/rci/brt columns: NTS for response types where randomization is not theoretically supported (incidence/ordinal: rand=NTS; count: rci/brt_ci=NTS).</p>
-  ', legend, '<div class="table-wrap"><table>', hdr, body, '</table></div></body></html>')
+  ', reliability_note, legend, '<div class="scroll-x-top"><div class="scroll-x-spacer"></div></div><div class="table-wrap"><table>', hdr, body, '</table></div>', low_estimability_html(), '</body></html>')
   writeLines(html, outfile)
   invisible(outfile)
 }

@@ -41,6 +41,10 @@ that are intentionally unsupported are kept off this branch entirely.
 \item \href{#method-InferenceParamBootstrap-get_last_param_bootstrap_diagnostics}{\code{InferenceParamBootstrap$get_last_param_bootstrap_diagnostics()}}
 \item \href{#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_two_sided_pval}{\code{InferenceParamBootstrap$compute_lik_ratio_bootstrap_two_sided_pval()}}
 \item \href{#method-InferenceParamBootstrap-compute_lik_ratio_bootstrap_confidence_interval}{\code{InferenceParamBootstrap$compute_lik_ratio_bootstrap_confidence_interval()}}
+\item \href{#method-InferenceParamBootstrap-get_last_param_bootstrap_estimate_diagnostics}{\code{InferenceParamBootstrap$get_last_param_bootstrap_estimate_diagnostics()}}
+\item \href{#method-InferenceParamBootstrap-compute_param_bootstrap_estimate}{\code{InferenceParamBootstrap$compute_param_bootstrap_estimate()}}
+\item \href{#method-InferenceParamBootstrap-compute_param_bootstrap_confidence_interval}{\code{InferenceParamBootstrap$compute_param_bootstrap_confidence_interval()}}
+\item \href{#method-InferenceParamBootstrap-compute_param_bootstrap_pval}{\code{InferenceParamBootstrap$compute_param_bootstrap_pval()}}
 \item \href{#method-InferenceParamBootstrap-clone}{\code{InferenceParamBootstrap$clone()}}
 }
 }
@@ -246,6 +250,185 @@ finite outer bracket. Default \code{8L}.}
 }
 \subsection{Returns}{
 Named two-element numeric vector with the confidence-interval bounds.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceParamBootstrap-get_last_param_bootstrap_estimate_diagnostics"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceParamBootstrap-get_last_param_bootstrap_estimate_diagnostics}{}}}
+\subsection{Method \code{get_last_param_bootstrap_estimate_diagnostics()}}{
+Returns diagnostics from the most recent
+\code{compute_param_bootstrap_estimate()} run.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceParamBootstrap$get_last_param_bootstrap_estimate_diagnostics()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+A list of diagnostics, or \code{NULL} if no parametric-bootstrap
+  estimate bias correction has been run.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceParamBootstrap-compute_param_bootstrap_estimate"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceParamBootstrap-compute_param_bootstrap_estimate}{}}}
+\subsection{Method \code{compute_param_bootstrap_estimate()}}{
+Parametric-bootstrap bias-corrected point estimate.
+
+Simulates \code{B} datasets from the model \emph{at the unrestricted
+fit} (not a null-restricted fit, unlike the LR-bootstrap methods on
+this class), refits each unrestricted, and returns
+\code{2 * theta_hat - mean(theta_hat_star)} -- the standard
+single-level parametric-bootstrap bias correction (Efron & Tibshirani),
+the Monte-Carlo analog of an analytic Cox-Snell (1968) first-order bias
+correction. Reuses the same \code{simulate_under_lik_null()} contract
+every \code{supports_lik_ratio_param_bootstrap() == TRUE} family already
+implements, anchoring the simulation at the unrestricted fit instead of
+a null-restricted one.
+
+This method is available only for classes whose private
+\code{supports_param_bootstrap_estimate()} method returns \code{TRUE}
+(by default, this delegates to \code{supports_lik_ratio_param_bootstrap()}).
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceParamBootstrap$compute_param_bootstrap_estimate(
+  B = 199,
+  show_progress = FALSE,
+  min_number_usable_samples = 5L,
+  max_attempts_per_replicate = 2L
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{B}}{Number of bootstrap replicates. Default 199.}
+
+\item{\code{show_progress}}{Logical; show a progress bar. Default \code{FALSE}.}
+
+\item{\code{min_number_usable_samples}}{Minimum number of usable bootstrap
+replicates required to return a finite estimate. Default \code{5L}.}
+
+\item{\code{max_attempts_per_replicate}}{Maximum number of simulation/refit
+retries per bootstrap replicate. Default \code{2L}.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+A scalar bias-corrected estimate, or \code{NA_real_} if the computation fails.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceParamBootstrap-compute_param_bootstrap_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceParamBootstrap-compute_param_bootstrap_confidence_interval}{}}}
+\subsection{Method \code{compute_param_bootstrap_confidence_interval()}}{
+Parametric-bootstrap "basic" (reflected) confidence interval.
+
+Uses the same kind of simulate-at-full_fit replicates as
+\code{compute_param_bootstrap_estimate()} -- run once, not
+re-simulated per candidate null -- and reflects their empirical
+quantiles around the raw estimate:
+\code{CI = [2*theta_hat - q_(1-alpha/2)(theta_star), 2*theta_hat - q_(alpha/2)(theta_star)]}.
+This is the standard "basic" bootstrap interval (Efron & Tibshirani):
+the bias-aware companion to \code{compute_param_bootstrap_estimate()}
+-- unlike a naive percentile interval, it reflects around the same
+point the estimate's own bias correction targets.
+
+Unlike \code{compute_lik_ratio_bootstrap_confidence_interval()}, which
+must re-simulate \code{B} fresh replicates at every candidate null
+value visited during bisection (because that method's replicates are
+anchored at a null-restricted fit that changes with the candidate
+value), this method's replicates are anchored at the single
+unrestricted fit and therefore do not need to be regenerated per
+\code{alpha} or inverted against any particular null -- one batch of
+\code{B} replicates supports the whole interval.
+
+This method is available only for classes whose private
+\code{supports_param_bootstrap_estimate()} method returns \code{TRUE}.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceParamBootstrap$compute_param_bootstrap_confidence_interval(
+  alpha = 0.05,
+  B = 199,
+  show_progress = FALSE,
+  min_number_usable_samples = 5L,
+  max_attempts_per_replicate = 2L
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level. Default 0.05.}
+
+\item{\code{B}}{Number of bootstrap replicates. Default 199.}
+
+\item{\code{show_progress}}{Logical; show a progress bar. Default \code{FALSE}.}
+
+\item{\code{min_number_usable_samples}}{Minimum number of usable bootstrap
+replicates required to return a finite interval. Default \code{5L}.}
+
+\item{\code{max_attempts_per_replicate}}{Maximum number of simulation/refit
+retries per bootstrap replicate. Default \code{2L}.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Named two-element numeric vector with the confidence-interval bounds.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceParamBootstrap-compute_param_bootstrap_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceParamBootstrap-compute_param_bootstrap_pval}{}}}
+\subsection{Method \code{compute_param_bootstrap_pval()}}{
+Parametric-bootstrap two-sided p-value for H0: theta = delta,
+obtained by inverting the same "basic" reflected-quantile construction
+as \code{compute_param_bootstrap_confidence_interval()} rather than by
+simulating fresh replicates under each candidate \code{delta} (contrast
+\code{compute_lik_ratio_bootstrap_two_sided_pval()}, which does
+resimulate per delta because its replicates are anchored at a
+null-restricted fit that changes with delta).
+
+Reflects delta through the raw estimate, \code{t = 2*theta_hat - delta},
+and reports twice the smaller empirical tail of the replicate
+distribution beyond \code{t} (with the same +1 continuity correction
+used by \code{compute_lik_ratio_bootstrap_two_sided_pval()}). Because
+the replicate batch does not depend on \code{delta}, this is a direct
+lookup against one batch of \code{B} replicates -- valid for any
+\code{delta} with no additional simulation.
+
+As with the confidence interval, this test implicitly assumes the
+shape of theta_hat's sampling distribution near \code{delta} resembles
+its shape at the unrestricted fit -- an approximation that degrades
+the further \code{delta} is from the observed estimate, and is why
+this p-value should be treated as a cheap default rather than a
+replacement for \code{compute_lik_ratio_bootstrap_two_sided_pval()}
+when accuracy near a specific null matters.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceParamBootstrap$compute_param_bootstrap_pval(
+  delta,
+  B = 199,
+  show_progress = FALSE,
+  min_number_usable_samples = 5L,
+  max_attempts_per_replicate = 2L
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null value of the coefficient of interest.}
+
+\item{\code{B}}{Number of bootstrap replicates. Default 199.}
+
+\item{\code{show_progress}}{Logical; show a progress bar. Default \code{FALSE}.}
+
+\item{\code{min_number_usable_samples}}{Minimum number of usable bootstrap
+replicates required to return a finite p-value. Default \code{5L}.}
+
+\item{\code{max_attempts_per_replicate}}{Maximum number of simulation/refit
+retries per bootstrap replicate. Default \code{2L}.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+A scalar p-value, or \code{NA_real_} if the computation fails.
 Shared replicate-running core for anything built on B simulated null
 datasets via simulate_under_lik_null() (currently:
 compute_lik_ratio_bootstrap_two_sided_pval() and, via

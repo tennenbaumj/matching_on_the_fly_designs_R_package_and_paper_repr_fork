@@ -23,6 +23,8 @@ observations for KK matching-on-the-fly designs with continuous responses.
 \item \href{#method-InferenceContinKKRobustRegrOneLik-compute_estimate_with_bootstrap_weights}{\code{InferenceContinKKRobustRegrOneLik$compute_estimate_with_bootstrap_weights()}}
 \item \href{#method-InferenceContinKKRobustRegrOneLik-compute_asymp_confidence_interval}{\code{InferenceContinKKRobustRegrOneLik$compute_asymp_confidence_interval()}}
 \item \href{#method-InferenceContinKKRobustRegrOneLik-compute_asymp_two_sided_pval}{\code{InferenceContinKKRobustRegrOneLik$compute_asymp_two_sided_pval()}}
+\item \href{#method-InferenceContinKKRobustRegrOneLik-compute_wald_confidence_interval}{\code{InferenceContinKKRobustRegrOneLik$compute_wald_confidence_interval()}}
+\item \href{#method-InferenceContinKKRobustRegrOneLik-compute_wald_two_sided_pval}{\code{InferenceContinKKRobustRegrOneLik$compute_wald_two_sided_pval()}}
 \item \href{#method-InferenceContinKKRobustRegrOneLik-duplicate}{\code{InferenceContinKKRobustRegrOneLik$duplicate()}}
 \item \href{#method-InferenceContinKKRobustRegrOneLik-clone}{\code{InferenceContinKKRobustRegrOneLik$clone()}}
 }
@@ -66,8 +68,6 @@ observations for KK matching-on-the-fly designs with continuous responses.
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_std_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_std_error'><code>::InferenceJackknife$compute_jackknife_std_error()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_confidence_interval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_confidence_interval'><code>::InferenceJackknife$compute_jackknife_wald_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_two_sided_pval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_two_sided_pval'><code>::InferenceJackknife$compute_jackknife_wald_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_confidence_interval'><code>::InferenceAsymp$compute_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsympLik" data-id="compute_gradient_confidence_interval"><a href='../..//html/InferenceAsympLik.html#method-InferenceAsympLik-compute_gradient_confidence_interval'><code>::InferenceAsympLik$compute_gradient_confidence_interval()</code></a></span></li>
@@ -215,6 +215,43 @@ Computes the approximate p-value.
 \describe{
 \item{\code{delta}}{The null difference to test against. For any treatment effect at all this
 is set to zero (the default).}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceContinKKRobustRegrOneLik-compute_wald_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceContinKKRobustRegrOneLik-compute_wald_confidence_interval}{}}}
+\subsection{Method \code{compute_wald_confidence_interval()}}{
+Computes the Wald confidence interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceContinKKRobustRegrOneLik$compute_wald_confidence_interval(
+  alpha = 0.05
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{The confidence level in the computed confidence interval is 1 -
+\code{alpha}. The default is 0.05.}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceContinKKRobustRegrOneLik-compute_wald_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceContinKKRobustRegrOneLik-compute_wald_two_sided_pval}{}}}
+\subsection{Method \code{compute_wald_two_sided_pval()}}{
+Computes the Wald two-sided p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceContinKKRobustRegrOneLik$compute_wald_two_sided_pval(delta = 0)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{The null difference to test against. Default 0.}
 }
 \if{html}{\out{</div>}}
 }

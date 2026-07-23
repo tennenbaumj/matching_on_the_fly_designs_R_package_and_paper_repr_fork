@@ -113,6 +113,7 @@ Collate:
     'inference_all_abstract_jackknife.R'
     'inference_all_abstract_exact.R'
     'inference_all_abstract_asymp.R'
+    'inference_mixin_param_bootstrap_estimate.R'
     'inference_all_abstract_param_boot.R'
     'inference_all_abstract_asymp_lik_std_mod_cache.R'
     'inference_all_abstract_count_likelihood.R'

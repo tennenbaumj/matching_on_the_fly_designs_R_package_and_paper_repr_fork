@@ -336,9 +336,211 @@ InferenceParamBootstrap = R6::R6Class("InferenceParamBootstrap",
 			)
 			names(ci) = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
 			ci
+		},
+		#' @description Returns diagnostics from the most recent
+		#' \code{compute_param_bootstrap_estimate()} run.
+		#' @return A list of diagnostics, or \code{NULL} if no parametric-bootstrap
+		#'   estimate bias correction has been run.
+		get_last_param_bootstrap_estimate_diagnostics = function(){
+			private$cached_values$last_param_bootstrap_estimate_diagnostics
+		},
+		#' @description Parametric-bootstrap bias-corrected point estimate.
+		#'
+		#' Simulates \code{B} datasets from the model \emph{at the unrestricted
+		#' fit} (not a null-restricted fit, unlike the LR-bootstrap methods on
+		#' this class), refits each unrestricted, and returns
+		#' \code{2 * theta_hat - mean(theta_hat_star)} -- the standard
+		#' single-level parametric-bootstrap bias correction (Efron & Tibshirani),
+		#' the Monte-Carlo analog of an analytic Cox-Snell (1968) first-order bias
+		#' correction. Reuses the same \code{simulate_under_lik_null()} contract
+		#' every \code{supports_lik_ratio_param_bootstrap() == TRUE} family already
+		#' implements, anchoring the simulation at the unrestricted fit instead of
+		#' a null-restricted one.
+		#'
+		#' This method is available only for classes whose private
+		#' \code{supports_param_bootstrap_estimate()} method returns \code{TRUE}
+		#' (by default, this delegates to \code{supports_lik_ratio_param_bootstrap()}).
+		#'
+		#' @param B            Number of bootstrap replicates. Default 199.
+		#' @param show_progress Logical; show a progress bar. Default \code{FALSE}.
+		#' @param min_number_usable_samples Minimum number of usable bootstrap
+		#'   replicates required to return a finite estimate. Default \code{5L}.
+		#' @param max_attempts_per_replicate Maximum number of simulation/refit
+		#'   retries per bootstrap replicate. Default \code{2L}.
+		#' @return A scalar bias-corrected estimate, or \code{NA_real_} if the computation fails.
+		compute_param_bootstrap_estimate = function(B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L){
+			private$active_resampling_operation = "param_boot"
+			on.exit(private$active_resampling_operation <- NULL, add = TRUE)
+			if (!isTRUE(private$supports_param_bootstrap_estimate())){
+				stop(
+					class(self)[1], " does not support parametric-bootstrap estimate bias correction. ",
+					"Override private$supports_param_bootstrap_estimate() and simulate_under_lik_null().",
+					call. = FALSE
+				)
+			}
+			if (should_run_asserts()){
+				assertCount(B, positive = TRUE)
+				assertCount(min_number_usable_samples, positive = TRUE)
+				assertCount(max_attempts_per_replicate, positive = TRUE)
+				if (as.integer(B) < as.integer(min_number_usable_samples)) {
+					stop("B must be at least min_number_usable_samples for parametric-bootstrap estimate bias correction.", call. = FALSE)
+				}
+			}
+			batch = private$run_param_bootstrap_estimate_batch(
+				B = as.integer(B),
+				max_attempts_per_replicate = max_attempts_per_replicate,
+				show_progress = show_progress
+			)
+			if (is.null(batch)) return(NA_real_)
+			if (batch$n_success < as.integer(min_number_usable_samples)) {
+				if (!isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("param_bootstrap_estimate_too_few_usable_replicates")
+				return(NA_real_)
+			}
+
+			2 * batch$raw_estimate - mean(batch$finite_reps)
+		},
+		#' @description Parametric-bootstrap "basic" (reflected) confidence interval.
+		#'
+		#' Uses the same kind of simulate-at-full_fit replicates as
+		#' \code{compute_param_bootstrap_estimate()} -- run once, not
+		#' re-simulated per candidate null -- and reflects their empirical
+		#' quantiles around the raw estimate:
+		#' \code{CI = [2*theta_hat - q_(1-alpha/2)(theta_star), 2*theta_hat - q_(alpha/2)(theta_star)]}.
+		#' This is the standard "basic" bootstrap interval (Efron & Tibshirani):
+		#' the bias-aware companion to \code{compute_param_bootstrap_estimate()}
+		#' -- unlike a naive percentile interval, it reflects around the same
+		#' point the estimate's own bias correction targets.
+		#'
+		#' Unlike \code{compute_lik_ratio_bootstrap_confidence_interval()}, which
+		#' must re-simulate \code{B} fresh replicates at every candidate null
+		#' value visited during bisection (because that method's replicates are
+		#' anchored at a null-restricted fit that changes with the candidate
+		#' value), this method's replicates are anchored at the single
+		#' unrestricted fit and therefore do not need to be regenerated per
+		#' \code{alpha} or inverted against any particular null -- one batch of
+		#' \code{B} replicates supports the whole interval.
+		#'
+		#' This method is available only for classes whose private
+		#' \code{supports_param_bootstrap_estimate()} method returns \code{TRUE}.
+		#'
+		#' @param alpha        Significance level. Default 0.05.
+		#' @param B            Number of bootstrap replicates. Default 199.
+		#' @param show_progress Logical; show a progress bar. Default \code{FALSE}.
+		#' @param min_number_usable_samples Minimum number of usable bootstrap
+		#'   replicates required to return a finite interval. Default \code{5L}.
+		#' @param max_attempts_per_replicate Maximum number of simulation/refit
+		#'   retries per bootstrap replicate. Default \code{2L}.
+		#' @return Named two-element numeric vector with the confidence-interval bounds.
+		compute_param_bootstrap_confidence_interval = function(alpha = 0.05, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L){
+			private$active_resampling_operation = "param_boot"
+			on.exit(private$active_resampling_operation <- NULL, add = TRUE)
+			if (!isTRUE(private$supports_param_bootstrap_estimate())){
+				stop(
+					class(self)[1], " does not support parametric-bootstrap estimate bias correction. ",
+					"Override private$supports_param_bootstrap_estimate() and simulate_under_lik_null().",
+					call. = FALSE
+				)
+			}
+			if (should_run_asserts()){
+				assertNumeric(alpha, lower = .Machine$double.xmin, upper = 1 - .Machine$double.xmin)
+				assertCount(B, positive = TRUE)
+				assertCount(min_number_usable_samples, positive = TRUE)
+				assertCount(max_attempts_per_replicate, positive = TRUE)
+				if (as.integer(B) < as.integer(min_number_usable_samples)) {
+					stop("B must be at least min_number_usable_samples for parametric-bootstrap estimate bias correction.", call. = FALSE)
+				}
+			}
+			ci_names = paste0(c(alpha / 2, 1 - alpha / 2) * 100, "%")
+			batch = private$run_param_bootstrap_estimate_batch(
+				B = as.integer(B),
+				max_attempts_per_replicate = max_attempts_per_replicate,
+				show_progress = show_progress
+			)
+			if (is.null(batch) || batch$n_success < as.integer(min_number_usable_samples)) {
+				if (!is.null(batch) && !isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("param_bootstrap_estimate_too_few_usable_replicates")
+				ci = c(NA_real_, NA_real_)
+				names(ci) = ci_names
+				return(ci)
+			}
+
+			lo = 2 * batch$raw_estimate - as.numeric(stats::quantile(batch$finite_reps, 1 - alpha / 2, names = FALSE))
+			hi = 2 * batch$raw_estimate - as.numeric(stats::quantile(batch$finite_reps, alpha / 2, names = FALSE))
+			ci = c(lo, hi)
+			names(ci) = ci_names
+			ci
+		},
+		#' @description Parametric-bootstrap two-sided p-value for H0: theta = delta,
+		#' obtained by inverting the same "basic" reflected-quantile construction
+		#' as \code{compute_param_bootstrap_confidence_interval()} rather than by
+		#' simulating fresh replicates under each candidate \code{delta} (contrast
+		#' \code{compute_lik_ratio_bootstrap_two_sided_pval()}, which does
+		#' resimulate per delta because its replicates are anchored at a
+		#' null-restricted fit that changes with delta).
+		#'
+		#' Reflects delta through the raw estimate, \code{t = 2*theta_hat - delta},
+		#' and reports twice the smaller empirical tail of the replicate
+		#' distribution beyond \code{t} (with the same +1 continuity correction
+		#' used by \code{compute_lik_ratio_bootstrap_two_sided_pval()}). Because
+		#' the replicate batch does not depend on \code{delta}, this is a direct
+		#' lookup against one batch of \code{B} replicates -- valid for any
+		#' \code{delta} with no additional simulation.
+		#'
+		#' As with the confidence interval, this test implicitly assumes the
+		#' shape of theta_hat's sampling distribution near \code{delta} resembles
+		#' its shape at the unrestricted fit -- an approximation that degrades
+		#' the further \code{delta} is from the observed estimate, and is why
+		#' this p-value should be treated as a cheap default rather than a
+		#' replacement for \code{compute_lik_ratio_bootstrap_two_sided_pval()}
+		#' when accuracy near a specific null matters.
+		#'
+		#' @param delta        Null value of the coefficient of interest.
+		#' @param B            Number of bootstrap replicates. Default 199.
+		#' @param show_progress Logical; show a progress bar. Default \code{FALSE}.
+		#' @param min_number_usable_samples Minimum number of usable bootstrap
+		#'   replicates required to return a finite p-value. Default \code{5L}.
+		#' @param max_attempts_per_replicate Maximum number of simulation/refit
+		#'   retries per bootstrap replicate. Default \code{2L}.
+		#' @return A scalar p-value, or \code{NA_real_} if the computation fails.
+		compute_param_bootstrap_pval = function(delta, B = 199, show_progress = FALSE, min_number_usable_samples = 5L, max_attempts_per_replicate = 2L){
+			private$active_resampling_operation = "param_boot"
+			on.exit(private$active_resampling_operation <- NULL, add = TRUE)
+			if (!isTRUE(private$supports_param_bootstrap_estimate())){
+				stop(
+					class(self)[1], " does not support parametric-bootstrap estimate bias correction. ",
+					"Override private$supports_param_bootstrap_estimate() and simulate_under_lik_null().",
+					call. = FALSE
+				)
+			}
+			if (should_run_asserts()){
+				assertNumeric(delta, len = 1)
+				assertCount(B, positive = TRUE)
+				assertCount(min_number_usable_samples, positive = TRUE)
+				assertCount(max_attempts_per_replicate, positive = TRUE)
+				if (as.integer(B) < as.integer(min_number_usable_samples)) {
+					stop("B must be at least min_number_usable_samples for parametric-bootstrap estimate bias correction.", call. = FALSE)
+				}
+			}
+			batch = private$run_param_bootstrap_estimate_batch(
+				B = as.integer(B),
+				max_attempts_per_replicate = max_attempts_per_replicate,
+				show_progress = show_progress
+			)
+			if (is.null(batch) || batch$n_success < as.integer(min_number_usable_samples)) {
+				if (!is.null(batch) && !isTRUE(self$is_nonestimable("estimate")))
+					private$cache_nonestimable_se("param_bootstrap_estimate_too_few_usable_replicates")
+				return(NA_real_)
+			}
+
+			t_delta = 2 * batch$raw_estimate - as.numeric(delta)[1L]
+			n = length(batch$finite_reps)
+			left_tail = (1 + sum(batch$finite_reps <= t_delta)) / (1 + n)
+			right_tail = (1 + sum(batch$finite_reps >= t_delta)) / (1 + n)
+			min(1, 2 * min(left_tail, right_tail))
 		}
 	),
-	private = c(InferenceMixinBartlettApprox$private, list(
+	private = c(InferenceMixinBartlettApprox$private, InferenceMixinParamBootstrapEstimate$private, list(
 		param_bootstrap_extreme_lr_threshold = 1e6,
 		param_bootstrap_lr_extreme = function(lr, max_abs = private$param_bootstrap_extreme_lr_threshold){
 			lr = as.numeric(lr)

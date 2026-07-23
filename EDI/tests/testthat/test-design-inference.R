@@ -374,6 +374,7 @@ test_that("G-computation risk-ratio intervals error when log-scale bounds overfl
 	priv$cached_values$s_beta_hat_T <- 1
 	priv$cached_values$log_rr <- 1000
 	priv$cached_values$se_log_rr <- 100
+	priv$cached_values$gcomp_standardized_effects_inference_ready <- TRUE
 
 	expect_error(
 		inf$compute_asymp_confidence_interval(),

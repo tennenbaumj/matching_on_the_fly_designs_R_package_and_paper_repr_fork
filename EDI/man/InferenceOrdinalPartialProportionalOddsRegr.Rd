@@ -20,6 +20,8 @@ general R fitters.
 \item \href{#method-InferenceOrdinalPartialProportionalOddsRegr-compute_estimate_with_bootstrap_weights}{\code{InferenceOrdinalPartialProportionalOddsRegr$compute_estimate_with_bootstrap_weights()}}
 \item \href{#method-InferenceOrdinalPartialProportionalOddsRegr-compute_asymp_confidence_interval}{\code{InferenceOrdinalPartialProportionalOddsRegr$compute_asymp_confidence_interval()}}
 \item \href{#method-InferenceOrdinalPartialProportionalOddsRegr-compute_asymp_two_sided_pval}{\code{InferenceOrdinalPartialProportionalOddsRegr$compute_asymp_two_sided_pval()}}
+\item \href{#method-InferenceOrdinalPartialProportionalOddsRegr-compute_wald_confidence_interval}{\code{InferenceOrdinalPartialProportionalOddsRegr$compute_wald_confidence_interval()}}
+\item \href{#method-InferenceOrdinalPartialProportionalOddsRegr-compute_wald_two_sided_pval}{\code{InferenceOrdinalPartialProportionalOddsRegr$compute_wald_two_sided_pval()}}
 \item \href{#method-InferenceOrdinalPartialProportionalOddsRegr-benchmark_asymp_two_sided_pval_breakdown}{\code{InferenceOrdinalPartialProportionalOddsRegr$benchmark_asymp_two_sided_pval_breakdown()}}
 \item \href{#method-InferenceOrdinalPartialProportionalOddsRegr-clone}{\code{InferenceOrdinalPartialProportionalOddsRegr$clone()}}
 }
@@ -65,8 +67,6 @@ general R fitters.
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_std_error"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_std_error'><code>::InferenceJackknife$compute_jackknife_std_error()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_confidence_interval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_confidence_interval'><code>::InferenceJackknife$compute_jackknife_wald_confidence_interval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceJackknife" data-id="compute_jackknife_wald_two_sided_pval"><a href='../..//html/InferenceJackknife.html#method-InferenceJackknife-compute_jackknife_wald_two_sided_pval'><code>::InferenceJackknife$compute_jackknife_wald_two_sided_pval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_confidence_interval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_confidence_interval'><code>::InferenceAsymp$compute_wald_confidence_interval()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="compute_wald_two_sided_pval"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-compute_wald_two_sided_pval'><code>::InferenceAsymp$compute_wald_two_sided_pval()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_mod"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_mod'><code>::InferenceAsymp$get_mod()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_summary"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_summary'><code>::InferenceAsymp$get_summary()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="" data-topic="InferenceAsymp" data-id="get_supported_testing_types"><a href='../..//html/InferenceAsymp.html#method-InferenceAsymp-get_supported_testing_types'><code>::InferenceAsymp$get_supported_testing_types()</code></a></span></li>
@@ -191,6 +191,54 @@ model-based standard error is unavailable, falls back to the bootstrap
 p-value.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{InferenceOrdinalPartialProportionalOddsRegr$compute_asymp_two_sided_pval(
+  delta = 0
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{delta}}{Null treatment effect to test.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+A two-sided p-value.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceOrdinalPartialProportionalOddsRegr-compute_wald_confidence_interval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceOrdinalPartialProportionalOddsRegr-compute_wald_confidence_interval}{}}}
+\subsection{Method \code{compute_wald_confidence_interval()}}{
+Compute a Wald-style confidence interval for the treatment effect.
+If the model-based standard error is unavailable, falls back to the
+bootstrap interval.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceOrdinalPartialProportionalOddsRegr$compute_wald_confidence_interval(
+  alpha = 0.05
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{alpha}}{Significance level for the interval.}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+A confidence interval for the treatment effect.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-InferenceOrdinalPartialProportionalOddsRegr-compute_wald_two_sided_pval"></a>}}
+\if{latex}{\out{\hypertarget{method-InferenceOrdinalPartialProportionalOddsRegr-compute_wald_two_sided_pval}{}}}
+\subsection{Method \code{compute_wald_two_sided_pval()}}{
+Compute a Wald-style two-sided p-value for the treatment effect.
+If the model-based standard error is unavailable, falls back to the
+bootstrap p-value.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{InferenceOrdinalPartialProportionalOddsRegr$compute_wald_two_sided_pval(
   delta = 0
 )}\if{html}{\out{</div>}}
 }

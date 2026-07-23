@@ -440,11 +440,25 @@ record_result = function(dataset_name, dataset_n_rows, dataset_n_cols, response_
 	result_2 = if ((grepl("confidence_interval", function_run, fixed = TRUE) || is_debug_distribution) && length(result_vec) >= 2) round_result_field(result_vec[2]) else NA_character_
 	beta_T_in_confidence_interval = NA
 	coverage_truth = beta_T
-	if (grepl("confidence_interval", function_run, fixed = TRUE) && length(result) >= 2 && all(is.finite(result[1:2]))){
-		ci_lo = min(result[1:2])
-		ci_hi = max(result[1:2])
+	base_inference_class = sub(" [\\(\\[].*$", "", inference_class)
+	has_closed_form_coverage_truth =
+		exists("COVERAGE_CLOSED_FORM", inherits = TRUE) &&
+		(
+			!is.null(COVERAGE_CLOSED_FORM[[base_inference_class]]) ||
+			(identical(base_inference_class, "InferenceAllSimpleMeanDiff") &&
+			 !is.na(response_type) &&
+			 !is.null(COVERAGE_CLOSED_FORM[[paste0("InferenceAllSimpleMeanDiff__", response_type)]]))
+		)
+	if (has_closed_form_coverage_truth || grepl("confidence_interval", function_run, fixed = TRUE)){
 		coverage_truth = get_coverage_truth(inference_class, dataset_name, beta_T, response_type_hint = response_type)
-		beta_T_in_confidence_interval = (coverage_truth >= ci_lo && coverage_truth <= ci_hi)
+	}
+	if (grepl("confidence_interval", function_run, fixed = TRUE)){
+		result_num_ci = suppressWarnings(as.numeric(result))
+		if (length(result_num_ci) >= 2 && all(is.finite(result_num_ci[1:2]))){
+			ci_lo = min(result_num_ci[1:2])
+			ci_hi = max(result_num_ci[1:2])
+			beta_T_in_confidence_interval = (coverage_truth >= ci_lo && coverage_truth <= ci_hi)
+		}
 	}
 	run_row_id <<- run_row_id + 1L
 	results_dt <<- data.table::rbindlist(list(
@@ -619,8 +633,9 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 	skip_bbt_pval_symmetric_slow = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))  # Bayesian bootstrap symmetric pval avg 30.6s / max 54.9s at n=18
 	skip_bbt_ci_slow          = is_any_inference_class(c("InferenceIncidKKCondLogitPlusGLMMOneLik"))
 	skip_boot_ci_default_slow = is_any_inference_class(c("InferenceIncidRiskDiff", "InferenceContinKKQuantileRegrOneLik"))  # RiskDiff bootstrap CI avg 261.1s / max 2014.1s at n=8; ContinKKQuantileRegrOneLik bootstrap CI mean 109.0s / max 9434.3s at n=98
-	skip_boot_stud_slow       = is_any_inference_class(c("InferenceIncidRiskDiff"))  # bootstrap studentized CI avg 261.1s / max 2014.1s at n=8
+	skip_boot_stud_slow       = is_any_inference_class(c("InferenceIncidRiskDiff", "InferenceSurvivalGehanWilcox"))  # RiskDiff bootstrap studentized CI avg 261.1s / max 2014.1s at n=8; GehanWilcox studentized CI max 10443.4s
 	skip_boot_pval_stud_slow  = is_any_inference_class(c("InferenceAllSimpleMeanDiff"))  # bootstrap studentized pval avg 178.8s / max 2001.5s at n=12
+	skip_boot_pval_symmetric_slow = is_any_inference_class(c("InferenceIncidKKGCompRiskRatio"))  # bootstrap symmetric pval max 10456.5s
 	skip_boot_ci_slow         = FALSE
 	skip_jack_slow            = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik", "InferenceContinKKGLMM"))  # ClaytonCopula frailty refits; ContinKKGLMM jackknife estimate avg 54s / max 102s
 	skip_pboot_ci_slow        = is_any_inference_class(c("InferenceSurvivalKKClaytonCopulaOneLik"))
@@ -650,6 +665,19 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 			ci_support_fn = seq_des_inf$.__enclos_env__$private$supports_lik_ratio_param_bootstrap_confidence_interval
 			if (is.function(ci_support_fn)) ci_support_fn() else TRUE
 		}, error = function(e) TRUE))
+	# compute_param_bootstrap_estimate()/_pval()/_confidence_interval(): the
+	# Monte-Carlo bias-correction trio, gated by their own supports_param_bootstrap_estimate()
+	# (defaults to isTRUE(supports_lik_ratio_param_bootstrap()), so this tracks
+	# supports_parametric_bootstrap for every family unless one overrides it separately).
+	# Unlike the LR CI above, the new CI is a single reflected-quantile batch (no
+	# per-delta bisection refits), so it is not gated behind run_parametric_bootstrap_ci.
+	supports_parametric_bootstrap_estimate =
+		is(seq_des_inf, "InferenceParamBootstrap") &&
+		!is_any_inference_class(c("InferenceCountKKGLMM")) &&
+		isTRUE(tryCatch(
+			seq_des_inf$.__enclos_env__$private$supports_param_bootstrap_estimate(),
+			error = function(e) FALSE
+		))
 	# Bartlett-corrected LR ("best available": exact factor if a family implements
 	# one, otherwise the generic InferenceParamBootstrap Monte-Carlo factor). The
 	# approx factor reuses the same simulate_under_lik_null()/refit machinery as
@@ -723,6 +751,8 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 		if (!is.atomic(result)) return(FALSE)
 		result_num = suppressWarnings(as.numeric(result))
 		if (!length(result_num) || all(is.na(result_num))) return(FALSE)
+		truth = get_coverage_truth(inference_result_label, dataset_name, beta_T, response_type_hint = response_type)
+		if (!is.finite(truth)) truth = 0
 		if (grepl("pval", label, fixed = TRUE)) {
 			return(length(result_num) >= 1L && is.finite(result_num[1L]) && result_num[1L] < 1e-6)
 		}
@@ -730,13 +760,13 @@ run_inference_checks_impl = function(seq_des_inf, response_type, design_type, da
 			if (length(result_num) < 2L || !all(is.finite(result_num[1:2]))) return(FALSE)
 			ci_lo = min(result_num[1:2])
 			ci_hi = max(result_num[1:2])
-			if (max(abs(ci_lo), abs(ci_hi)) > 50) return(TRUE)
-			if (ci_lo > 0) return(ci_lo > 0.05)
-			if (ci_hi < 0) return(abs(ci_hi) > 0.05)
+			if (max(abs(ci_lo - truth), abs(ci_hi - truth)) > 50) return(TRUE)
+			if (ci_lo > truth) return((ci_lo - truth) > 0.05)
+			if (ci_hi < truth) return((truth - ci_hi) > 0.05)
 			return(FALSE)
 		}
 		if (grepl("estimate", label, fixed = TRUE)) {
-			return(length(result_num) >= 1L && is.finite(result_num[1L]) && abs(result_num[1L]) > 50)
+			return(length(result_num) >= 1L && is.finite(result_num[1L]) && abs(result_num[1L] - truth) > 50)
 		}
 		FALSE
 	}
@@ -915,6 +945,8 @@ safe_call = function(label, expr){
 			                 grepl("Exact inference is only supported for exact inference classes.", msg, fixed = TRUE) ||
 			                 grepl("does not support parametric-bootstrap LR calibration", msg, fixed = TRUE) ||
 			                 grepl("Override private\\$supports_lik_ratio_param_bootstrap\\(\\) and simulate_under_lik_null\\(\\)", msg) ||
+			                 grepl("does not support parametric-bootstrap estimate bias correction", msg, fixed = TRUE) ||
+			                 grepl("Override private\\$supports_param_bootstrap_estimate\\(\\) and simulate_under_lik_null\\(\\)", msg) ||
 			                 grepl("Randomization tests are not supported for incidence", msg, fixed = TRUE) ||
 			                 grepl("Bootstrap randomization tests are not supported for incidence", msg, fixed = TRUE) ||
 			                 grepl("singular matrix in 'backsolve'", msg, fixed = TRUE) ||
@@ -1025,13 +1057,12 @@ ensure_estimate_setup_for_filtered_family = function(){
 
 call_direct_asymp = function(method_name, testing_type, ...){
 	if (!should_run_test_family(testing_type)) return(invisible(NULL))
-	if (!method_name %in% names(seq_des_inf)) return(invisible(NULL))
+	method_fn = tryCatch(seq_des_inf[[method_name]], error = function(e) NULL)
+	if (!is.function(method_fn)) return(invisible(NULL))
 	if (!supports_direct_testing_type(testing_type)) {
 		message("          Skipping ", method_name, " (not implemented for testing_type = ", testing_type, ")")
 		return(invisible(NULL))
 	}
-	method_fn = seq_des_inf[[method_name]]
-	if (!is.function(method_fn)) return(invisible(NULL))
 	safe_call(method_name, do.call(method_fn, list(...)))
 }
 
@@ -1186,6 +1217,10 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	if (should_run_test_family("bootstrap") && !skip_slow && !skip_bootstrap && !skip_bootstrap_slow){
 		safe_call("compute_bootstrap_two_sided_pval", seq_des_inf$compute_bootstrap_two_sided_pval(B = r, na.rm = TRUE, show_progress = FALSE))
 		for (boot_pval_type in c("symmetric", "bca", "studentized")) {
+			if (boot_pval_type == "symmetric" && skip_boot_pval_symmetric_slow) {
+				message("          Skipping compute_bootstrap_two_sided_pval_symmetric (too slow)")
+				next
+			}
 			if (boot_pval_type == "studentized" && skip_boot_pval_stud_slow) {
 				message("          Skipping compute_bootstrap_two_sided_pval_studentized (too slow)")
 				next
@@ -1212,6 +1247,15 @@ call_direct_asymp = function(method_name, testing_type, ...){
 	}
 	if (should_run_test_family("parametric_bootstrap") && !skip_slow && supports_parametric_bootstrap){
 		safe_call("compute_lik_ratio_bootstrap_two_sided_pval", seq_des_inf$compute_lik_ratio_bootstrap_two_sided_pval(B = r, show_progress = FALSE))
+	}
+	if (should_run_test_family("parametric_bootstrap") && !skip_slow && supports_parametric_bootstrap_estimate){
+		safe_call("compute_param_bootstrap_estimate", seq_des_inf$compute_param_bootstrap_estimate(B = r, show_progress = FALSE))
+	}
+	if (should_run_test_family("parametric_bootstrap") && !skip_slow && supports_parametric_bootstrap_estimate){
+		safe_call("compute_param_bootstrap_pval", seq_des_inf$compute_param_bootstrap_pval(delta = 0, B = r, show_progress = FALSE))
+	}
+	if (should_run_test_family("parametric_bootstrap") && !skip_slow && supports_parametric_bootstrap_estimate){
+		safe_call("compute_param_bootstrap_confidence_interval", seq_des_inf$compute_param_bootstrap_confidence_interval(B = r, show_progress = FALSE))
 	}
 	if (should_run_test_family("parametric_bootstrap") && !skip_slow && supports_parametric_bootstrap_ci && !skip_pboot_ci_slow){
 		safe_call("compute_lik_ratio_bootstrap_confidence_interval",
@@ -1294,9 +1338,9 @@ call_direct_asymp = function(method_name, testing_type, ...){
 					  seq_des_inf$compute_rand_bootstrap_confidence_interval(B = r, type = brt_ci_type, pval_epsilon = pval_epsilon, show_progress = FALSE))
 		}
 	}
-	if (should_run_test_family("rand_custom") && response_type != "incidence"){
+	if (should_run_test_family("rand_custom")){
 		seq_des_inf$set_custom_randomization_statistic_cpp(welch_t_stat_cpp)
-		if (!skip_slow && !skip_rand_pval){
+		if (!skip_slow && !skip_regular_rand_pval){
 			safe_call("compute_rand_two_sided_pval(custom)", seq_des_inf$compute_rand_two_sided_pval(r = r, show_progress = FALSE))
 		}
 		if (!skip_slow && !skip_ci_rand && test_compute_confidence_interval_rand && response_type %in% c("continuous", "proportion", "survival")){
