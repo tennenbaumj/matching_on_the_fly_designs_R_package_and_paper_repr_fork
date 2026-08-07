@@ -67,19 +67,35 @@ InferenceSurvivalWeibullRegr = R6::R6Class("InferenceSurvivalWeibullRegr",
 			private$cached_values$s_beta_hat_T = NA_real_
 			private$cached_values$beta_hat_T
 		},
-		#' @description Uses the shared asymptotic confidence-interval contract; see
+		#' @description Uses the shared asymptotic confidence-interval contract with
+		#'   the configured testing type (see \code{set_testing_type()}); see
 		#'   \code{\link[EDI:InferenceAsymp]{InferenceAsymp}}.
 		#' @param alpha Confidence level.
 		compute_asymp_confidence_interval = function(alpha = 0.05){
-			private$shared(estimate_only = FALSE)
-			private$compute_z_or_t_ci_from_s_and_df(alpha)
+			# Mirrors InferenceAsympLikStdModCache: take the cached-SE fast path only
+			# for Wald, otherwise defer to the testing-type switch. Without the guard
+			# this override silently ignores set_testing_type(), even though the class
+			# advertises score / gradient / lik_ratio via get_supported_testing_types().
+			if (private$testing_type == "wald") {
+				private$shared(estimate_only = FALSE)
+				if (is.finite(private$cached_values$s_beta_hat_T %||% NA_real_)) {
+					return(private$compute_z_or_t_ci_from_s_and_df(alpha))
+				}
+			}
+			super$compute_asymp_confidence_interval(alpha)
 		},
-		#' @description Uses the shared asymptotic two-sided p-value contract; see
+		#' @description Uses the shared asymptotic two-sided p-value contract with
+		#'   the configured testing type (see \code{set_testing_type()}); see
 		#'   \code{\link[EDI:InferenceAsymp]{InferenceAsymp}}.
 		#' @param delta Null treatment effect value.
 		compute_asymp_two_sided_pval = function(delta = 0){
-			private$shared(estimate_only = FALSE)
-			private$compute_z_or_t_two_sided_pval_from_s_and_df(delta)
+			if (private$testing_type == "wald") {
+				private$shared(estimate_only = FALSE)
+				if (is.finite(private$cached_values$s_beta_hat_T %||% NA_real_)) {
+					return(private$compute_z_or_t_two_sided_pval_from_s_and_df(delta))
+				}
+			}
+			super$compute_asymp_two_sided_pval(delta)
 		}
 	),
 	private = list(
